@@ -29,3 +29,6 @@ dist-ssr
 # Agents Meta
 CLAUDE.md
 
+
+# Store apps: the native web build (ios/ and android/ are committed; each has its own .gitignore)
+dist-native

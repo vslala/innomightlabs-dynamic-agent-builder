@@ -309,6 +309,9 @@ set_railway_var "INVITATION_PREVIEW_RATE_LIMIT" "$(get_var_default 'INVITATION_P
 set_railway_var "INVITATION_PREVIEW_RATE_WINDOW_SECONDS" "$(get_var_default 'INVITATION_PREVIEW_RATE_WINDOW_SECONDS' '60')"
 set_railway_var "AUTH_APP_URLS" "$(get_var 'AUTH_APP_URLS')"
 set_railway_var "AUTH_APP_SECRETS" "$(get_var 'AUTH_APP_SECRETS')"
+# The store apps (docs/LLD-mobile-ready-app.md): their URL scheme turns native sign-in and app return links on
+set_railway_var "NATIVE_APP_SCHEME" "$(get_var_default 'NATIVE_APP_SCHEME' 'com.innomightlabs.app')"
+set_railway_var "NATIVE_ACCESS_TOKEN_MINUTES" "$(get_var_default 'NATIVE_ACCESS_TOKEN_MINUTES' '60')"
 set_railway_var "API_BASE_URL" "$api_base_url"
 set_railway_var "REST_TEMPLATE_BLOCKED_IP_RANGES" "$(get_var_default 'REST_TEMPLATE_BLOCKED_IP_RANGES' '')"
 set_railway_var "JWT_SECRET" "$(get_var 'JWT_SECRET')"

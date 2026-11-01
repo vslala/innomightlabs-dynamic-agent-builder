@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { LoadingState } from "../ui";
-import { httpClient } from "../../services/http";
-
-const HANDOFF_PARAM = "oauth_complete";
+import { completeOAuthHandoff, HANDOFF_PARAM } from "../../services/connectors/oauthCompletion";
 
 /**
  * Connect flows (Gmail, Drive, Ads, MCP, remote agents) come back from the provider with a sealed
@@ -23,10 +21,8 @@ export function OAuthReturn({ children }: { children: ReactNode }) {
     const completion = params.get(HANDOFF_PARAM) ?? "";
     params.delete(HANDOFF_PARAM);
 
-    httpClient
-      .post<{ result: Record<string, string> }>("/connectors/oauth/complete", { completion })
-      .then(({ result }) => Object.entries(result).forEach(([key, value]) => params.set(key, value)))
-      .catch(() => params.set("skill_oauth", "error"))
+    completeOAuthHandoff(completion)
+      .then((result) => Object.entries(result).forEach(([key, value]) => params.set(key, value)))
       .finally(() => {
         const query = params.toString();
         window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);

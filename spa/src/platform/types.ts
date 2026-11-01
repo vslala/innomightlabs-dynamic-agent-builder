@@ -20,6 +20,11 @@ export interface Platform {
   /** Null where push does not exist (the web): callers hide notification settings. */
   readonly push: PushChannel | null;
   readonly commerce: Commerce;
+  /**
+   * Whether this build serves the public website too (landing page, marketing, the Mira concierge). False in the
+   * store apps, which open straight into the product: `/` goes to the dashboard and signed-out people to `/login`.
+   */
+  readonly publicSite: boolean;
   /** Loads what the first render needs: stored values into memory, a fresh access token. Awaited once. */
   ready(): Promise<void>;
 }
@@ -71,7 +76,7 @@ export type AppLink =
   | { kind: "login"; code: string | null; error: string | null }
   | { kind: "return"; path: DashboardPath; search: string };
 
-/** Small, non-secret values (the active account, the device id, view choices). */
+/** Small, non-secret values (the active account, a sign-in's PKCE verifier, view choices). */
 export interface KeyValueStore {
   /** Synchronous: served from memory, which `ready()` filled. */
   get(key: StorageKey): string | null;
@@ -81,7 +86,7 @@ export interface KeyValueStore {
 }
 
 /** Every key the platform stores, in one place, so nothing is written under an ad hoc name. */
-export type StorageKey = "active_account_id" | "device_id" | "pkce_verifier" | "conversations:view";
+export type StorageKey = "active_account_id" | "pkce_verifier" | "conversations:view";
 
 export interface Lifecycle {
   /** The app or tab came back to the foreground. Used to resync streams and refresh tokens. */

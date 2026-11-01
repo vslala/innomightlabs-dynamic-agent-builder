@@ -277,6 +277,10 @@ class Settings:
     auth_app_secrets: dict[str, str] = field(default_factory=dict)
     auth_app_access_token_minutes: int = 60
     auth_refresh_token_days: int = 30
+    # The store apps (iOS/Android): their URL scheme, e.g. com.innomightlabs.app. Empty turns native
+    # sign-in and app return links off. Their owner access tokens are short; a per-device refresh token renews them.
+    native_app_scheme: str = ""
+    native_access_token_minutes: int = 60
 
     # Cognito Hosted UI (optional; for native email/password)
     cognito_domain: str = ""
@@ -346,6 +350,10 @@ class Settings:
         if not self.jwt_secret or self.jwt_secret == "dev-secret-change-in-production":
             if self.environment != "dev":
                 missing.append("JWT_SECRET")
+
+        # "mobile" names the store apps (auth/apps.py NATIVE_APP); a partner app can't take it.
+        if "mobile" in self.auth_app_urls or "mobile" in self.auth_app_secrets:
+            missing.append('AUTH_APP_URLS/AUTH_APP_SECRETS without the reserved app name "mobile"')
 
         if missing:
             raise ConfigValidationError(missing, "core application")
@@ -701,6 +709,8 @@ class Settings:
             auth_app_secrets=parse_env_json_map("AUTH_APP_SECRETS"),
             auth_app_access_token_minutes=int(os.getenv("AUTH_APP_ACCESS_TOKEN_MINUTES", "60")),
             auth_refresh_token_days=int(os.getenv("AUTH_REFRESH_TOKEN_DAYS", "30")),
+            native_app_scheme=os.getenv("NATIVE_APP_SCHEME", ""),
+            native_access_token_minutes=positive_env_int("NATIVE_ACCESS_TOKEN_MINUTES", 60),
             # Cognito Hosted UI
             cognito_domain=os.getenv("COGNITO_DOMAIN", ""),
             cognito_client_id=os.getenv("COGNITO_CLIENT_ID", ""),

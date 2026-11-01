@@ -76,6 +76,7 @@ export function createFakePlatform(
     files: { saveOrShare: async () => {} },
     push: null,
     commerce: { canSellSubscriptions: true },
+    publicSite: true,
     ready: async () => {},
     ...overrides,
   };

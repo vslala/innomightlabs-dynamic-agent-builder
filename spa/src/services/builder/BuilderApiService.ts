@@ -28,9 +28,12 @@ class BuilderApiService {
     return httpClient.get<BuilderSession[]>("/builder/sessions");
   }
 
-  /** The person's click on a Connect card: the sign-in address for a popup, or null if already connected. */
-  async connect(conversationId: string, provider: string): Promise<{ authorize_url: string | null }> {
-    return httpClient.post<{ authorize_url: string | null }>(`/builder/${conversationId}/connect`, { provider });
+  /**
+   * The person's click on a Connect card: the sign-in address, or null if already connected. `returnTo` is where
+   * the sign-in comes back (the popup's page on the web, the app's return link in the store apps).
+   */
+  async connect(conversationId: string, provider: string, returnTo: string): Promise<{ authorize_url: string | null }> {
+    return httpClient.post<{ authorize_url: string | null }>(`/builder/${conversationId}/connect`, { provider, return_to: returnTo });
   }
 }
 

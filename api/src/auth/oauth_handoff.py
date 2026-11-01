@@ -24,11 +24,22 @@ HANDOFF_PARAM = "oauth_complete"
 HANDOFF_TTL_SECONDS = 600
 
 
-def safe_return_to(return_to: str) -> str:
-    """Connect flows only ever send the user back to our own SPA."""
+#: The store apps' return links are `{NATIVE_APP_SCHEME}://return/dashboard/...` (docs/LLD-mobile-ready-app.md).
+NATIVE_RETURN_HOST = "return"
+
+
+def _allowed_return_origins() -> set[tuple[str, str]]:
     frontend = urlsplit(settings.frontend_url)
+    origins = {(frontend.scheme, frontend.netloc)}
+    if settings.native_app_scheme:
+        origins.add((settings.native_app_scheme.lower(), NATIVE_RETURN_HOST))
+    return origins
+
+
+def safe_return_to(return_to: str) -> str:
+    """Connect flows only ever send the user back to our own SPA: the site, or the store apps' return links."""
     target = urlsplit(return_to)
-    if (target.scheme, target.netloc) != (frontend.scheme, frontend.netloc):
+    if (target.scheme, target.netloc) not in _allowed_return_origins():
         raise ValueError("return_to must be a page of this app")
     return return_to
 

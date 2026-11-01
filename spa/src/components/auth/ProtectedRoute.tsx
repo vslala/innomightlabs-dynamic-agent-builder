@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authService } from "../../services/auth";
+import { platform } from "../../platform";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -73,8 +74,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!isAuthenticated) {
-    // Redirect to home page, preserving the intended destination
-    return <Navigate to="/" state={{ from: location }} replace />;
+    // Home on the website (it offers sign-in); the store apps have no home page, so straight to sign-in.
+    return <Navigate to={platform().publicSite ? "/" : "/login"} state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

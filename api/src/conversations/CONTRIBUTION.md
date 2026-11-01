@@ -10,6 +10,7 @@ src/conversations/
   models.py       Conversation + subtypes (AutomationConversation, ApiConversation), request/response models
   repository.py   ConversationRepository: all DynamoDB access, offset-cursor paging
   router.py       /conversations endpoints; module-level repositories
+  reports.py      ContentReport: reporting an agent's response (store policy), its repository and the support email
 ```
 
 There is no `service.py`: the endpoints are thin enough to call the repository directly.
@@ -27,6 +28,8 @@ A conversation belongs to the member who started it, even on a shared agent. Cal
 **Subtypes.** `Conversation` is the base; `AutomationConversation` (`conversation_type="automation"`, carries `automation_id`/`automation_run_id`) and `ApiConversation` (public `/v1` API; `created_by = secret-key:{key_id}[:{end_user_id}]`, so it lands in a pseudo-member partition) extend it. `ConversationRepository._from_dynamo_item` picks the class from `conversation_type` / `entity_type`; a new subtype must set a distinct `entity_type` in `to_dynamo_item` and be added there.
 
 **Two lookups, on purpose.** `find_by_id(conversation_id, partition)` is a GetItem for request handling. `get(conversation_id)` goes through gsi2 and ignores ownership: use it only inside work already running in a conversation (skill actions, schedules, image generation), never for an id that came from a request. gsi2 is eventually consistent.
+
+**Reports.** `POST /conversations/{id}/messages/{message_id}/report {reason, note?}` reports an assistant message (`offensive`, `harmful`, `inaccurate`, `other`). The `ContentReport` sits in the conversation's message partition, `CONVERSATION#{id}` / `REPORT#{message_id}#{reporter_id}`, so one person reports a response once (conditional put) and support (`hello@innomightlabs.com`) is emailed once. Deleting the conversation deletes its reports; the account-deletion Lambda clears the whole partition. Rate limited per person (20 an hour).
 
 **Access.** `own_partition` (router) derives the partition from the `Principal` (`get_principal`), so even an admin only sees their own conversations. Creating one calls `require_agent(principal, agent_id, "agents:Chat", ...)` from `src/agents/access.py`. Missing or foreign ids return 404, not 403.
 

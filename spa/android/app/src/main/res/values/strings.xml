@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">InnoMight</string>
+    <string name="title_activity_main">InnoMight</string>
+    <string name="package_name">com.innomightlabs.app</string>
+    <string name="custom_url_scheme">com.innomightlabs.app</string>
+</resources>

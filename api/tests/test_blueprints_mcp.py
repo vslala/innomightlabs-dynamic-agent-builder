@@ -182,10 +182,28 @@ async def test_a_preset_needing_set_up_isnt_connected_from_the_chat(account, rea
     assert connections.missing_connections(github, account_for(TEST_USER_EMAIL)) == []
 
 
+async def test_the_store_apps_send_their_own_return_link(account, ready, monkeypatch):  # noqa: F811
+    monkeypatch.setattr("src.config.settings.native_app_scheme", "com.innomightlabs.app")
+    returned: list[str] = []
+
+    class RecordsReturn(FakeService):
+        async def install_provider(self, account_id, key, request, *, user_email):
+            returned.append(request.return_to)
+            return type("Installed", (), {"authorize_url": "https://auth.example/app"})()
+
+    app_link = "com.innomightlabs.app://return/dashboard/oauth/done"
+    await connections.start_connection(RecordsReturn(), account_for(TEST_USER_EMAIL), TEST_USER_EMAIL, "tavily", app_link)
+    assert returned == [app_link]
+    with pytest.raises(ValueError):
+        await connections.start_connection(
+            RecordsReturn(), account_for(TEST_USER_EMAIL), TEST_USER_EMAIL, "tavily", "https://evil.example/dashboard"
+        )
+
+
 def test_the_connect_route(test_client, auth_headers, session, monkeypatch):  # noqa: F811
     from src.builder import router as builder_router
 
-    async def fake_start(service, account_id, user_email, provider):
+    async def fake_start(service, account_id, user_email, provider, return_to=None):
         return f"https://auth.example/{provider}"
 
     monkeypatch.setattr(builder_router, "start_connection", fake_start)

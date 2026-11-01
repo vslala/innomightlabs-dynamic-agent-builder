@@ -69,6 +69,7 @@ export function createWebPlatform(): Platform {
     },
     push: null,
     commerce: { canSellSubscriptions: true },
+    publicSite: true,
     ready: async () => {},
   };
 }

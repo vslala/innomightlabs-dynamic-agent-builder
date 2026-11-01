@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { httpClient } from '../services/http';
 import { platform } from '../platform';
@@ -7,9 +7,11 @@ import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
+import { AlertBanner } from '../components/ui';
 import styles from './Login.module.css';
 
-const isLocalhost = window.location.hostname === 'localhost';
+// The dev-only username form. Not the hostname: the store apps run at localhost too.
+const isLocalhost = import.meta.env.DEV && window.location.hostname === 'localhost';
 
 export function Login() {
   const navigate = useNavigate();
@@ -18,6 +20,8 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A sign-in that came back refused (`/login?error=...`, from the API or the app's sign-in link).
+  const signInFailed = useSearchParams()[0].has('error');
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -81,13 +85,16 @@ export function Login() {
 
   return (
     <>
-      <Navbar />
-      <div className={styles.container}>
+      {/* The store apps have no marketing site to navigate to */}
+      {platform().publicSite && <Navbar />}
+      <div className={platform().publicSite ? styles.container : `${styles.container} ${styles.fullScreen}`}>
       <div className={styles.card}>
         <div className={styles.header}>
           <h1>Welcome Back</h1>
           <p className={styles.subtitle}>Sign in to access your dashboard</p>
         </div>
+
+        {signInFailed && <AlertBanner variant="error" message="Sign-in didn't finish. Please try again." />}
 
         <div className={styles.buttonGroup}>
           <Button
@@ -193,13 +200,13 @@ export function Login() {
             Terms of Service
           </a>{' '}
           and{' '}
-          <a href="/legal/pricing" className={styles.link}>
+          <a href="/legal/privacy" className={styles.link}>
             Privacy Policy
           </a>
         </p>
       </div>
     </div>
-      <Footer />
+      {platform().publicSite && <Footer />}
     </>
   );
 }

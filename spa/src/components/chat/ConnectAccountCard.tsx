@@ -3,7 +3,7 @@ import { Plug } from "lucide-react";
 
 import { Button } from "../ui";
 import { builderApiService } from "../../services/builder/BuilderApiService";
-import { connectOutcome } from "../../services/builder/connect";
+import { connectOutcome, OAUTH_DONE_PATH } from "../../services/builder/connect";
 import { platform } from "../../platform";
 import styles from "./ConnectAccountCard.module.css";
 
@@ -59,7 +59,11 @@ export function ConnectAccountCard({
     setStage("starting");
     setError(null);
     try {
-      const { authorize_url } = await builderApiService.connect(request.conversation_id, request.provider);
+      const { authorize_url } = await builderApiService.connect(
+        request.conversation_id,
+        request.provider,
+        platform().links.returnTo(OAUTH_DONE_PATH),
+      );
       if (!authorize_url) {
         finish();
         return;

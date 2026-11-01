@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, type ComponentType, type ReactElement } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { AppLinkRouter } from './components/platform/AppLinkRouter';
+import { platform } from './platform';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
 import { SiteConcierge } from './components/SiteConcierge';
@@ -107,7 +109,7 @@ function ScrollToHash() {
 
 /** Keyed by every public path, so a page cannot be listed without a component or routed without being listed. */
 const publicPageElements: Record<PublicPath, ReactElement> = {
-  '/': <LandingPage />,
+  '/': <Home />,
   '/features/ila': <IlaPage />,
   '/features/agents': <AgentsPage />,
   '/features/leads': <LeadsPage />,
@@ -134,6 +136,11 @@ const publicPageElements: Record<PublicPath, ReactElement> = {
   '/payments/cancel': <PaymentCancel />,
 };
 
+/** The website's home is the landing page; the store apps open straight into the product. */
+function Home() {
+  return platform().publicSite ? <LandingPage /> : <Navigate to="/dashboard" replace />;
+}
+
 function PublicSiteConcierge() {
   const location = useLocation();
   return location.pathname.replace(/\/$/, '') === '/invitations/accept' ? null : <SiteConcierge />;
@@ -147,7 +154,8 @@ function App() {
   return (
     <BrowserRouter basename={basename}>
       <ScrollToHash />
-      <PublicSiteConcierge />
+      {platform().publicSite && <PublicSiteConcierge />}
+      <AppLinkRouter />
       <RateLimitBanner />
       <Suspense fallback={<LoadingState />}>
         <Routes>

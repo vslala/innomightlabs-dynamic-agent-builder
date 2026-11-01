@@ -3,6 +3,9 @@
  * See docs/LLD-ila-capabilities.md.
  */
 
+/** Where a Connect card's sign-in returns: the popup's page (OAuthPopupDone); the API's default is the same path. */
+export const OAUTH_DONE_PATH = "/dashboard/oauth/done";
+
 /** The message the popup's return page posts to the chat window. */
 export const OAUTH_MESSAGE_TYPE = "innomight:oauth";
 

@@ -26,6 +26,15 @@ from src.conversations.models import (
 )
 from src.builder.models import ILA_AGENT_ID
 from src.conversations.repository import ConversationRepository
+from src.conversations.reports import (
+    ContentReport,
+    ContentReportRepository,
+    ReportRequest,
+    ReportResponse,
+    notify_support,
+)
+from src.contact.router import INNOMIGHTLABS
+from src.rate_limits.limiter import RateLimitPolicy, RateLimiter
 from src.accounts.owner import member_partition
 from src.iam.dependencies import get_principal
 from src.iam.principal import Principal
@@ -204,6 +213,37 @@ async def get_messages(
         next_cursor=next_cursor,
         has_more=has_more,
     )
+
+
+#: Reports are rare and each emails support, so a burst means misuse.
+REPORT_RATE_LIMIT = RateLimitPolicy.fixed_window("CONTENT_REPORTS", limit=20, seconds=3600)
+
+
+@router.post("/{conversation_id}/messages/{message_id}/report", response_model=ReportResponse)
+async def report_message(
+    conversation_id: str,
+    message_id: str,
+    body: ReportRequest,
+    partition: Partition,
+    principal: Annotated[Principal, Depends(get_principal)],
+) -> ReportResponse:
+    """Report an agent's response as offensive, harmful or wrong. Recorded once per person and response."""
+    conversation = owned_conversation(conversation_id, partition)
+    message = next(
+        (m for m in message_repository.find_by_conversation(conversation_id) if m.message_id == message_id), None
+    )
+    if message is None or message.role != "assistant":
+        raise HTTPException(status_code=404, detail="Response not found")
+    if not RateLimiter(REPORT_RATE_LIMIT).acquire(principal.user_id).allowed:
+        raise HTTPException(status_code=429, detail="You've sent a lot of reports. Try again later.")
+
+    report = ContentReport(
+        conversation_id=conversation_id, message_id=message_id, agent_id=conversation.agent_id,
+        reporter_id=principal.user_id, reason=body.reason, note=(body.note or "").strip() or None,
+    )
+    if ContentReportRepository().add(report):
+        notify_support(report, message.content, INNOMIGHTLABS.inbox)
+    return ReportResponse()
 
 
 @router.get("/{conversation_id}/tool-audit", response_model=Paginated[MessageResponse])
@@ -432,8 +472,9 @@ async def delete_conversation(conversation_id: str, partition: Partition):
     except Exception as e:
         raise HTTPException(status_code=503, detail="The conversation's files couldn't be deleted. Try again.") from e
 
-    # Delete all messages in this conversation first
+    # Delete all messages in this conversation first, and any reports on them
     message_repository.delete_by_conversation(conversation_id)
+    ContentReportRepository().delete_for_conversation(conversation_id)
 
     try:
         ConversationMediaStorage().delete_conversation_prefix(

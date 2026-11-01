@@ -9,6 +9,7 @@ from mangum import Mangum
 
 from src.auth import auth_router, middleware
 from src.auth.app_router import router as auth_app_router
+from src.auth.native_router import router as auth_native_router
 from src.rate_limits.middleware import RateLimitMiddleware
 from src.agents.router import router as agent_router
 from src.consent.router import router as consent_router
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(auth_app_router)
+    app.include_router(auth_native_router)
     app.include_router(router=a2a_router)
     app.include_router(router=agent_router)
     app.include_router(router=consent_router)

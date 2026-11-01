@@ -65,6 +65,7 @@ from .app_tokens import create_login_code, redeem_login_code as redeem_app_login
 from .apps import (
     DEFAULT_APP,
     NONCE_COOKIE,
+    is_product_app,
     login_context_from_state,
     valid_invitation_hash,
     create_state,
@@ -217,7 +218,15 @@ def _redirect_auth_error(error: str, app: str = DEFAULT_APP) -> RedirectResponse
     return forget_nonce(RedirectResponse(url=f"{frontend_url_for(app)}/login?{urlencode({'error': error})}"))
 
 
-def _start_login(provider_name: str, app: str, invitation: str | None = None) -> RedirectResponse:
+def _start_login(
+    provider_name: str,
+    app: str,
+    invitation: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str = "S256",
+) -> RedirectResponse:
+    if code_challenge is not None and code_challenge_method != "S256":
+        raise HTTPException(status_code=400, detail="Only the S256 code challenge method is supported")
     if invitation is not None:
         if app != DEFAULT_APP:
             raise HTTPException(status_code=400, detail="Invitation context is only supported by the default app")
@@ -229,21 +238,31 @@ def _start_login(provider_name: str, app: str, invitation: str | None = None) ->
         except IamError:
             return _redirect_auth_error("invitation_invalid")
     provider = _get_provider(provider_name)
-    login = create_state(app, invitation)
+    login = create_state(app, invitation, code_challenge)
     authorization_url, _state = provider.get_authorization_url(state=login.state)
     return remember_nonce(RedirectResponse(url=authorization_url), login.nonce)
 
 
 @router.get("/google")
-async def login_with_google(app: str = DEFAULT_APP, invitation: str | None = None) -> RedirectResponse:
-    """Redirect user to Google OAuth consent screen."""
-    return _start_login("google", app, invitation)
+async def login_with_google(
+    app: str = DEFAULT_APP,
+    invitation: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str = "S256",
+) -> RedirectResponse:
+    """Redirect user to Google OAuth consent screen. The store apps also send a PKCE challenge."""
+    return _start_login("google", app, invitation, code_challenge, code_challenge_method)
 
 
 @router.get("/cognito")
-async def login_with_cognito(app: str = DEFAULT_APP, invitation: str | None = None) -> RedirectResponse:
-    """Redirect user to Cognito Hosted UI."""
-    return _start_login("cognito", app, invitation)
+async def login_with_cognito(
+    app: str = DEFAULT_APP,
+    invitation: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str = "S256",
+) -> RedirectResponse:
+    """Redirect user to Cognito Hosted UI. The store apps also send a PKCE challenge."""
+    return _start_login("cognito", app, invitation, code_challenge, code_challenge_method)
 
 
 class LoginCodeRequest(BaseModel):
@@ -594,16 +613,17 @@ async def _oauth_callback(
         user, is_new_user = identity_repository.find_or_create(email, name, picture=picture, email_verified=True)
         if not is_new_user:
             identity_repository.update_profile(user.user_id, name=name, picture=picture, email_verified=True)
-        if app == DEFAULT_APP and invitation is None:
+        # The store apps are the product too: the same personal account and welcome as the web
+        if is_product_app(app) and invitation is None:
             AccountService().ensure_personal_account(user)
 
         # The welcome email is InnomightLabs-branded, so other apps send their own
-        if is_new_user and app == DEFAULT_APP:
+        if is_new_user and is_product_app(app):
             await send_welcome_email_safe(email)
 
         # Every app redeems a one-time code (our SPA at /auth/session, other apps' backends at
         # /auth/token); the token never touches the browser URL.
-        login_code = create_login_code(user.user_id, app)
+        login_code = create_login_code(user.user_id, app, context.code_challenge)
         query = {"code": login_code}
         if invitation is not None:
             # The browser retains the redeemable token; OAuth never accepts or grants membership.

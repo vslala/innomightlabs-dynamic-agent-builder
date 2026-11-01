@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from src.blueprints.draft import Draft
 from src.blueprints.kinds.mcp_connection import connection_for, is_ready
 from src.blueprints.spec import McpConnectionSpec
+from src.auth.oauth_handoff import safe_return_to
 from src.config import settings
 from src.connectors.mcp.models import MCPProviderInstallRequest
 from src.connectors.mcp.providers import PROVIDERS, get_provider
@@ -73,14 +74,15 @@ def connect_request(need: ConnectionNeed, conversation_id: str) -> dict[str, Any
 
 
 async def start_connection(
-    service: MCPConnectorService, account_id: str, user_email: str, provider_key: str
+    service: MCPConnectorService, account_id: str, user_email: str, provider_key: str, return_to: str | None = None,
 ) -> Optional[str]:
     """The address to sign in at, installing the preset first if the account has no connection for it yet.
-    None when it's already connected. The caller has checked the person may manage the account's settings."""
+    None when it's already connected. The caller has checked the person may manage the account's settings.
+    `return_to` defaults to the web popup's page; the store apps send their own return link."""
     provider = get_provider(provider_key)
     if provider.missing_inputs({}):
         raise ValueError(f"{provider.display_name} needs setting up on the Connectors page first.")
-    return_to = settings.frontend_url.rstrip("/") + POPUP_RETURN_PATH
+    return_to = safe_return_to(return_to) if return_to else settings.frontend_url.rstrip("/") + POPUP_RETURN_PATH
     existing = [
         connection for connection in get_mcp_connection_repository().list_connections(account_id)
         if connection.provider_key == provider_key

@@ -136,6 +136,15 @@ class DeployProductionTests(unittest.TestCase):
         self.assertNotIn(token, first.stdout + first.stderr + second.stdout + second.stderr)
         self.assertEqual((self.root / "version-counter").read_text(), "2")
 
+    def test_native_app_sign_in_is_configured_with_overridable_defaults(self) -> None:
+        self.successful_deploy()
+        api = self.state()["variables"]["InnomightLabs API"]
+        self.assertEqual(api["NATIVE_APP_SCHEME"], "com.innomightlabs.app")
+        self.assertEqual(api["NATIVE_ACCESS_TOKEN_MINUTES"], "60")
+        self.successful_deploy(PROD_NATIVE_APP_SCHEME="com.example.app", PROD_NATIVE_ACCESS_TOKEN_MINUTES="30")
+        api = self.state()["variables"]["InnomightLabs API"]
+        self.assertEqual((api["NATIVE_APP_SCHEME"], api["NATIVE_ACCESS_TOKEN_MINUTES"]), ("com.example.app", "30"))
+
     def test_existing_railway_token_is_preserved(self) -> None:
         state = self.state()
         state["variables"]["infra-cli-runner"]["CLI_RUNNER_SHARED_TOKEN"] = "existing-test-token"

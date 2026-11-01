@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { formatCompactNumber } from "../../lib/utils";
 import { OverviewContent, type DashboardData } from "./OverviewContent";
 
 const empty: DashboardData = {
@@ -50,7 +51,8 @@ describe("dashboard overview", () => {
       connectors: [{ connected: true }] as unknown as DashboardData["connectors"],
     });
     expect(html).not.toContain("Getting started");
-    expect(html).toContain("1.2K indexed vectors");
+    // The compact form follows the locale ("1.2K" in en-US, "1.2k" in en-GB).
+    expect(html).toContain(`${formatCompactNumber(1200)} indexed vectors`);
     for (const to of ["/dashboard/agents", "/dashboard/conversations", "/dashboard/automations", "/dashboard/knowledge-bases"]) {
       expect(html).toContain(`href="${to}"`);
     }

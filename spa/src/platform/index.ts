@@ -5,12 +5,13 @@ export type * from "./types";
 let current: Platform | null = null;
 
 /**
- * Called once by main.tsx before the first render. The adapter is chosen by the build, not by asking at runtime,
- * so the website bundle carries no native code. Only the web adapter exists until the app shells (Phase 1);
- * that phase adds the `VITE_PLATFORM === "native"` branch here.
+ * Called once by main.tsx before the first render. The adapter is chosen by the build (`VITE_PLATFORM`, set by
+ * `.env.native`), not by asking at runtime: Vite folds the comparison, so the website bundle carries no native code.
  */
 export async function initPlatform(): Promise<Platform> {
-  current = (await import("./web")).createWebPlatform();
+  current = import.meta.env.VITE_PLATFORM === "native"
+    ? (await import("./native")).createNativePlatform()
+    : (await import("./web")).createWebPlatform();
   await current.ready();
   return current;
 }

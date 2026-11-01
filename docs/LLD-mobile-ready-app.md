@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (Phase 0 built and tested locally; the real-data phone audit is pending; Phases 1–4 not started) |
+| Status | 🚧 In progress (Phase 0 shipped to `main`; Phase 1 built and tested locally except Sign in with Apple, not yet on a device; Phases 2–4 not started) |
 | Owner | InnomightLabs SPA + API |
 | Last reviewed | 2026-10-31 |
 | Depends on | [LLD-async-chat-turns](../api/docs/LLD-async-chat-turns.md), [LLD-action-consent](LLD-action-consent.md), [LLD-shared-accounts-and-iam](LLD-shared-accounts-and-iam.md), [LLD-mcp-connector-machinery](LLD-mcp-connector-machinery.md) |
@@ -92,6 +92,61 @@ Phase 0 is built and tested locally. Start here; the design below is unchanged e
 - **Not migrated:** the `target="_blank"` image and canvas links (`ChatStreamRenderer`, `CanvasSidePanel`) are
   not on `links.openExternal` or `files.saveOrShare` yet. They work on the web; they move with the native
   adapter in Phase 1.
+
+### Phase 1 (built, not yet run on a device)
+
+**Built:**
+- **API.**
+  - `auth/apps.py`: `NATIVE_APP = "mobile"`, `is_known_app`, `is_product_app` and `valid_code_challenge`. The
+    challenge rides in the signed state.
+  - `auth/app_tokens.py`: codes carry `code_challenge`; `redeem_native_login_code`; `issue_`, `refresh_` and
+    `revoke_native_tokens` on `RefreshToken#mobile#{device_id}`.
+  - `auth/native_router.py`, the `PUBLIC_PATHS` entries, `safe_return_to` (the app's `return` links), and the
+    builder's optional `return_to`.
+  - `conversations/reports.py` and `POST /conversations/{id}/messages/{message_id}/report`.
+  - Settings `NATIVE_APP_SCHEME` and `NATIVE_ACCESS_TOKEN_MINUTES`, in the Railway deploy script too.
+  - Tests: `tests/test_auth_native.py`, `tests/test_conversations_reports.py`, and a builder `return_to` case
+    in `tests/test_blueprints_mcp.py`.
+- **SPA.**
+  - Capacitor 8: `capacitor.config.ts`, `.env.native`, `build:native` and `cap:sync`,
+    `scripts/vite-plugin-native-html.ts` (strips the analytics markers, adds `viewport-fit=cover`).
+  - `platform/pkce.ts` (RFC 7636 vector) and `platform/appLinks.ts`.
+  - `platform/native/` (auth, tokens, vault, links, storage, files, statusBar).
+  - `components/platform/AppLinkRouter.tsx` and `services/connectors/oauthCompletion.ts`.
+  - The `ios/` and `android/` projects, with the URL scheme registered.
+- **Keychain/Keystore:** `@aparajita/capacitor-secure-storage` (Capacitor 8, Swift Package Manager). The items
+  stay on this device, so a backup restored to another phone carries no session or device id.
+
+**Departures from the design:**
+- **The callback is shared with the web.** It treats the store apps as the product (`is_product_app`): the
+  personal account and the welcome email, as on the web.
+- **`/auth/native/token` and `/refresh` also return `user_id`.** The app keeps it beside the refresh token,
+  because `refresh` and `revoke` name the user.
+- **Revoke needs the device's refresh token, and always answers 204.**
+- **The native routes return 404 while `NATIVE_APP_SCHEME` is empty.**
+- **Reports are keyed `REPORT#{message_id}#{reporter_id}`** (not `REPORT#{created_at}#{report_id}`). A
+  conditional put records and emails a person's report on a response once. The email goes to the contact
+  inbox (`INNOMIGHTLABS.inbox`), and reports are rate limited at 20 an hour per person.
+- **`Platform.publicSite`** (true on the web, false in the apps) decides the app's shape. In the app, `/` goes
+  to the dashboard, signed out goes to `/login`, and there is no concierge, navbar or footer. No page asks
+  which platform it is on.
+- **`device_id` is not a `StorageKey`.** It lives in the Keychain or Keystore.
+- **`AppLinkRouter` does a full page load for returns other than the chat card's.** Pages read the
+  `oauth_complete` result once, on mount. The chat card's return completes in place and posts the
+  `innomight:oauth` message.
+- **The native resume listener uses only Capacitor's `resume`.** The web view also fires
+  `visibilitychange`, which would resync twice.
+- **The native sign-in drops an invitation.** Invitations are accepted on the website.
+- **`NATIVE_API_BASE_URL`, not `VITE_API_BASE_URL`, overrides the native build's API.** A shell export of
+  `VITE_API_BASE_URL` had silently pointed the app at localhost.
+
+**Not done yet:**
+- **Sign in with Apple:** Cognito's identity provider in Terraform, `GET /auth/apple`, and the button. It needs
+  the Apple Developer Program credentials.
+- **The "Report response" action in the chat UI.** The API route exists.
+- **On-device testing.** It needs the Xcode iOS platform component, and the API deployed with
+  `NATIVE_APP_SCHEME`.
+- **Android icons.** The Android build is not verified (no SDK installed).
 
 ## Context and problem
 

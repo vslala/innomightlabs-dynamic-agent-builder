@@ -58,6 +58,8 @@ class BuilderMessageRequest(BaseModel):
 
 class ConnectRequest(BaseModel):
     provider: str
+    #: Where the sign-in comes back to; the web popup's page when absent. Checked with safe_return_to.
+    return_to: str | None = None
 
 
 class ConnectResponse(BaseModel):
@@ -201,7 +203,8 @@ async def connect(
     principal = settings_manager(get_principal(request))
     try:
         authorize_url = await start_connection(
-            get_mcp_connector_service(), principal.account_id, request.state.user_email, body.provider
+            get_mcp_connector_service(), principal.account_id, request.state.user_email, body.provider,
+            body.return_to,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
