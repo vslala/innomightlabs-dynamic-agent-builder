@@ -41,6 +41,7 @@ class FakeGraph:
         self.failures: dict[str, httpx.Response] = {}
         self.requests: list[httpx.Request] = []
         self.photos = 0
+        self.permissions: list[tuple[str, str]] = [("pages_show_list", "granted")]
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -56,6 +57,9 @@ class FakeGraph:
         if path == "/me/accounts":
             return httpx.Response(200, json={"data": self.pages})
         if path == "/me/permissions":
+            if request.method == "GET":
+                return httpx.Response(200, json={"data": [{"permission": name, "status": status}
+                                                          for name, status in self.permissions]})
             return httpx.Response(200, json={"success": True})
         if path.endswith("/photos"):
             self.photos += 1
@@ -164,6 +168,24 @@ def test_a_person_who_cannot_post_as_any_page_is_told_so(test_client, graph):
     result = connect_pages(test_client)
     assert result["social_oauth"] == ["error"] and result["reason"] == ["no_accounts"]
     assert accounts(test_client) == []
+
+
+def test_the_log_says_what_a_sign_in_with_nothing_to_post_as_did_grant(test_client, graph, caplog):
+    graph.pages = [graph.pages[2]]
+    graph.permissions = [("public_profile", "granted"), ("pages_show_list", "granted"), ("pages_manage_posts", "declined")]
+
+    with caplog.at_level("INFO"):
+        connect_pages(test_client)
+
+    assert ("Pages returned: 1, their tasks: ANALYZE; permissions granted: pages_show_list, public_profile"
+            in caplog.text)
+    assert "user-token" not in caplog.text and "page-token" not in caplog.text
+
+
+def test_a_page_listed_without_tasks_is_connected_with_its_page_token(test_client, graph):
+    graph.pages = [{"id": "444", "name": "Portfolio Page", "access_token": "page-token-444"}]
+    assert connect_pages(test_client)["social_oauth"] == ["success"]
+    assert [account["display_name"] for account in accounts(test_client)] == ["Portfolio Page"]
 
 
 def test_a_code_facebook_rejects_saves_nothing(test_client, graph):

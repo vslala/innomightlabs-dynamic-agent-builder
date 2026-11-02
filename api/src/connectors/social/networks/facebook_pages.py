@@ -87,11 +87,9 @@ class FacebookPagesNetwork:
             me = await self._read(client, "/me", user_token, fields="id")
             pages = await self._read(client, "/me/accounts", user_token,
                                      fields="id,name,access_token,tasks,picture{url}", limit="100")
-
-        postable = [page for page in pages.get("data", [])
-                    if page.get("access_token") and POSTING_TASKS & set(page.get("tasks") or [])]
-        if not postable:
-            raise NothingToPostAs("That Facebook sign-in granted no Page it can post as")
+            postable = [page for page in pages.get("data", []) if _can_post(page)]
+            if not postable:
+                raise NothingToPostAs(await self._why_nothing(client, user_token, pages.get("data", [])))
         return [ConnectedProfile(
             external_id=str(page["id"]),
             handle=str(page.get("name") or f"Facebook Page {page['id']}"),
@@ -148,6 +146,16 @@ class FacebookPagesNetwork:
             media=_media(item),
         ) for item in body.get("data", [])]
 
+    async def _why_nothing(self, client: httpx.AsyncClient, token: str, pages: list[dict[str, Any]]) -> str:
+        """What the sign-in did grant, to tell "no Page chosen" from "the Login configuration lacks a permission".
+        Permission names, Page counts and tasks only: never a token."""
+        response = await client.get(graph_url("/me/permissions"), headers=_bearer(token))
+        granted = sorted(str(item.get("permission")) for item in graph_json(response).get("data", [])
+                         if item.get("status") == "granted")
+        tasks = sorted({task for page in pages for task in page.get("tasks") or []})
+        return (f"That Facebook sign-in granted no Page it can post as (Pages returned: {len(pages)}, their tasks: "
+                f"{', '.join(tasks) or 'none'}; permissions granted: {', '.join(granted) or 'unknown'})")
+
     async def _token(self, client: httpx.AsyncClient, what: str, **params: str) -> str:
         response = await client.get(graph_url("/oauth/access_token"), params=params)
         token = graph_json(response).get("access_token")
@@ -169,6 +177,13 @@ class FacebookPagesNetwork:
         if app is None:
             raise ConnectError("Facebook is not set up on this server")
         return app
+
+
+def _can_post(page: dict[str, Any]) -> bool:
+    """A Page token, and no task list that rules posting out. Facebook may leave `tasks` out (a Page reached
+    through a Business portfolio), and then the Page token is what the person was given to post with."""
+    tasks = page.get("tasks")
+    return bool(page.get("access_token")) and (tasks is None or bool(POSTING_TASKS & set(tasks)))
 
 
 def _bearer(token: str) -> dict[str, str]:
