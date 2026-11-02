@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/ui/button";
 import { authService } from "../../services/auth";
 import { HttpError } from "../../services/http";
-import { invitationService, invitationErrorMessage, type InvitationPreview } from "../../services/iam/invitations";
+import { iamErrorMessage } from "../../services/iam/errors";
+import { invitationService, type InvitationPreview } from "../../services/iam/invitations";
 import { acceptInvitation } from "./acceptInvitation";
 import { captureInvitationToken } from "./continuation";
 import { platform } from "../../platform";
@@ -31,7 +32,7 @@ export function AcceptInvitationPage() {
     const controller = new AbortController();
     invitationService.preview(bootstrap.token, controller.signal).then(
       (result) => { if (!controller.signal.aborted) { setPreview(result); setLoading(false); } },
-      (error: unknown) => { if (!controller.signal.aborted) { setError(invitationErrorMessage(error)); setLoading(false); } },
+      (error: unknown) => { if (!controller.signal.aborted) { setError(iamErrorMessage(error)); setLoading(false); } },
     );
     return () => controller.abort();
   }, [bootstrap.token, attempt]);
@@ -47,7 +48,7 @@ export function AcceptInvitationPage() {
     } catch (error) {
       if (mounted.current) {
         if (error instanceof HttpError && error.status === 401) setSignedIn(false);
-        setError(invitationErrorMessage(error));
+        setError(iamErrorMessage(error));
       }
     } finally {
       inFlight.current = false;

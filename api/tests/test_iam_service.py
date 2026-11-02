@@ -326,6 +326,7 @@ def test_policies_list_the_builtins_then_the_accounts_own(account, test_client: 
     ]
     assert next(p for p in listed if p["name"] == "AdministratorAccess")["attachment_count"] == 0, \
         "the owner holds it without an attachment"
+    assert all(p["description"] for p in listed if p["builtin"]), "the portal shows what each built-in does"
 
 
 def test_validating_a_policy_is_a_dry_run(account, test_client: TestClient):
@@ -360,3 +361,63 @@ def test_someone_outside_the_account_gets_nothing(account, test_client: TestClie
 
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "NOT_A_MEMBER"
+
+
+# A member's page in the portal
+
+
+def test_a_member_reads_with_the_names_of_their_policies(account, iam, test_client: TestClient):
+    custom = iam.create_policy(account, ADMIN, "Support chat", doc(allow("agents:Describe")), "See the support agents")
+    iam.attach(account, ADMIN, "member", MEMBER, custom.ref)
+    iam.attach(account, ADMIN, "member", MEMBER, "MemberAccess")
+
+    member = test_client.get(f"/iam/members/{MEMBER}", headers=as_(TEST_USER_EMAIL, account))
+
+    assert member.status_code == 200, member.text
+    assert member.json()["policies"] == [
+        {"policy": "MemberAccess", "name": "MemberAccess"}, {"policy": custom.ref, "name": "Support chat"},
+    ]
+
+
+def test_an_unknown_member_is_not_found(account, test_client: TestClient):
+    response = test_client.get("/iam/members/nobody", headers=as_(TEST_USER_EMAIL, account))
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "NOT_FOUND"
+
+
+def test_effective_policies_carry_names_and_descriptions(account, iam, test_client: TestClient):
+    custom = iam.create_policy(account, ADMIN, "Support chat", doc(allow("agents:Describe")), "See the support agents")
+    iam.attach(account, ADMIN, "member", MEMBER, custom.ref)
+
+    effective = test_client.get(f"/iam/members/{MEMBER}/effective-policies", headers=as_(TEST_USER_EMAIL, account))
+
+    assert [(p["name"], p["source"]) for p in effective.json()] == [
+        ("OwnerAccess", "implicit"), ("Support chat", "direct"),
+    ]
+    assert effective.json()[1]["description"] == "See the support agents"
+
+
+def test_access_is_summarised_by_service(account, iam, test_client: TestClient):
+    iam.attach(account, ADMIN, "member", MEMBER, "MemberAccess")
+
+    services = {s["service"]: s for s in test_client.get(
+        f"/iam/members/{MEMBER}/access", headers=as_(TEST_USER_EMAIL, account)).json()}
+
+    assert services["agents"]["label"] == "Agents"
+    assert services["agents"]["level"] == "limited"
+    assert services["billing"]["level"] == "none"
+    create = next(a for a in services["agents"]["actions"] if a["verb"] == "Create")
+    assert create == {
+        "action": "agents:Create", "verb": "Create", "level": "all",
+        "allow": {"scope": "all", "resources": [], "policies": ["MemberAccess"]},
+        "deny": {"scope": None, "resources": [], "policies": []},
+    }
+
+
+def test_a_members_access_needs_permission_to_see_policies(account, iam, test_client: TestClient):
+    iam.attach(account, ADMIN, "member", MEMBER, "MemberAccess")
+
+    response = test_client.get(f"/iam/members/{THIRD}/access", headers=as_(TEST_USER_EMAIL_2, account))
+
+    assert response.status_code == 403

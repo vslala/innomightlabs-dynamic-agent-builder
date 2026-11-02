@@ -32,14 +32,6 @@ export class InvitationError extends HttpError {
     super(status, detail.message, detail);
   }
 }
-export function invitationErrorMessage(error: unknown): string {
-  if (error instanceof InvitationError) {
-    if (error.detail.code === "SEAT_LIMIT_UNAVAILABLE") return `${error.message} Please contact the account administrator to check billing and seat availability, then retry.`;
-    if (error.detail.code === "SEAT_LIMIT_REACHED") return `${error.message} Ask the account administrator to free a seat or upgrade the plan.`;
-  }
-  return error instanceof Error ? error.message : "Please try again.";
-}
-
 async function request<T>(path: string, method: string, body?: unknown, signal?: AbortSignal, options: Pick<RequestOptions, "skipAuth" | "redirectOnAuthError"> = {}): Promise<T> {
   try {
     return await httpClient.request<T>(path, {

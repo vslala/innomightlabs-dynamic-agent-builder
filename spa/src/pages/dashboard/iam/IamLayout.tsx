@@ -12,7 +12,7 @@ export function IamLayout(): React.JSX.Element {
           <span className={styles.headerIcon} aria-hidden="true"><ShieldCheck /></span>
           <div>
             <h1 className={styles.title}>Identity &amp; access</h1>
-            <p className={styles.description}>Who can sign in to this account, and the invitations still waiting.</p>
+            <p className={styles.description}>Who can sign in to this account, what each person can do, and the invitations still waiting.</p>
           </div>
         </header>
         <nav aria-label="Identity and access" className={styles.navigation}>

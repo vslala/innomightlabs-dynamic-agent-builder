@@ -13,8 +13,12 @@ const actions: MembersActions = { pending: false, onInvite: vi.fn(), onResend: v
 function markup(state: MembersState, overrides: Partial<MembersActions> = {}) {
   return renderToStaticMarkup(<MembersPanel state={state} onRetry={vi.fn()} actions={{ ...actions, ...overrides }} />);
 }
-function loaded(can_list_members: boolean, can_invite: boolean): MembersState {
-  return { status: "loaded", capabilities: { can_list_members, can_invite }, members: [member], invitations: [] };
+type Loaded = Extract<MembersState, { status: "loaded" }>;
+function loaded(can_list_members: boolean, can_invite: boolean, can_view_permissions = false): Loaded {
+  return {
+    status: "loaded", members: [member], invitations: [],
+    capabilities: { can_list_members, can_invite, can_view_permissions, can_manage_permissions: false },
+  };
 }
 
 function findForm(node: React.ReactNode): React.ReactElement<React.ComponentProps<"form">> | undefined {
@@ -94,8 +98,25 @@ describe("members UI", () => {
     expect(html).not.toContain("<form");
   });
 
+  it("shows each member's access, and links to their permissions only for those who may see them", () => {
+    const member2 = { ...member, user_id: "u 2", is_owner: false, name: "Priya", email: "priya@example.com", policies: [] };
+    const member3 = { ...member, user_id: "u3", is_owner: false, name: "Sam", email: "sam@example.com", policies: [
+      { policy: "MemberAccess", name: "MemberAccess" }, { policy: "custom:p1", name: "Support chat" },
+    ] };
+    const state = (view: boolean): Loaded => ({ ...loaded(true, false, view), members: [member, member2, member3] });
+    const html = renderToStaticMarkup(
+      <MemoryRouter><MembersPanel state={state(true)} onRetry={vi.fn()} actions={actions} /></MemoryRouter>,
+    );
+    expect(html).toContain("Full access");
+    expect(html).toContain("No policies");
+    expect(html).toContain("MemberAccess");
+    expect(html).toContain("Support chat");
+    expect(html).toContain('href="/dashboard/iam/members/u%202"');
+    expect(markup(state(false))).not.toContain("/dashboard/iam/members/");
+  });
+
   it("shows the empty state only when listing is allowed", () => {
-    expect(markup({ status: "loaded", capabilities: { can_list_members: true, can_invite: false }, members: [], invitations: [] })).toContain("No members found");
+    expect(markup({ status: "loaded", capabilities: { can_list_members: true, can_invite: false, can_view_permissions: false, can_manage_permissions: false }, members: [], invitations: [] })).toContain("No members found");
     expect(markup(loaded(false, true))).not.toContain("No members found");
   });
 

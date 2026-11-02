@@ -11,6 +11,9 @@ from tests.oauth_handoff import owner_headers
 
 OWNER = user_id_for(TEST_USER_EMAIL)
 MEMBER = user_id_for(TEST_USER_EMAIL_2)
+NOTHING = {"can_list_members": False, "can_invite": False, "can_view_permissions": False,
+           "can_manage_permissions": False}
+EVERYTHING = dict.fromkeys(NOTHING, True)
 
 
 @pytest.fixture
@@ -33,20 +36,22 @@ def test_owner_has_both_capabilities(test_client, account):
     response = test_client.get("/iam/capabilities", headers=headers(TEST_USER_EMAIL, account))
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"can_list_members": True, "can_invite": True}
+    assert response.json() == EVERYTHING
 
 
-def test_plain_member_can_list_but_not_invite(test_client, account):
+def test_plain_member_can_list_but_not_invite_or_see_permissions(test_client, account):
     response = test_client.get("/iam/capabilities", headers=headers(TEST_USER_EMAIL_2, account))
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"can_list_members": True, "can_invite": False}
+    assert response.json() == {**NOTHING, "can_list_members": True}
 
 
 @pytest.mark.parametrize("action, expected", [
-    (None, {"can_list_members": False, "can_invite": False}),
-    ("iam:Invite", {"can_list_members": False, "can_invite": True}),
-    ("iam:ListMembers", {"can_list_members": True, "can_invite": False}),
+    (None, NOTHING),
+    ("iam:Invite", {**NOTHING, "can_invite": True}),
+    ("iam:ListMembers", {**NOTHING, "can_list_members": True}),
+    ("iam:ListPolicies", {**NOTHING, "can_view_permissions": True}),
+    ("iam:AttachPolicies", {**NOTHING, "can_manage_permissions": True}),
 ])
 def test_capabilities_are_independently_delegated(test_client, account, action, expected):
     iam = IamService()
@@ -65,8 +70,9 @@ def test_capabilities_are_independently_delegated(test_client, account, action, 
 
 
 @pytest.mark.parametrize("action, expected", [
-    ("iam:Invite", {"can_list_members": True, "can_invite": False}),
-    ("iam:ListMembers", {"can_list_members": False, "can_invite": True}),
+    ("iam:Invite", {**EVERYTHING, "can_invite": False}),
+    ("iam:ListMembers", {**EVERYTHING, "can_list_members": False}),
+    ("iam:AttachPolicies", {**EVERYTHING, "can_manage_permissions": False}),
 ])
 def test_explicit_deny_overrides_allow_and_invalidates_cache(test_client, account, action, expected):
     iam = IamService()
@@ -74,7 +80,7 @@ def test_explicit_deny_overrides_allow_and_invalidates_cache(test_client, accoun
     member_headers = headers(TEST_USER_EMAIL_2, account)
     before = test_client.get("/iam/capabilities", headers=member_headers)
     assert before.status_code == 200, before.text
-    assert before.json() == {"can_list_members": True, "can_invite": True}
+    assert before.json() == EVERYTHING
     policy = iam.create_policy(account, OWNER, "Restriction", {
         "Version": VERSION,
         "Statement": [{"Effect": "Deny", "Action": action, "Resource": "*"}],
@@ -107,8 +113,8 @@ def test_delegated_permissions_do_not_leak_across_accounts(test_client, account)
     shared = test_client.get("/iam/capabilities", headers=headers(TEST_USER_EMAIL_2, account))
 
     assert personal.status_code == shared.status_code == 200
-    assert personal.json() == {"can_list_members": True, "can_invite": True}
-    assert shared.json() == {"can_list_members": True, "can_invite": False}
+    assert personal.json() == EVERYTHING
+    assert shared.json() == {**NOTHING, "can_list_members": True}
 
 
 def test_suspended_member_is_rejected_even_with_cached_permissions(test_client, account, dynamodb_table):

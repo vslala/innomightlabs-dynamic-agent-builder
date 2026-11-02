@@ -10,7 +10,7 @@ attachments. All of it lives in the account's partition. See docs/LLD-shared-acc
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
@@ -168,7 +168,7 @@ class AccountIam:
     def resolve(self, policy: str) -> Optional[NamedPolicy]:
         if policy.startswith(CUSTOM_PREFIX):
             custom = self.policies.get(policy[len(CUSTOM_PREFIX):])
-            return NamedPolicy(custom.ref, custom.document) if custom else None
+            return NamedPolicy(custom.ref, custom.document, custom.name, custom.description) if custom else None
         return BUILTINS.get(policy)
 
     def effective_policies(self, user_id: str) -> list[EffectivePolicy]:
@@ -206,4 +206,4 @@ def _allows_only(policy: NamedPolicy) -> Optional[NamedPolicy]:
     allows = [statement for statement in policy.document.statements if statement.effect == "Allow"]
     if not allows:
         return None
-    return NamedPolicy(policy.name, PolicyDocument.model_validate({"Version": policy.document.version, "Statement": allows}))
+    return replace(policy, document=PolicyDocument.model_validate({"Version": policy.document.version, "Statement": allows}))

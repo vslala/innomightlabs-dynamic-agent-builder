@@ -358,6 +358,171 @@
   color: var(--danger);
 }
 
+.revoke svg,
+.back svg,
+.attachRow button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.memberLink {
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.memberLink:hover {
+  color: var(--link-color);
+  text-decoration: underline;
+}
+
+.memberLink:focus-visible {
+  outline: 2px solid var(--gradient-start);
+  outline-offset: 2px;
+}
+
+/* A member's permissions */
+
+.back {
+  justify-self: start;
+}
+
+.avatarLarge {
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 0.9375rem;
+}
+
+.policyList,
+.effectiveList,
+.accessLines {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Each ListRow is its own bordered card, so the list only spaces them */
+.policyList {
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.memberHeader .email {
+  font-size: 0.875rem;
+}
+
+.attachForm {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.attachRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.effectiveList {
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+}
+
+.effective {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+
+.effective + .effective {
+  border-top: 1px solid var(--border-default);
+}
+
+.effectiveHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+}
+
+.effectiveHeader .name {
+  font-weight: 600;
+}
+
+.inlineIcon {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  color: var(--link-color);
+}
+
+/* Access by service: one line per reach (allowed, named resources, their own, denied) */
+
+.accessLines {
+  gap: var(--space-2);
+}
+
+.accessLines > li {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.accessLabel {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.deniedLine .accessLabel {
+  color: var(--danger);
+}
+
+.policyJson summary {
+  width: fit-content;
+  border-radius: var(--radius-sm);
+  color: var(--link-color);
+  cursor: pointer;
+  font-size: 0.8125rem;
+}
+
+.policyJson summary:focus-visible {
+  outline: 2px solid var(--gradient-start);
+  outline-offset: 2px;
+}
+
+.policyJson[open] summary {
+  margin-bottom: var(--space-2);
+}
+
+.actionChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.actionChip {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .navigationLink,
   .table tbody tr {
@@ -370,9 +535,46 @@
     padding: var(--space-4);
   }
 
-  .inviteForm {
+  .inviteForm,
+  .attachRow {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .effective {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* A phone reads each service as a card: name, then its access, then its actions */
+  .accessTable {
+    min-width: 0;
+  }
+
+  .accessTable thead {
+    display: none;
+  }
+
+  .accessTable tbody tr {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .accessTable tbody th,
+  .accessTable tbody td {
+    padding: 0;
+  }
+
+  .accessTable tbody tr + tr {
+    border-top: 1px solid var(--border-default);
+  }
+
+  .accessTable tbody tr + tr > * {
+    border-top: 0;
+  }
+
+  .accessTable tbody td {
+    justify-self: start;
   }
 
   .field {

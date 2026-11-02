@@ -1,5 +1,6 @@
 import { iamService, type IamCapabilities, type IamMember } from "../../../services/iam";
-import { invitationService, invitationErrorMessage, type Invitation } from "../../../services/iam/invitations";
+import { iamErrorMessage } from "../../../services/iam/errors";
+import { invitationService, type Invitation } from "../../../services/iam/invitations";
 
 export interface MembersData {
   capabilities: IamCapabilities;
@@ -16,7 +17,7 @@ export async function loadMembers(signal: AbortSignal): Promise<MembersData> {
     iamService.listMembers(signal), invitationService.list(signal),
   ]);
   signal.throwIfAborted();
-  const errors = [members, invitations].flatMap((result) => result.status === "rejected" ? [invitationErrorMessage(result.reason)] : []);
+  const errors = [members, invitations].flatMap((result) => result.status === "rejected" ? [iamErrorMessage(result.reason)] : []);
   return {
     capabilities,
     members: members.status === "fulfilled" ? members.value : [],

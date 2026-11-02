@@ -45,8 +45,17 @@ class ActionResponse(BaseModel):
 
 
 class CapabilitiesResponse(BaseModel):
+    """What the caller may do here, for which controls the portal shows. Never an authorization."""
+
     can_list_members: bool
     can_invite: bool
+    can_view_permissions: bool  # iam:ListPolicies: a member's policies and effective permissions
+    can_manage_permissions: bool  # iam:AttachPolicies: attach and detach them
+
+
+class PolicyRef(BaseModel):
+    policy: str  # what attachments name: a built-in name or custom:{policy_id}
+    name: str  # what people read
 
 
 class MemberResponse(BaseModel):
@@ -57,7 +66,7 @@ class MemberResponse(BaseModel):
     joined_at: str
     is_owner: bool
     group_ids: list[str]
-    policies: list[str]
+    policies: list[PolicyRef]  # attached directly
 
 
 class GroupResponse(BaseModel):
@@ -91,8 +100,32 @@ class PolicyResponse(PolicySummary):
 
 class EffectivePolicyResponse(BaseModel):
     policy: str
-    source: str  # "implicit", "direct" or "group:{group_id}"
+    name: str
+    description: str
+    source: str  # "implicit", "account owner", "direct" or "group:{group_id}"
     document: dict[str, Any]
+
+
+class ReachResponse(BaseModel):
+    scope: Optional[Literal["all", "some", "own"]]
+    resources: list[str]
+    policies: list[str]
+
+
+class ActionAccessResponse(BaseModel):
+    action: str
+    verb: str
+    level: Literal["all", "some", "own", "denied", "none"]
+    allow: ReachResponse
+    deny: ReachResponse
+
+
+class ServiceAccessResponse(BaseModel):
+    service: str
+    label: str
+    summary: str
+    level: Literal["full", "limited", "none"]
+    actions: list[ActionAccessResponse]
 
 
 class ValidateResponse(BaseModel):

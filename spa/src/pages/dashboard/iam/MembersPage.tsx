@@ -1,13 +1,14 @@
 import * as React from "react";
-import { invitationService, invitationErrorMessage } from "../../../services/iam/invitations";
+import { iamErrorMessage } from "../../../services/iam/errors";
+import { invitationService } from "../../../services/iam/invitations";
 import { MembersPanel, type MembersState } from "./MembersPanel";
 import { loadMembers } from "./loadMembers";
-import { mutateInvitation, type InvitationMutationState } from "./mutateInvitation";
+import { runMutation, type MutationState } from "./runMutation";
 
 export function MembersPage() {
   const [state, setState] = React.useState<MembersState>({ status: "loading" });
   const [attempt, setAttempt] = React.useState(0);
-  const [mutation, setMutation] = React.useState<InvitationMutationState>({ pending: false });
+  const [mutation, setMutation] = React.useState<MutationState>({ pending: false });
   const inFlight = React.useRef(false);
   const mounted = React.useRef(false);
 
@@ -23,7 +24,7 @@ export function MembersPage() {
         if (!controller.signal.aborted) setState({ status: "loaded", ...data });
       },
       (error: unknown) => {
-        if (!controller.signal.aborted) setState({ status: "error", message: invitationErrorMessage(error) });
+        if (!controller.signal.aborted) setState({ status: "error", message: iamErrorMessage(error) });
       },
     );
     return () => controller.abort();
@@ -31,7 +32,7 @@ export function MembersPage() {
 
   async function mutate(operation: () => Promise<unknown>, message: string) {
     if (state.status !== "loaded" || !state.capabilities.can_invite) return;
-    await mutateInvitation(inFlight, operation, message,
+    await runMutation(inFlight, operation, message,
       (result) => { if (mounted.current) setMutation(result); },
       () => { if (mounted.current) setAttempt((value) => value + 1); },
     );

@@ -77,6 +77,7 @@ const AutomationMarketplaceDetail = lazyRoute(() => import('./pages/dashboard/au
 const WhatsNewPage = lazyRoute(() => import('./pages/dashboard/WhatsNewPage'), 'WhatsNewPage');
 const IamLayout = lazyRoute(() => import('./pages/dashboard/iam/IamLayout'), 'IamLayout');
 const MembersPage = lazyRoute(() => import('./pages/dashboard/iam/MembersPage'), 'MembersPage');
+const MemberPermissionsPage = lazyRoute(() => import('./pages/dashboard/iam/MemberPermissionsPage'), 'MemberPermissionsPage');
 
 function lazyRoute<T extends Record<string, ComponentType>>(
   loader: () => Promise<T>,
@@ -220,6 +221,7 @@ function App() {
           <Route path="iam" element={<IamLayout />}>
             <Route index element={<Navigate to="members" replace />} />
             <Route path="members" element={<MembersPage />} />
+            <Route path="members/:userId" element={<MemberPermissionsPage />} />
           </Route>
           <Route path="whats-new" element={<WhatsNewPage />} />
           <Route path="settings" element={<Settings />} />

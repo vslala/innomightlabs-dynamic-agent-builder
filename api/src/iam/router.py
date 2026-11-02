@@ -8,13 +8,16 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Response, status
 
+from ..accounts.models import Member
 from ..accounts.repository import AccountRepository
+from .access_summary import Reach, summarize
 from .actions import CATALOG
 from .builtins import BUILTINS
 from .dependencies import get_principal
 from .models import AccountIam, CustomPolicy, Group
 from .principal import Principal
 from .schemas import (
+    ActionAccessResponse,
     ActionResponse,
     CapabilitiesResponse,
     DefaultVersionRequest,
@@ -23,17 +26,21 @@ from .schemas import (
     GroupResponse,
     GroupUpdate,
     MemberResponse,
+    PolicyRef,
     PolicyRequest,
     PolicyResponse,
     PolicySummary,
     PolicyVersionRequest,
     PolicyVersionResponse,
+    ReachResponse,
+    ServiceAccessResponse,
     ValidateRequest,
     ValidateResponse,
 )
-from .service import IamService, find_group, find_member, find_policy, policy_problems
+from .service import IamError, IamService, find_group, find_member, find_policy, policy_problems
 
 router = APIRouter(prefix="/iam", tags=["iam"])
+
 
 def _state(principal: Principal, action: str) -> AccountIam:
     principal.require(action)
@@ -46,6 +53,21 @@ def _group_response(state: AccountIam, group: Group) -> GroupResponse:
         member_ids=state.members_of(group.group_id),
         policies=sorted(a.policy for a in state.attachments_of("group", group.group_id)),
     )
+
+
+def _member_response(state: AccountIam, member: Member) -> MemberResponse:
+    attached = (state.resolve(a.policy) for a in state.attachments_of("member", member.user_id))
+    return MemberResponse(
+        user_id=member.user_id, email=member.email, name=member.name, status=member.status,
+        joined_at=member.joined_at, is_owner=member.user_id == state.owner_id,
+        group_ids=sorted(state.group_ids_of(member.user_id)),
+        policies=sorted((PolicyRef(policy=p.name, name=p.display_name) for p in attached if p),
+                        key=lambda ref: ref.name.casefold()),
+    )
+
+
+def _reach(reach: Reach) -> ReachResponse:
+    return ReachResponse(scope=reach.scope, resources=list(reach.resources), policies=list(reach.policies))
 
 
 def _attachment_count(state: AccountIam, policy: str) -> int:
@@ -61,7 +83,7 @@ def _policy_response(state: AccountIam, policy: str) -> PolicyResponse:
     builtin = BUILTINS.get(policy)
     if builtin:
         return PolicyResponse(
-            policy=builtin.name, name=builtin.name, description="", builtin=True,
+            policy=builtin.name, name=builtin.name, description=builtin.description, builtin=True,
             attachment_count=_attachment_count(state, builtin.name),
             versions=[PolicyVersionResponse(version=1, document=builtin.document.to_json(), is_default=True)],
         )
@@ -91,21 +113,24 @@ async def get_capabilities(principal: Principal = Depends(get_principal)) -> Cap
     return CapabilitiesResponse(
         can_list_members=principal.can("iam:ListMembers").allowed,
         can_invite=principal.can("iam:Invite").allowed,
+        can_view_permissions=principal.can("iam:ListPolicies").allowed,
+        can_manage_permissions=principal.can("iam:AttachPolicies").allowed,
     )
 
 
 @router.get("/members", response_model=list[MemberResponse])
 async def list_members(principal: Principal = Depends(get_principal)) -> list[MemberResponse]:
     state = _state(principal, "iam:ListMembers")
-    return [
-        MemberResponse(
-            user_id=member.user_id, email=member.email, name=member.name, status=member.status,
-            joined_at=member.joined_at, is_owner=member.user_id == state.owner_id,
-            group_ids=sorted(state.group_ids_of(member.user_id)),
-            policies=sorted(a.policy for a in state.attachments_of("member", member.user_id)),
-        )
-        for member in AccountRepository().members(principal.account_id)
-    ]
+    return [_member_response(state, member) for member in AccountRepository().members(principal.account_id)]
+
+
+@router.get("/members/{user_id}", response_model=MemberResponse)
+async def get_member(user_id: str, principal: Principal = Depends(get_principal)) -> MemberResponse:
+    state = _state(principal, "iam:ListMembers")
+    member = AccountRepository().get_member(principal.account_id, user_id)
+    if member is None:
+        raise IamError(404, "NOT_FOUND", "There is no such member")
+    return _member_response(state, member)
 
 
 @router.get("/members/{user_id}/effective-policies", response_model=list[EffectivePolicyResponse])
@@ -113,8 +138,26 @@ async def effective_policies(user_id: str, principal: Principal = Depends(get_pr
     """Every policy that applies to the member, and where it comes from."""
     state = _state(principal, "iam:ListPolicies")
     find_member(state, user_id)
-    return [EffectivePolicyResponse(policy=e.policy.name, source=e.source, document=e.policy.document.to_json())
+    return [EffectivePolicyResponse(policy=e.policy.name, name=e.policy.display_name,
+                                    description=e.policy.description, source=e.source,
+                                    document=e.policy.document.to_json())
             for e in state.effective_policies(user_id)]
+
+
+@router.get("/members/{user_id}/access", response_model=list[ServiceAccessResponse])
+async def member_access(user_id: str, principal: Principal = Depends(get_principal)) -> list[ServiceAccessResponse]:
+    """What the member may do, service by service (their policies; shares aren't included)."""
+    state = _state(principal, "iam:ListPolicies")
+    find_member(state, user_id)
+    return [
+        ServiceAccessResponse(
+            service=service.service.name, label=service.service.label, summary=service.service.summary,
+            level=service.level,
+            actions=[ActionAccessResponse(action=a.action.name, verb=a.action.verb, level=a.level,
+                                          allow=_reach(a.allow), deny=_reach(a.deny)) for a in service.actions],
+        )
+        for service in summarize(state.policies_for(user_id))
+    ]
 
 
 # Attachments
@@ -200,8 +243,8 @@ async def validate_policy(body: ValidateRequest, principal: Principal = Depends(
 async def list_policies(principal: Principal = Depends(get_principal)) -> list[PolicySummary]:
     """The built-ins, then the account's own."""
     state = _state(principal, "iam:ListPolicies")
-    builtins = [PolicySummary(policy=name, name=name, description="", builtin=True,
-                              attachment_count=_attachment_count(state, name)) for name in BUILTINS]
+    builtins = [PolicySummary(policy=name, name=name, description=policy.description, builtin=True,
+                              attachment_count=_attachment_count(state, name)) for name, policy in BUILTINS.items()]
     custom = sorted(state.policies.values(), key=lambda p: p.name.casefold())
     return builtins + [_custom_summary(state, policy) for policy in custom]
 

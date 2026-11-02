@@ -14,8 +14,14 @@ from .policy import PolicyDocument
 
 @dataclass(frozen=True)
 class NamedPolicy:
-    name: str  # a built-in name ("AdministratorAccess") or "custom:{policy_id}"
+    name: str  # what attachments refer to: a built-in name ("AdministratorAccess") or "custom:{policy_id}"
     document: PolicyDocument
+    title: str = ""  # what people read; a custom policy's own name, empty for a built-in (its name is its title)
+    description: str = ""
+
+    @property
+    def display_name(self) -> str:
+        return self.title or self.name
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Link } from "react-router-dom";
 import { CheckCircle2, Info, Mail, RotateCw, Send, UserPlus, Users, XCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
@@ -11,6 +12,7 @@ import { StatusBadge } from "../../../components/ui/status-badge";
 import type { Invitation } from "../../../services/iam/invitations";
 import { formatRelativeTime } from "../../../utils/time";
 import type { MembersData } from "./loadMembers";
+import { initials } from "./people";
 import styles from "./Iam.module.css";
 
 export type MembersState =
@@ -121,7 +123,7 @@ export function MembersPanel({ state, onRetry, actions }: { state: MembersState;
                 <div className={styles.tableContainer}>
                   <table className={styles.table}>
                     <caption className="sr-only">Current account members</caption>
-                    <thead><tr><th scope="col">Member</th><th scope="col">Status</th><th scope="col">Joined</th></tr></thead>
+                    <thead><tr><th scope="col">Member</th><th scope="col">Access</th><th scope="col">Status</th><th scope="col">Joined</th></tr></thead>
                     <tbody>
                       {state.members.map((member) => (
                         <tr key={member.user_id}>
@@ -130,13 +132,16 @@ export function MembersPanel({ state, onRetry, actions }: { state: MembersState;
                               <span className={styles.avatar} aria-hidden="true">{initials(member.name || member.email)}</span>
                               <span className={styles.personText}>
                                 <span className={styles.name}>
-                                  {member.name || member.email}
+                                  {state.capabilities.can_view_permissions
+                                    ? <Link className={styles.memberLink} to={`/dashboard/iam/members/${encodeURIComponent(member.user_id)}`}>{member.name || member.email}</Link>
+                                    : member.name || member.email}
                                   {member.is_owner && <Pill size="sm" variant="primary">Owner</Pill>}
                                 </span>
                                 {member.name && <span className={styles.email}>{member.email}</span>}
                               </span>
                             </span>
                           </th>
+                          <td><MemberAccess member={member} /></td>
                           <td><MemberStatus status={member.status} /></td>
                           <td className={styles.muted}>
                             {member.joined_at ? <time dateTime={member.joined_at}>{formatDate(member.joined_at)}</time> : "Not available"}
@@ -205,6 +210,17 @@ function Notice({ children }: { children: React.ReactNode }) {
   return <p className={styles.notice}><Info aria-hidden="true" />{children}</p>;
 }
 
+/** The policies attached to a member, so an admin sees at a glance who has none. */
+function MemberAccess({ member }: { member: MembersData["members"][number] }) {
+  if (member.is_owner) return <span className={styles.muted}>Full access</span>;
+  if (member.policies.length === 0) return <span className={styles.muted}>No policies</span>;
+  return (
+    <span className={styles.statusStack}>
+      {member.policies.map((ref) => <Pill key={ref.policy} size="sm" variant="secondary">{ref.name}</Pill>)}
+    </span>
+  );
+}
+
 function MemberStatus({ status }: { status?: string }) {
   if (status === "active") return <StatusBadge status="active" size="sm" />;
   return <StatusBadge status="no_status" size="sm" label={status ? capitalise(status) : "Unknown"} />;
@@ -222,11 +238,6 @@ function InvitationStatus({ invite }: { invite: Invitation }) {
       {invite.delivery_status === "sent" && <span className={styles.muted}>Email sent</span>}
     </span>
   );
-}
-
-function initials(name: string): string {
-  const words = name.split(/[\s@._-]+/).filter(Boolean);
-  return words.slice(0, 2).map((word) => word[0].toUpperCase()).join("") || "?";
 }
 
 function capitalise(value: string): string {

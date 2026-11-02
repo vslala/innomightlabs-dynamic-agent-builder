@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InvitationError, invitationErrorMessage, invitationService } from "./invitations";
+import { iamErrorMessage } from "./errors";
+import { InvitationError, invitationService } from "./invitations";
 import { HttpError } from "../http/client";
 
 beforeEach(() => {
@@ -78,8 +79,8 @@ describe("invitation HTTP boundary", () => {
     try { await invitationService.create("a@example.com"); throw new Error("unexpected success"); }
     catch (error) {
       expect(error).toBeInstanceOf(InvitationError);
-      expect(invitationErrorMessage(error)).toContain("administrator");
-      expect(invitationErrorMessage(error)).toContain("Seats blocked.");
+      expect(iamErrorMessage(error)).toContain("administrator");
+      expect(iamErrorMessage(error)).toContain("Seats blocked.");
     }
   });
 

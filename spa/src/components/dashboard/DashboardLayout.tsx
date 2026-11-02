@@ -112,6 +112,9 @@ export function DashboardLayout() {
     if (pageTitles[location.pathname]) {
       return pageTitles[location.pathname];
     }
+    if (location.pathname.startsWith("/dashboard/iam/members/")) {
+      return "IAM — Member permissions";
+    }
     // Check for agent detail page
     if (location.pathname.startsWith("/dashboard/agents/")) {
       if (location.pathname.endsWith("/memory")) {

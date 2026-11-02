@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | 📝 Proposed |
 | Owner | InnomightLabs API / SPA |
-| Last reviewed | 2026-10-10 |
+| Last reviewed | 2026-11-02 |
 | Scope | `api/src/auth/`, `api/src/users/`, new `api/src/identity/`, `api/src/accounts/`, `api/src/iam/`; every owner-scoped repository and router; `api/src/payments/`, `api/src/rate_limits/`, `api/src/public_api/`, `api/src/apikeys/`, `api/src/widget/`, `api/src/a2a/`; `spa/src/services/`, `spa/src/pages/dashboard/`; `api/scripts/` |
 | Tracker | [KAN-72](https://vslala007.atlassian.net/browse/KAN-72) (epic), this design is [KAN-73](https://vslala007.atlassian.net/browse/KAN-73) |
 | Depends on | [Security hardening](LLD-security-hardening-and-conversation-context.md), [Public API and Embeddable Widget](LLD-public-api-and-embeddable-widget.md), [MCP Sharing for Widget, A2A, and API Callers](LLD-mcp-sharing-for-widget-a2a-api.md), [User-Scoped Memory Blocks](../api/docs/LLD-memory-block-user-scoping.md) |
@@ -657,6 +657,23 @@ through the principal, and leaves the suite green.
   - a shared agent's file going to whoever is chatting, and a key's to the agent's owner;
   - a job being found only for the owner it ran as;
   - publishing needing `agents:Share`, and archiving the publisher.
+
+### KAN-84: IAM portal (member permissions done)
+
+- **Accepting an invite attaches nothing (a design change, decided 2026-11-02).** This replaces "by default
+  `MemberAccess`" in [Invitations](#invitations) and [Built-in policies](#built-in-policies). Invitations stay
+  email-only; a new member holds only `OwnerAccess`, so they can't create anything until an admin grants it.
+- **The member's page** (`/dashboard/iam/members/{user_id}`) attaches and detaches built-in and custom policies on
+  the member, shows their access service by service, and lists the policies that apply with where each comes from.
+  - Attaching uses the KAN-77 routes as they are.
+  - New: `GET /iam/members/{uid}`, and `GET /iam/members/{uid}/access`, computed by the pure
+    `access_summary.summarize` over the catalog's `SERVICES` (each with a label and summary).
+  - `NamedPolicy` carries a `title` and `description`, so built-ins describe themselves and custom policies show
+    their names wherever they're attached.
+  - `GET /iam/capabilities` adds `can_view_permissions` (`iam:ListPolicies`) and `can_manage_permissions`
+    (`iam:AttachPolicies`).
+  - Details in [Account Invitations, Phase 3](LLD-account-invitations.md#phase-3-member-permissions).
+- **Not yet:** the Groups and Policies pages (custom-policy editor, visual builder), Invitations and Audit pages.
 
 ## Context and problem
 

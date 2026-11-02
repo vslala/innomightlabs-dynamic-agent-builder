@@ -5,7 +5,7 @@ import { iamService } from ".";
 const capabilities = { can_list_members: true, can_invite: false };
 const member = {
   user_id: "member-1", email: "member@example.com", name: "Member", status: "active",
-  joined_at: "2026-10-01", is_owner: false, group_ids: ["group-1"], policies: ["Viewer"],
+  joined_at: "2026-10-01", is_owner: false, group_ids: ["group-1"], policies: [{ policy: "ViewOnlyAccess", name: "ViewOnlyAccess" }],
 };
 
 beforeEach(() => {
@@ -35,7 +35,7 @@ describe("IAM shared HTTP boundary", () => {
     });
   });
 
-  it("returns the member array including string group IDs and policies", async () => {
+  it("returns the member array including group IDs and named policies", async () => {
     const fetcher = respond([member]);
     const signal = new AbortController().signal;
     expect(await iamService.listMembers(signal)).toEqual([member]);
@@ -43,6 +43,39 @@ describe("IAM shared HTTP boundary", () => {
       method: "GET", signal,
       headers: expect.objectContaining({ Authorization: "Bearer test-token", "X-Account-Id": "account-1" }),
     }));
+  });
+
+  it("attaches and detaches a member's policy at an encoded path", async () => {
+    const fetcher = vi.fn().mockImplementation(() => Promise.resolve(new Response(null, { status: 204 })));
+    vi.stubGlobal("fetch", fetcher);
+    await iamService.attachPolicy("member 1", "custom:p1");
+    await iamService.detachPolicy("member-1", "MemberAccess");
+    expect(fetcher.mock.calls[0][0]).toMatch(/\/iam\/members\/member%201\/policies\/custom%3Ap1$/);
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: "PUT" });
+    expect(fetcher.mock.calls[1][0]).toMatch(/\/iam\/members\/member-1\/policies\/MemberAccess$/);
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "DELETE" });
+  });
+
+  it("surfaces a refused grant with the API's message", async () => {
+    respond({ detail: { code: "ESCALATION", message: "You can only grant permissions you hold yourself" } }, 403);
+    await expect(iamService.attachPolicy("member-1", "AdministratorAccess")).rejects.toMatchObject({
+      status: 403, message: "You can only grant permissions you hold yourself",
+    });
+  });
+
+  it("reads one member and their access by service", async () => {
+    const fetcher = respond(member);
+    expect(await iamService.getMember("member 1")).toEqual(member);
+    expect(fetcher.mock.calls[0][0]).toMatch(/\/iam\/members\/member%201$/);
+    const access = respond([]);
+    await iamService.memberAccess("member-1");
+    expect(access.mock.calls[0][0]).toMatch(/\/iam\/members\/member-1\/access$/);
+  });
+
+  it("reads a member's effective policies", async () => {
+    const fetcher = respond([{ policy: "OwnerAccess", name: "OwnerAccess", description: "", source: "implicit", document: {} }]);
+    expect(await iamService.effectivePolicies("member-1")).toHaveLength(1);
+    expect(fetcher.mock.calls[0][0]).toMatch(/\/iam\/members\/member-1\/effective-policies$/);
   });
 
   it("propagates forbidden responses rather than returning an empty list", async () => {
