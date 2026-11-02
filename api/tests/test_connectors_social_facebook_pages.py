@@ -170,16 +170,47 @@ def test_a_person_who_cannot_post_as_any_page_is_told_so(test_client, graph):
     assert accounts(test_client) == []
 
 
-def test_the_log_says_what_a_sign_in_with_nothing_to_post_as_did_grant(test_client, graph, caplog):
-    graph.pages = [graph.pages[2]]
-    graph.permissions = [("public_profile", "granted"), ("pages_show_list", "granted"), ("pages_manage_posts", "declined")]
+def outcome_of_a_sign_in_with(test_client, graph, pages: list[dict], permissions: list[tuple[str, str]]) -> dict:
+    graph.pages = pages
+    graph.permissions = permissions
+    result = connect_pages(test_client)
+    assert result["social_oauth"] == ["error"] and result["reason"] == ["no_accounts"]
+    assert accounts(test_client) == []
+    return result
 
+
+ALL_PERMISSIONS = [("public_profile", "granted"), ("pages_show_list", "granted"), ("pages_manage_posts", "granted")]
+
+
+def test_a_permission_switched_off_is_named_in_the_persons_terms(test_client, graph, caplog):
     with caplog.at_level("INFO"):
-        connect_pages(test_client)
+        result = outcome_of_a_sign_in_with(test_client, graph, [], [("pages_show_list", "granted"), ("pages_manage_posts", "declined")])
 
-    assert ("Pages returned: 1, their tasks: ANALYZE; permissions granted: pages_show_list, public_profile"
-            in caplog.text)
+    assert result["detail"] == ["Facebook didn't give permission to post to your Pages. Connect again and leave every "
+                                "permission Facebook asks for switched on."]
+    assert "permissions granted: pages_show_list" in caplog.text, "the log keeps the permission names"
     assert "user-token" not in caplog.text and "page-token" not in caplog.text
+
+
+def test_a_permission_the_app_never_asked_for_is_reported_as_our_setup(test_client, graph, caplog):
+    granted = [("public_profile", "granted"), ("instagram_basic", "granted"), ("ads_read", "granted")]
+    with caplog.at_level("INFO"):
+        result = outcome_of_a_sign_in_with(test_client, graph, [], granted)
+
+    assert result["detail"] == ["InnoMight Labs' Facebook connection isn't set up to ask to see your Pages and post to "
+                                "your Pages yet, so no Page could be connected. This is on our side: contact "
+                                "hello@innomightlabs.com."]
+    assert "The Facebook Login configuration doesn't ask for pages_show_list, pages_manage_posts" in caplog.text
+
+
+def test_no_page_chosen_says_how_to_choose_one(test_client, graph):
+    result = outcome_of_a_sign_in_with(test_client, graph, [], ALL_PERMISSIONS)
+    assert result["detail"][0].startswith("No Page was shared with InnoMight Labs. Connect again")
+
+
+def test_pages_without_a_posting_role_are_named(test_client, graph):
+    result = outcome_of_a_sign_in_with(test_client, graph, [graph.pages[2]], ALL_PERMISSIONS)
+    assert result["detail"][0].startswith("Your role on Watched doesn't allow posting.")
 
 
 def test_a_page_listed_without_tasks_is_connected_with_its_page_token(test_client, graph):

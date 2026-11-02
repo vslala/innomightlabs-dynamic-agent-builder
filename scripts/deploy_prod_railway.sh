@@ -340,7 +340,6 @@ set_railway_var "AUTH_APP_SECRETS" "$(get_var 'AUTH_APP_SECRETS')"
 set_railway_var "NATIVE_APP_SCHEME" "$(get_var_default 'NATIVE_APP_SCHEME' 'com.innomightlabs.app')"
 set_railway_var "NATIVE_ACCESS_TOKEN_MINUTES" "$(get_var_default 'NATIVE_ACCESS_TOKEN_MINUTES' '60')"
 set_railway_var "API_BASE_URL" "$api_base_url"
-set_railway_var "REST_TEMPLATE_BLOCKED_IP_RANGES" "$(get_var_default 'REST_TEMPLATE_BLOCKED_IP_RANGES' '')"
 set_railway_var "JWT_SECRET" "$(get_var 'JWT_SECRET')"
 set_railway_var "LOG_LEVEL" "$(get_var_default 'LOG_LEVEL' 'INFO')"
 
@@ -363,6 +362,8 @@ while IFS= read -r social_app; do
   set_railway_var "${social_app}_CLIENT_ID" "$(get_var "${social_app}_CLIENT_ID")"
   set_railway_var "${social_app}_CLIENT_SECRET" "$(get_var "${social_app}_CLIENT_SECRET")"
 done < <(compgen -A variable | sed -nE 's/^(PROD_)?(SOCIAL_[A-Z0-9_]+)_CLIENT_ID$/\2/p' | sort -u)
+set_railway_var "SOCIAL_FACEBOOK_LOGIN_CONFIG_ID" "$(get_var_default 'SOCIAL_FACEBOOK_LOGIN_CONFIG_ID' '')"
+set_railway_var "SOCIAL_META_GRAPH_VERSION" "$(get_var_default 'SOCIAL_META_GRAPH_VERSION' 'v26.0')"
 
 set_railway_var "OPENAI_OAUTH_CLIENT_ID" "$(get_var 'OPENAI_OAUTH_CLIENT_ID')"
 set_railway_var "OPENAI_OAUTH_SCOPES" "$(get_var 'OPENAI_OAUTH_SCOPES')"

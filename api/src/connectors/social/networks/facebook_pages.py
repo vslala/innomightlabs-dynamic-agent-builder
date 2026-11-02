@@ -35,6 +35,8 @@ TIMEOUT_SECONDS = 30
 #: The Page tasks that let a person publish as the Page; an Analyst can't
 POSTING_TASKS = {"CREATE_CONTENT", "MANAGE"}
 POST_URL = "https://www.facebook.com/"
+#: The permissions connecting needs, as the person would describe what each allows
+NEEDED_PERMISSIONS = {"pages_show_list": "see your Pages", "pages_manage_posts": "post to your Pages"}
 #: A Page's attachment `media_type`, as the media kinds `recent_posts` reports
 MEDIA_KINDS = {"photo": "image", "album": "carousel", "video": "video"}
 
@@ -46,7 +48,7 @@ def graph_url(path: str) -> str:
 class FacebookPagesNetwork:
     key = "facebook_page"
     display_name = "Facebook Pages"
-    description = "Post as the Facebook Pages you manage. Connecting adds each Page you choose on Facebook."
+    description = "Post as the Facebook Pages you manage. On Facebook's screen, tick each Page to connect; you need a Page role that can create content."
     icon = "facebook"
     shares_grant = True
     app = "facebook_pages"
@@ -89,7 +91,7 @@ class FacebookPagesNetwork:
                                      fields="id,name,access_token,tasks,picture{url}", limit="100")
             postable = [page for page in pages.get("data", []) if _can_post(page)]
             if not postable:
-                raise NothingToPostAs(await self._why_nothing(client, user_token, pages.get("data", [])))
+                raise await self._nothing_to_post_as(client, user_token, pages.get("data", []))
         return [ConnectedProfile(
             external_id=str(page["id"]),
             handle=str(page.get("name") or f"Facebook Page {page['id']}"),
@@ -146,15 +148,36 @@ class FacebookPagesNetwork:
             media=_media(item),
         ) for item in body.get("data", [])]
 
-    async def _why_nothing(self, client: httpx.AsyncClient, token: str, pages: list[dict[str, Any]]) -> str:
-        """What the sign-in did grant, to tell "no Page chosen" from "the Login configuration lacks a permission".
-        Permission names, Page counts and tasks only: never a token."""
+    async def _nothing_to_post_as(self, client: httpx.AsyncClient, token: str,
+                                  pages: list[dict[str, Any]]) -> NothingToPostAs:
+        """Why the sign-in gave no Page to post as, told to the person in Facebook's terms: a permission switched off,
+        no Page chosen, or no role that can post on the Pages chosen."""
         response = await client.get(graph_url("/me/permissions"), headers=_bearer(token))
-        granted = sorted(str(item.get("permission")) for item in graph_json(response).get("data", [])
-                         if item.get("status") == "granted")
+        listed = graph_json(response).get("data") if response.status_code == 200 else None
+        status = {str(item.get("permission")): str(item.get("status")) for item in listed or []}
         tasks = sorted({task for page in pages for task in page.get("tasks") or []})
-        return (f"That Facebook sign-in granted no Page it can post as (Pages returned: {len(pages)}, their tasks: "
-                f"{', '.join(tasks) or 'none'}; permissions granted: {', '.join(granted) or 'unknown'})")
+        granted = sorted(permission for permission, state in status.items() if state == "granted")
+        diagnostic = (f"(Pages returned: {len(pages)}, their tasks: {', '.join(tasks) or 'none'}; permissions "
+                      f"granted: {', '.join(granted) or 'unknown'})")
+        # A permission Facebook never asked for is our app's setup (the Login configuration), not the person's choice
+        not_asked = [need for permission, need in NEEDED_PERMISSIONS.items() if listed is not None and permission not in status]
+        declined = [need for permission, need in NEEDED_PERMISSIONS.items() if status.get(permission) == "declined"]
+        if not_asked:
+            log.error("The Facebook Login configuration doesn't ask for %s", ", ".join(
+                permission for permission in NEEDED_PERMISSIONS if permission not in status))
+            message = (f"InnoMight Labs' Facebook connection isn't set up to ask to {' and '.join(not_asked)} yet, "
+                       "so no Page could be connected. This is on our side: contact hello@innomightlabs.com.")
+        elif declined:
+            message = (f"Facebook didn't give permission to {' and '.join(declined)}. Connect again and leave every "
+                       "permission Facebook asks for switched on.")
+        elif not pages:
+            message = ("No Page was shared with InnoMight Labs. Connect again, choose \"Edit previous settings\" on "
+                       "Facebook if it offers it, and tick the Pages you want to post to.")
+        else:
+            names = ", ".join(str(page.get("name") or page.get("id")) for page in pages)
+            message = (f"Your role on {names} doesn't allow posting. Ask a Page admin for Facebook access that "
+                       "includes creating content, then connect again.")
+        return NothingToPostAs(message, diagnostic)
 
     async def _token(self, client: httpx.AsyncClient, what: str, **params: str) -> str:
         response = await client.get(graph_url("/oauth/access_token"), params=params)

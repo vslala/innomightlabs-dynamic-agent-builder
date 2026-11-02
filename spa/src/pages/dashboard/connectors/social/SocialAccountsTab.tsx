@@ -11,7 +11,7 @@ import { platform } from "../../../../platform";
 import { accountNote, connectionOutcome } from "./socialAccounts";
 import styles from "./SocialAccountsTab.module.css";
 
-const SOCIAL_PARAMS = ["social_oauth", "skill_oauth", "network", "social_account_ids", "reason"];
+const SOCIAL_PARAMS = ["social_oauth", "skill_oauth", "network", "social_account_ids", "reason", "detail"];
 
 /** The member's photo, or their initial when there is none or it won't load: networks sign photo URLs and let them expire. */
 function AccountAvatar({ account }: { account: SocialAccount }) {

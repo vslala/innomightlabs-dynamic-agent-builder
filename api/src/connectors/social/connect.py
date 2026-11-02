@@ -90,8 +90,8 @@ async def complete_social_oauth(
     try:
         profiles = await network.complete(code, session.code_verifier)
     except NothingToPostAs as failure:
-        log.info("Connecting %s found nothing to post as: %s", network.key, failure)
-        return {**result, "reason": "no_accounts"}
+        log.info("Connecting %s found nothing to post as: %s %s", network.key, failure, failure.diagnostic)
+        return {**result, "reason": "no_accounts", "detail": str(failure)}
     except ConnectError as failure:
         log.error("Connecting %s failed: %s", network.key, failure)
         return {**result, "reason": "callback_failed"}

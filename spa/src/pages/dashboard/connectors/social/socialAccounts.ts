@@ -36,6 +36,9 @@ export function connectionOutcome(
     const message = added > 1 ? `${network} is connected: ${added} accounts added.` : `${network} is connected.`;
     return { kind: "success", message };
   }
+  // The network's own explanation and what to do about it ("No Page was shared with InnoMight Labs. Connect again…")
+  const detail = params.get("detail")?.trim();
+  if (detail) return { kind: "error", message: `Could not connect ${network}. ${detail}` };
   const reasons: Record<string, string> = {
     cancelled: "the sign-in was cancelled",
     not_allowed: "only an account admin can connect accounts",

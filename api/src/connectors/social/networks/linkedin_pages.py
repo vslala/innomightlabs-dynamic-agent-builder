@@ -61,7 +61,9 @@ class LinkedInPagesNetwork(LinkedInNetwork):
             }
             page_ids = await self._administered_pages(client, headers)
             if not page_ids:
-                raise NothingToPostAs("That LinkedIn account doesn't administer any pages it can post as")
+                raise NothingToPostAs(
+                    "You don't have a role that can post on any LinkedIn Page. Ask a Page super admin to make you a "
+                    "content admin, then connect again.")
             names = {page_id: await self._page(client, headers, page_id) for page_id in page_ids}
 
         expires_at = _expiry(tokens)

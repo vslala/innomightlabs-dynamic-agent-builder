@@ -14,7 +14,14 @@ class ConnectError(Exception):
 
 
 class NothingToPostAs(ConnectError):
-    """The sign-in worked but granted no identity that can post (no Page chosen, or only an analyst role)."""
+    """The sign-in worked but granted no identity that can post (no Page chosen, or only an analyst role).
+
+    The message is for the person: what went wrong and what to do, in the network's own terms. `diagnostic` is for
+    the log (permission names, counts), never a token."""
+
+    def __init__(self, message: str, diagnostic: str = "") -> None:
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 @dataclass(frozen=True)

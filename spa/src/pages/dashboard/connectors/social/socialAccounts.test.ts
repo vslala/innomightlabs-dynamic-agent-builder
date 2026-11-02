@@ -83,6 +83,20 @@ describe("connectionOutcome", () => {
     );
   });
 
+  it("shows the network's own explanation when it gave one", () => {
+    const pages = [{ key: "facebook_page", display_name: "Facebook Pages" }];
+    const params = new URLSearchParams({
+      social_oauth: "error",
+      network: "facebook_page",
+      reason: "no_accounts",
+      detail: "No Page was shared with InnoMight Labs. Connect again and tick the Pages you want to post to.",
+    });
+    expect(connectionOutcome(params, pages)).toEqual({
+      kind: "error",
+      message: "Could not connect Facebook Pages. No Page was shared with InnoMight Labs. Connect again and tick the Pages you want to post to.",
+    });
+  });
+
   it("explains a refusal, and falls back for a reason it does not know", () => {
     expect(connectionOutcome(new URLSearchParams("social_oauth=error&network=linkedin&reason=cancelled"), networks)).toEqual({
       kind: "error",

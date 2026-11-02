@@ -84,6 +84,9 @@ Departures from the design below:
   app secret, as Graph requires, in the query of a server-to-server call.
 - **Graph codes 1 and 2, and `is_transient`**, are treated like a 5xx: transient before the post call, uncertain on it.
 - **No alt text on Facebook** photos, as §5 planned.
+- **A Page listed without `tasks`** is kept when it has a Page token: Facebook can leave `tasks` out (a Page
+  reached through a Business portfolio). Only a Page whose tasks rule posting out is left out. A sign-in with
+  nothing to post as logs the granted permissions and the Pages' tasks, never a token.
 - **Disconnect** keeps a grant while any account of it remains, in any InnomightLabs account: it asks `for_grant`,
   not just this account's list. A person who connects the same Page in two accounts keeps both working.
 - **A Page reconnected by someone else** moves its grant item to the new person.
@@ -93,8 +96,10 @@ Departures from the design below:
   and a count, not who the person was.
 - `parse_signed_request` lives in `meta_callbacks.py`, not `meta.py`. `meta.py` holds only what the networks share.
 - **A sign-in with nothing to post as** (no Page chosen on Facebook's consent screen, or only an analyst role) raises
-  `NothingToPostAs`, and the return says `reason=no_accounts`. The Social tab tells the person to choose a Page they
-  can post on, instead of "something went wrong". LinkedIn Pages uses it too. The Social tab also shows
+  `NothingToPostAs`, and the return says `reason=no_accounts` with a `detail` the network wrote for the person.
+  Facebook says which it was: a permission our Login configuration never asked for (our setup, logged as an error),
+  a permission the person switched off, no Page chosen, or no role that can post on the Pages chosen. Its `diagnostic` (permission names, Page counts and tasks) goes to the
+  log only. The Social tab shows the detail. LinkedIn Pages uses it too. The Social tab also shows
   `last_error` on an account that needs a new sign-in ("Access was removed in Facebook Pages"), and counts the
   accounts one sign-in added.
 
@@ -749,8 +754,8 @@ pair they find. The rest go in `api/src/config/settings.py` (default in code, `f
   marks under Meta's brand guidelines. `ConnectorIcon.test.tsx` and the contract test fail without them.
 - Nothing else changes. The Social tab lists networks from the API, shows "Connect" / "Add another", the
   account note (expiry, needs reconnect) and the outcome from `social_oauth`.
-- The Facebook network's description says it connects every Page: "Post as the Facebook Pages you manage.
-  Connecting adds each Page you choose on Facebook."
+- The Facebook network's description says it connects every Page: "Post as the Facebook Pages you manage. On Facebook's screen, tick each Page to connect;
+  you need a Page role that can create content."
 
 ## Data model
 

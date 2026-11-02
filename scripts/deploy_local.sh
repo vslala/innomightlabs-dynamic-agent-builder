@@ -107,6 +107,8 @@ while IFS= read -r social_app; do
   export "${social_app}_CLIENT_ID=$(get_var "${social_app}_CLIENT_ID")"
   export "${social_app}_CLIENT_SECRET=$(get_var "${social_app}_CLIENT_SECRET")"
 done < <(compgen -A variable | sed -nE 's/^(LOCAL_)?(SOCIAL_[A-Z0-9_]+)_CLIENT_ID$/\2/p' | sort -u)
+export SOCIAL_FACEBOOK_LOGIN_CONFIG_ID="$(get_var_default 'SOCIAL_FACEBOOK_LOGIN_CONFIG_ID' '')"
+export SOCIAL_META_GRAPH_VERSION="$(get_var_default 'SOCIAL_META_GRAPH_VERSION' 'v26.0')"
 export JWT_SECRET="$(get_var 'JWT_SECRET')"
 export COGNITO_DOMAIN_PREFIX="$(get_var 'COGNITO_DOMAIN_PREFIX')"
 export COGNITO_DOMAIN="$(get_var_default 'COGNITO_DOMAIN' "$(get_var 'COGNITO_DOMAIN_URL')")"
