@@ -28,8 +28,9 @@ const columns = [
 
 export function Footer() {
   const disclosures = [
-    site.companyNumber && `Registered in England and Wales, company number ${site.companyNumber}`,
+    site.companyNumber && `Registered in ${site.jurisdiction}, company number ${site.companyNumber}`,
     site.registeredOffice && `Registered office: ${site.registeredOffice}`,
+    site.dunsNumber && `D-U-N-S ${site.dunsNumber}`,
     site.vatNumber && `VAT number ${site.vatNumber}`,
   ].filter(Boolean)
 

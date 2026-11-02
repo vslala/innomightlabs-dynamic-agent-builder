@@ -31,8 +31,8 @@ export function Privacy() {
               information when you use our AI-agent platform, websites, tools, workflows, and
               optional integrations.
             </p>
-            <time className={styles.updated} dateTime="2026-09-02">
-              Effective September 2, 2026
+            <time className={styles.updated} dateTime="2026-11-02">
+              Effective November 2, 2026
             </time>
           </header>
 
@@ -54,14 +54,20 @@ export function Privacy() {
               <section className={styles.overview} aria-labelledby="privacy-overview">
                 <h2 id="privacy-overview">Privacy policy overview</h2>
                 <p>
-                  InnoMight Labs provides a platform for creating and operating customizable AI
+                  InnoMight Labs is operated by INNOMIGHT LABS LTD, a private company limited by
+                  shares registered in England and Wales (company number 17491874), which is the
+                  data controller for the information described in this policy. InnoMight Labs
+                  provides a platform for creating and operating customizable AI
                   agents and workflows. The information we process depends on the features you use,
                   the content you provide, and the tools or services you choose to connect.
                 </p>
                 <ul>
                   <li>You control which optional integrations are connected to your account.</li>
                   <li>Connected data is used to provide actions and results you request or configure.</li>
-                  <li>We do not sell personal information or Google Workspace data.</li>
+                  <li>
+                    We do not sell personal information, Google Workspace data, or data we receive
+                    from social networks.
+                  </li>
                   <li>
                     Google Workspace data is not used for advertising, surveillance, credit
                     decisions, or generalized AI-model training.
@@ -120,16 +126,19 @@ export function Privacy() {
                   also governed by their own terms and privacy policies.
                 </p>
 
-                <h3 id="google-workspace-data">Google Workspace integrations</h3>
+                <h3 id="connected-accounts">Connected accounts</h3>
                 <p>
-                  Google Drive and Gmail are optional integrations. We request Google permissions
-                  in context when you choose to connect the relevant skill, and we do not access
-                  Google Workspace data before you authorize the connection.
+                  You can connect Google Drive, Gmail and social accounts so that your agents and
+                  automations can work with them. Each is optional, and we ask for its permissions in
+                  context, only when you connect the skill or account that needs them. You connect it
+                  by signing in to the provider and approving the permissions it shows, and we never
+                  see or store your
+                  password for that service. We do not access a connected account's data before you
+                  authorize the connection.
                 </p>
 
-                <h3>Google Drive</h3>
-                <p>
-                  The Google Drive integration uses the{' '}
+                <p id="google-workspace-data">
+                  <strong>Google Drive.</strong> The Google Drive integration uses the{' '}
                   <code>https://www.googleapis.com/auth/drive</code> scope. It allows an authorized
                   agent or workflow to search and list existing files and folders, read or export
                   supported file content, and move a specifically identified file to trash when you
@@ -137,16 +146,45 @@ export function Privacy() {
                   the service may need to find files that were not created by InnoMight Labs. We do
                   not use this access as a general backup or content-distribution service.
                 </p>
-
-                <h3>Gmail</h3>
                 <p>
-                  The Gmail integration uses the{' '}
+                  <strong>Gmail.</strong> The Gmail integration uses the{' '}
                   <code>https://www.googleapis.com/auth/gmail.modify</code> scope. It allows an
                   authorized agent or workflow to search and list messages, read message headers
                   and bodies, archive messages, mark messages read or unread, and move selected
                   messages to trash when you request or configure those actions. It does not
                   permanently delete messages, and InnoMight Labs does not currently use this
                   integration to compose or send email.
+                </p>
+
+                <p id="social-accounts">
+                  <strong>Social accounts.</strong> You can connect social accounts, such as a
+                  LinkedIn profile or a LinkedIn Page you administer, so that your agents and
+                  automations can publish posts to them. An account admin connects each one. When you
+                  connect a social account, we receive and store:
+                </p>
+                <ul>
+                  <li>
+                    the access token the network issues (encrypted), the permissions you granted,
+                    and when the token expires;
+                  </li>
+                  <li>
+                    the network's identifier for the profile or Page, its name or handle, and its
+                    profile picture address; and
+                  </li>
+                  <li>
+                    for a Page, the list of Pages you can post to, so that each one can be connected
+                    as a separate account.
+                  </li>
+                </ul>
+                <p>
+                  We use this information only to show which accounts are connected and to publish
+                  the posts you or your agents prepare. An agent can publish only after you have
+                  approved it: either the exact post, shown to you before it is sent, or a step in an
+                  automation that you approved in advance. When a post is published, its text and
+                  images are sent to the network. We keep a record of each post's destination,
+                  status and link for 180 days, so you can see what was published and so that a post
+                  is never sent twice. We use data from social networks only for these features. We
+                  do not use it for advertising or profiling, or to train generalized AI models.
                 </p>
               </section>
 
@@ -240,6 +278,59 @@ export function Privacy() {
                   has been aggregated and is used for lawful internal operations without
                   identifying you.
                 </p>
+
+                <h3 id="public-authority-requests">Requests from public authorities</h3>
+                <p>
+                  This section covers requests from a government, court, regulator or
+                  law-enforcement agency for personal data about our users. That includes data we
+                  receive from services our users connect, such as Google, LinkedIn and Meta.
+                </p>
+                <ul>
+                  <li>
+                    <strong>How to make a request.</strong> Send it in writing to{' '}
+                    <a className={styles.link} href="mailto:hello@innomightlabs.com">
+                      hello@innomightlabs.com
+                    </a>
+                    , or serve it on INNOMIGHT LABS LTD at its registered office, 47 Hallgarth,
+                    Consett, England, DH8 8BL. We disclose user data only under valid legal process
+                    (a court order, warrant, or a notice issued under the law that binds us), never
+                    in response to an informal request.
+                  </li>
+                  <li>
+                    <strong>We review every request for legality.</strong> Before we respond, we
+                    verify that the request is genuine. We check that the requester has the authority
+                    and jurisdiction to make it, the legal basis it relies on, that it names specific
+                    users, dates and data, and that it is necessary and proportionate. We also check
+                    that complying wouldn't break another law that protects our users, such as UK
+                    data protection law. We take legal advice when we need it.
+                  </li>
+                  <li>
+                    <strong>We challenge unlawful requests.</strong> If a request has no valid legal
+                    basis, or is overbroad, disproportionate or improperly served, we ask for it to
+                    be withdrawn or narrowed. If needed, we challenge it through the available legal
+                    remedies, and we disclose nothing while the challenge is pending where the law
+                    allows it. We also challenge non-disclosure orders that aren't justified.
+                  </li>
+                  <li>
+                    <strong>We disclose the minimum.</strong> We read requests narrowly and disclose
+                    only the data the request lawfully requires, for the users and dates it covers.
+                    We never disclose passwords or access tokens, including tokens issued by the
+                    services our users connect, and we don't create data to answer a request.
+                  </li>
+                  <li>
+                    <strong>We tell the user.</strong> Unless the law forbids it, we notify the
+                    affected user and send them a copy of the request before we disclose anything,
+                    so they can object. If the law forbids notice, we notify them as soon as the
+                    restriction ends. In a genuine emergency involving a risk of death or serious
+                    harm we may disclose limited data without legal process, then notify the user
+                    afterwards unless that would increase the risk.
+                  </li>
+                  <li>
+                    <strong>We document every request.</strong> We record each request, our legal
+                    assessment, the people who made the decision, any challenge, and what we
+                    disclosed or why we disclosed nothing. We keep these records for six years.
+                  </li>
+                </ul>
               </section>
 
               <section className={styles.section} id="storage-and-security">
@@ -299,6 +390,11 @@ export function Privacy() {
                     your account, or the authorization expires or is revoked.
                   </li>
                   <li>
+                    Social account credentials and details remain until you disconnect the account,
+                    or until the network's authorization expires or is revoked. Records of
+                    published posts are kept for 180 days.
+                  </li>
+                  <li>
                     Security, billing, and legal records may be retained only as reasonably
                     necessary for those purposes.
                   </li>
@@ -328,6 +424,14 @@ export function Privacy() {
                       Google Account connections
                     </a>
                     .
+                  </li>
+                  <li>
+                    An account admin can disconnect a social account on the Connectors page, on the
+                    Social tab. Disconnecting deletes the stored credentials and account details,
+                    and we ask the network to end the authorization where it supports that. You can
+                    also remove InnoMight Labs from the apps connected in your social network's
+                    settings. To have data we received from a social network deleted, email us at
+                    the address below.
                   </li>
                   <li>
                     You can request account deletion, which initiates deletion of associated
@@ -379,6 +483,14 @@ export function Privacy() {
                   information, email{' '}
                   <a className={styles.link} href="mailto:privacy@innomightlabs.com">
                     privacy@innomightlabs.com
+                  </a>
+                  .
+                </p>
+                <p>
+                  INNOMIGHT LABS LTD, registered in England and Wales, company number 17491874.
+                  Registered office: 47 Hallgarth, Consett, England, DH8 8BL. General enquiries:{' '}
+                  <a className={styles.link} href="mailto:hello@innomightlabs.com">
+                    hello@innomightlabs.com
                   </a>
                   .
                 </p>

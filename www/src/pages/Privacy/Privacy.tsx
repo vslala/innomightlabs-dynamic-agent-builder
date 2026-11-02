@@ -19,14 +19,15 @@ export function Privacy() {
         <Container>
           <Prose>
             <p>
-              <strong>Last updated:</strong> 2 October 2026
+              <strong>Last updated:</strong> 2 November 2026
             </p>
 
             <h2>Who we are</h2>
             <p>
-              This website is run by {site.legalName} ("Innomight", "we", "us"), a company based in the{' '}
-              {site.location}. We are the data controller for personal data collected through innomight.com. You can
-              contact us about privacy at <a href={`mailto:${site.email}`}>{site.email}</a>.
+              This website is run by {site.legalName} ("Innomight", "we", "us"), a private company limited by shares,
+              registered in {site.jurisdiction} under company number {site.companyNumber}, with its registered office at{' '}
+              {site.registeredOffice}. We are the data controller for personal data collected through innomight.com. You
+              can contact us about privacy at <a href={`mailto:${site.email}`}>{site.email}</a>.
             </p>
 
             <h2>What we collect</h2>
@@ -62,6 +63,53 @@ export function Privacy() {
               We do not use advertising or tracking cookies. Your browser stores your light or dark theme choice
               locally; it never leaves your device.
             </p>
+
+            <h2 id="public-authority-requests">Requests from public authorities</h2>
+            <p>
+              This section covers requests from a government, court, regulator or law-enforcement agency for personal
+              data about our users. That includes data we receive from platforms our users connect to our products, such
+              as Meta, Google and LinkedIn.
+            </p>
+            <ul>
+              <li>
+                <strong>How to make a request.</strong> Send it in writing to{' '}
+                <a href={`mailto:${site.legalEmail}`}>{site.legalEmail}</a>, or serve it on {site.legalName} at our
+                registered office, {site.registeredOffice}. We disclose user data only under valid legal process (a court
+                order, warrant, or a notice issued under the law that binds us), never in response to an informal
+                request.
+              </li>
+              <li>
+                <strong>We review every request for legality.</strong> Before we respond, we verify that the request is
+                genuine. We check that the requester has the authority and jurisdiction to make it, the legal basis it
+                relies on, that it names specific users, dates and data, and that it is necessary and proportionate. We
+                also check that complying wouldn't break another law that protects our users, such as UK data
+                protection law. We take legal advice when we need it.
+              </li>
+              <li>
+                <strong>We challenge unlawful requests.</strong> If a request has no valid legal basis, or is
+                overbroad, disproportionate or improperly served, we ask for it to be withdrawn or narrowed. If needed,
+                we challenge it through the available legal remedies, and we disclose nothing while the challenge is
+                pending where the law allows it. We also challenge non-disclosure orders that aren't justified.
+              </li>
+              <li>
+                <strong>We disclose the minimum.</strong> We read requests narrowly and disclose only the data the
+                request lawfully requires, for the users and dates it covers. We never disclose passwords or access
+                tokens, including tokens issued by the platforms our users connect, and we don't create data to answer a
+                request.
+              </li>
+              <li>
+                <strong>We tell the user.</strong> Unless the law forbids it, we notify the affected user and send them a
+                copy of the request before we disclose anything, so they can object. If the law forbids notice, we
+                notify them as soon as the restriction ends. In a genuine emergency involving a risk of death or serious
+                harm we may disclose limited data without legal process, then notify the user afterwards unless that
+                would increase the risk.
+              </li>
+              <li>
+                <strong>We document every request.</strong> We record each request, our legal assessment, the people who
+                made the decision, any challenge, and what we disclosed or why we disclosed nothing. We keep these records
+                for six years.
+              </li>
+            </ul>
 
             <h2>Your rights</h2>
             <p>
