@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from src.connectors.social.networks.base import ConnectedProfile, ConnectError
+from src.connectors.social.networks.base import ConnectedProfile, ConnectError, NothingToPostAs
 from src.connectors.social.networks.linkedin import (
     API_VERSION,
     TIMEOUT_SECONDS,
@@ -61,7 +61,7 @@ class LinkedInPagesNetwork(LinkedInNetwork):
             }
             page_ids = await self._administered_pages(client, headers)
             if not page_ids:
-                raise ConnectError("That LinkedIn account doesn't administer any pages it can post as")
+                raise NothingToPostAs("That LinkedIn account doesn't administer any pages it can post as")
             names = {page_id: await self._page(client, headers, page_id) for page_id in page_ids}
 
         expires_at = _expiry(tokens)

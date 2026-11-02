@@ -41,6 +41,12 @@ describe("accountNote", () => {
       "Sign in again to keep posting to this account."
     );
   });
+
+  it("says why it needs a new sign-in when the network said", () => {
+    expect(accountNote(account({ status: "needs_reconnect", last_error: "Access was removed in Facebook Pages" }), NOW)).toBe(
+      "Access was removed in Facebook Pages. Sign in again to keep posting to this account."
+    );
+  });
 });
 
 describe("connectionOutcome", () => {
@@ -62,6 +68,19 @@ describe("connectionOutcome", () => {
       kind: "success",
       message: "LinkedIn is connected.",
     });
+  });
+
+  it("counts the accounts when one sign-in added several", () => {
+    const pages = [{ key: "facebook_page", display_name: "Facebook Pages" }];
+    expect(
+      connectionOutcome(new URLSearchParams("social_oauth=success&network=facebook_page&social_account_ids=a,b"), pages)?.message
+    ).toBe("Facebook Pages is connected: 2 accounts added.");
+  });
+
+  it("explains a sign-in that granted nothing to post as", () => {
+    expect(connectionOutcome(new URLSearchParams("social_oauth=error&network=linkedin&reason=no_accounts"), networks)?.message).toBe(
+      "Could not connect LinkedIn: that sign-in gave access to nothing it can post as. Choose at least one Page you can create posts on."
+    );
   });
 
   it("explains a refusal, and falls back for a reason it does not know", () => {

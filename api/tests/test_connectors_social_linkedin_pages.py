@@ -109,7 +109,7 @@ def test_one_sign_in_connects_every_page_the_member_can_post_as(test_client, lin
 def test_a_member_with_no_pages_is_told_so(test_client, linkedin):
     linkedin.roles = [("333", "ANALYST")]
     result = connect_pages(test_client)
-    assert result["social_oauth"] == ["error"] and result["reason"] == ["callback_failed"]
+    assert result["social_oauth"] == ["error"] and result["reason"] == ["no_accounts"]
     assert accounts(test_client) == []
 
 

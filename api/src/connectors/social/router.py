@@ -92,9 +92,11 @@ async def disconnect_account(social_account_id: str, principal: Manager) -> None
     if account is None:
         raise HTTPException(status_code=404, detail="Social account not found")
     network = network_for(account.network)
-    # Accounts that share one grant (every page of a member) keep it until the last of them goes
-    others = [other for other in repository.list(principal.account_id)
-              if other.network == account.network and other.social_account_id != account.social_account_id]
+    # Accounts that share one grant (every page of a member) keep it until the last of them goes. A grant the network
+    # names is found wherever it is used, in this InnomightLabs account or another.
+    sharing = (repository.for_grant(account.network, account.grant_id) if account.grant_id
+               else [other for other in repository.list(principal.account_id) if other.network == account.network])
+    others = [other for other in sharing if other.social_account_id != account.social_account_id]
     try:
         if not (network.shares_grant and others):
             await network.revoke(account.credentials())

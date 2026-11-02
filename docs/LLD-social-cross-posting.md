@@ -24,9 +24,14 @@
 
 ## Implementation notes
 
+- **2026-11-01: the Meta networks have their own LLD**, [Threads, Instagram and Facebook Pages](LLD-meta-social-networks.md). It replaces §2's Facebook, Instagram and
+  Threads rows, §5's public URL (still to build) and §12's data-deletion callback with what Meta's docs say today.
+
 - **2026-10-21: LinkedIn Pages built, as its own network** (§1, §2). `linkedin_page` (`networks/linkedin_pages.py`)
   extends `LinkedInNetwork`: its own OAuth app (`SOCIAL_LINKED_IN_PAGES_CLIENT_ID/_SECRET`, the Community Management API
-  needs its own), scopes `r_organization_admin w_organization_social`. One sign-in lists the pages the member can post as
+  needs its own). It asks for every scope the app is granted (2026-11-01), among them `rw_organization_admin` (listing the
+  pages) and `w_organization_social` (posting); asking for `r_organization_admin`, which the app lacks, failed before
+  sign-in with `unauthorized_scope_error`. One sign-in lists the pages the member can post as
   (`organizationAcls`, roles ADMINISTRATOR and CONTENT_ADMIN) and connects each as an account storing `author_urn`; posting
   and image uploads use it as the author and owner. The skill, publisher, planner and automations are unchanged.
   - **Generalised:** `SocialNetwork` gained `description` (shown on the Social tab so each connection reads as what the agent

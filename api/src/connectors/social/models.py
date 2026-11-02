@@ -28,6 +28,12 @@ def external_key(account_id: str, network: str, external_id: str) -> dict[str, s
     return {"pk": f"Account#{account_id}", "sk": f"SocialAccountExternal#{network}#{external_id}"}
 
 
+def grant_key(network: str, grant_id: str, account_id: str, social_account_id: str) -> dict[str, str]:
+    """Finds an account from the person who granted it, across InnomightLabs accounts: Meta's deauthorize and
+    data-deletion callbacks name only that person."""
+    return {"pk": f"SocialGrant#{network}#{grant_id}", "sk": f"Account#{account_id}#{social_account_id}"}
+
+
 class SocialAccount(BaseModel):
     """One postable identity on a network (a LinkedIn member, a Facebook Page, a Bluesky handle). It belongs to the
     InnomightLabs account, like its other connections: admins connect it, every member's agents may use it."""
@@ -46,6 +52,8 @@ class SocialAccount(BaseModel):
     scopes: str = ""
     token_expires_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    #: The network's id for whoever granted access (`ConnectedProfile.grant_id`); None for LinkedIn
+    grant_id: Optional[str] = None
     #: The user_id of whoever connected it, for audit
     connected_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -58,6 +66,9 @@ class SocialAccount(BaseModel):
     @property
     def sk(self) -> str:
         return f"SocialAccount#{self.social_account_id}"
+
+    def grant_key(self) -> dict[str, str] | None:
+        return grant_key(self.network, self.grant_id, self.account_id, self.social_account_id) if self.grant_id else None
 
     def credentials(self) -> dict[str, Any]:
         """What the network's strategy stored for this account (tokens and ids), decrypted. Never log or return it."""
@@ -87,6 +98,7 @@ class SocialAccount(BaseModel):
             "scopes": self.scopes,
             "token_expires_at": self.token_expires_at.isoformat() if self.token_expires_at else None,
             "last_error": self.last_error,
+            "grant_id": self.grant_id,
             "connected_by": self.connected_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -108,6 +120,7 @@ class SocialAccount(BaseModel):
             scopes=item.get("scopes", ""),
             token_expires_at=datetime.fromisoformat(item["token_expires_at"]) if item.get("token_expires_at") else None,
             last_error=item.get("last_error"),
+            grant_id=item.get("grant_id"),
             connected_by=item.get("connected_by", ""),
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,

@@ -207,6 +207,11 @@ class Settings:
     #: network. Adding a network adds env vars, not fields.
     social_oauth_redirect_uri: str = ""
     social_apps: dict[str, SocialAppCredentials] = field(default_factory=dict)
+    #: Facebook Login for Business (docs/LLD-meta-social-networks.md): the Login configuration whose permissions the
+    #: Facebook dialog asks for. Empty sends `scope` instead, which only app-role testers can use.
+    social_facebook_login_config_id: str = ""
+    #: The Graph API version Facebook (and later Instagram) calls go to
+    social_meta_graph_version: str = "v26.0"
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
     cli_runner_timeout_seconds: int = 30
@@ -639,6 +644,8 @@ class Settings:
                 f"{api_base_url}/connectors/social/oauth/callback",
             ),
             social_apps=social_apps_from_env(os.environ),
+            social_facebook_login_config_id=os.getenv("SOCIAL_FACEBOOK_LOGIN_CONFIG_ID", "").strip(),
+            social_meta_graph_version=os.getenv("SOCIAL_META_GRAPH_VERSION", "v26.0").strip() or "v26.0",
             cli_runner_base_url=os.getenv("CLI_RUNNER_BASE_URL", ""),
             cli_runner_shared_token=os.getenv("CLI_RUNNER_SHARED_TOKEN", ""),
             cli_runner_timeout_seconds=int(os.getenv("CLI_RUNNER_TIMEOUT_SECONDS", "30")),

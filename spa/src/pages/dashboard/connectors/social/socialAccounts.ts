@@ -6,7 +6,11 @@ const WARN_DAYS = 14;
 
 /** What to tell the person about an account's token: nothing while it is healthy and far from running out. */
 export function accountNote(account: SocialAccount, now: Date = new Date()): string | null {
-  if (account.status === "needs_reconnect") return "Sign in again to keep posting to this account.";
+  if (account.status === "needs_reconnect") {
+    // Why, when the network said (a refused token, or access removed in the network's settings)
+    const why = account.last_error?.trim().replace(/\.$/, "");
+    return `${why ? `${why}. ` : ""}Sign in again to keep posting to this account.`;
+  }
   if (!account.token_expires_at) return null;
   const days = Math.ceil((new Date(account.token_expires_at).getTime() - now.getTime()) / DAY_MS);
   if (days > WARN_DAYS) return null;
@@ -26,11 +30,17 @@ export function connectionOutcome(
   }
   if (!outcome) return null;
   const network = networks.find((item) => item.key === params.get("network"))?.display_name ?? "the account";
-  if (outcome === "success") return { kind: "success", message: `${network} is connected.` };
+  if (outcome === "success") {
+    // One sign-in can connect several Pages
+    const added = (params.get("social_account_ids") ?? "").split(",").filter(Boolean).length;
+    const message = added > 1 ? `${network} is connected: ${added} accounts added.` : `${network} is connected.`;
+    return { kind: "success", message };
+  }
   const reasons: Record<string, string> = {
     cancelled: "the sign-in was cancelled",
     not_allowed: "only an account admin can connect accounts",
     invalid_state: "the sign-in link expired or belongs to someone else",
+    no_accounts: "that sign-in gave access to nothing it can post as. Choose at least one Page you can create posts on",
   };
   return { kind: "error", message: `Could not connect ${network}: ${reasons[params.get("reason") ?? ""] ?? "something went wrong, try again"}.` };
 }

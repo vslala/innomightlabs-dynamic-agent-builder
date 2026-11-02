@@ -14,7 +14,7 @@ from pydantic import BaseModel, ValidationError
 
 from src.connectors.social.models import SocialAccount
 from src.connectors.social.networks import network_for
-from src.connectors.social.networks.base import ConnectError
+from src.connectors.social.networks.base import ConnectError, NothingToPostAs
 from src.connectors.social.repository import SocialAccountRepository
 from src.crypto import decrypt, encrypt
 from src.settings.access import may_manage_settings
@@ -89,6 +89,9 @@ async def complete_social_oauth(
     network = network_for(session.network)
     try:
         profiles = await network.complete(code, session.code_verifier)
+    except NothingToPostAs as failure:
+        log.info("Connecting %s found nothing to post as: %s", network.key, failure)
+        return {**result, "reason": "no_accounts"}
     except ConnectError as failure:
         log.error("Connecting %s failed: %s", network.key, failure)
         return {**result, "reason": "callback_failed"}
@@ -108,6 +111,7 @@ async def complete_social_oauth(
             encrypted_credentials=encrypt(json.dumps(profile.credentials)),
             scopes=profile.scopes,
             token_expires_at=profile.expires_at,
+            grant_id=profile.grant_id,
             connected_by=user_id,
         ))
         for profile in profiles

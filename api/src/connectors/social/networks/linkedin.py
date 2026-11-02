@@ -24,6 +24,7 @@ from src.connectors.social.networks.base import (
     PublishedPost,
     PublishError,
     PublishErrorKind,
+    RecentPost,
 )
 
 log = logging.getLogger(__name__)
@@ -55,6 +56,8 @@ class LinkedInNetwork:
     app = "linked_in"
     scopes = SCOPES
     limits = NetworkLimits(max_text=3000, max_images=20)
+    #: A member's posts can't be read back without a partner product
+    reads_posts = False
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         #: Tests answer LinkedIn's endpoints through this
@@ -164,6 +167,9 @@ class LinkedInNetwork:
             post_urn = response.headers.get("x-restli-id", "")
             return PublishedPost(external_id=post_urn, url=f"{POST_URL}{post_urn}" if post_urn else None)
         raise _publish_error(response)
+
+    async def recent_posts(self, credentials: dict[str, Any], limit: int) -> list[RecentPost]:
+        raise PublishError(PublishErrorKind.REJECTED, f"{self.display_name} doesn't let apps read posts")
 
     async def _upload(self, client: httpx.AsyncClient, headers: dict[str, str], owner: str, image: PreparedImage) -> dict[str, str]:
         """Two steps, neither of which makes a visible post: ask for an upload address, then send the bytes to it."""

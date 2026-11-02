@@ -61,6 +61,8 @@ A2A_PATH_PREFIX = "/a2a/"
 A2A_WELL_KNOWN_PATH_PREFIX = "/.well-known/agents/"
 PUBLIC_API_PATH_PREFIX = "/v1/"
 EMBED_PATH_PREFIX = "/embed/"
+#: Meta's deauthorize and data-deletion callbacks, checked by their signed_request
+META_CALLBACKS_PATH_PREFIX = "/connectors/social/meta/"
 
 
 def token_audiences_for(path: str) -> list[str]:
@@ -96,6 +98,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.url.path in PUBLIC_PATHS
             or request.url.path.startswith(DOWNLOADS_PLUGINS_PATH_PREFIX)
             or request.url.path.startswith(A2A_WELL_KNOWN_PATH_PREFIX)
+            or request.url.path.startswith(META_CALLBACKS_PATH_PREFIX)
         ):
             return await call_next(request)
 

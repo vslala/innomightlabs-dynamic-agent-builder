@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+from boto3.dynamodb.conditions import Key
 
 from src.accounts import AccountService, Member
 from src.config import settings
@@ -331,3 +332,28 @@ def test_disconnecting_works_when_linkedin_cannot_be_reached(test_client, linked
 
 def test_disconnecting_an_account_that_is_not_there_is_a_404(test_client, linkedin):
     assert test_client.delete("/connectors/social/accounts/nope", headers=owner_headers()).status_code == 404
+
+
+def test_deleting_a_person_removes_their_social_accounts_guards_grants_and_post_records(dynamodb_table, monkeypatch):
+    from lambdas.account_deletion_handler.handler import AccountDeletionHandler
+    from src.connectors.social.models import SocialAccount
+    from src.connectors.social.posts import PostTarget, SocialPostRepository, TargetStatus
+
+    monkeypatch.setenv("DYNAMODB_TABLE", dynamodb_table.name)
+    monkeypatch.delenv("DYNAMODB_ENDPOINT", raising=False)
+    personal = account_for(TEST_USER_EMAIL)
+    repository = SocialAccountRepository()
+    page = repository.connect(SocialAccount(
+        account_id=personal, network="facebook_page", external_id="111", handle="Acme", display_name="Acme",
+        encrypted_credentials=encrypt("{}"), grant_id="fb-user-1", connected_by="someone"))
+    repository.connect(SocialAccount(
+        account_id=personal, network="linkedin", external_id="member-1", handle="Ada", display_name="Ada",
+        encrypted_credentials=encrypt("{}"), connected_by="someone"))
+    SocialPostRepository().claim(PostTarget(account_id=personal, post_id="post-1", social_account_id=page.social_account_id,
+                                            network="facebook_page", handle="Acme", status=TargetStatus.PUBLISHING))
+
+    counts = AccountDeletionHandler().delete_user_entities(user_id_for(TEST_USER_EMAIL), TEST_USER_EMAIL)
+
+    assert counts["social"] == 6, "two accounts, two guards, one grant item, one post record"
+    assert repository.list(personal) == [] and repository.for_grant("facebook_page", "fb-user-1") == []
+    assert dynamodb_table.query(KeyConditionExpression=Key("pk").eq(f"Account#{personal}") & Key("sk").begins_with("Social"))["Items"] == []

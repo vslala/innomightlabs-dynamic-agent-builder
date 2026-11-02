@@ -158,8 +158,8 @@ export function Privacy() {
 
                 <p id="social-accounts">
                   <strong>Social accounts.</strong> You can connect social accounts, such as a
-                  LinkedIn profile or a LinkedIn Page you administer, so that your agents and
-                  automations can publish posts to them. An account admin connects each one. When you
+                  LinkedIn profile, a LinkedIn Page you administer or a Facebook Page you manage, so
+                  that your agents and automations can publish posts to them. An account admin connects each one. When you
                   connect a social account, we receive and store:
                 </p>
                 <ul>
@@ -169,7 +169,12 @@ export function Privacy() {
                   </li>
                   <li>
                     the network's identifier for the profile or Page, its name or handle, and its
-                    profile picture address; and
+                    profile picture address;
+                  </li>
+                  <li>
+                    for Facebook, the identifier Facebook gives InnoMight Labs for the person who
+                    granted access, so that we can act when they remove the app or ask for their
+                    data to be deleted; and
                   </li>
                   <li>
                     for a Page, the list of Pages you can post to, so that each one can be connected
@@ -177,8 +182,10 @@ export function Privacy() {
                   </li>
                 </ul>
                 <p>
-                  We use this information only to show which accounts are connected and to publish
-                  the posts you or your agents prepare. An agent can publish only after you have
+                  We use this information only to show which accounts are connected, to publish the
+                  posts you or your agents prepare and, where the network allows it (Facebook Pages),
+                  to read back the account's own recent posts when an agent asks, so it does not
+                  repeat a post. We do not store the posts it reads. An agent can publish only after you have
                   approved it: either the exact post, shown to you before it is sent, or a step in an
                   automation that you approved in advance. When a post is published, its text and
                   images are sent to the network. We keep a record of each post's destination,
@@ -430,8 +437,11 @@ export function Privacy() {
                     Social tab. Disconnecting deletes the stored credentials and account details,
                     and we ask the network to end the authorization where it supports that. You can
                     also remove InnoMight Labs from the apps connected in your social network's
-                    settings. To have data we received from a social network deleted, email us at
-                    the address below.
+                    settings. For Facebook, removing the app stops all posting to your Pages straight
+                    away, and asking Facebook to delete your data deletes the connected Pages and
+                    their stored credentials, with a confirmation code and a status page. To have
+                    data we received from any social network deleted, email us at the address below.
+                    Deleting your InnoMight Labs account deletes its connected social accounts.
                   </li>
                   <li>
                     You can request account deletion, which initiates deletion of associated

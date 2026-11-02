@@ -13,6 +13,10 @@ class ConnectError(Exception):
     """Connecting an account failed. The message is safe to log: it never holds a token or a secret."""
 
 
+class NothingToPostAs(ConnectError):
+    """The sign-in worked but granted no identity that can post (no Page chosen, or only an analyst role)."""
+
+
 @dataclass(frozen=True)
 class ConnectedProfile:
     """One postable identity a sign-in granted: a member, a Page, a professional account."""
@@ -25,6 +29,9 @@ class ConnectedProfile:
     credentials: dict[str, Any]
     scopes: str = ""
     expires_at: datetime | None = None
+    #: The network's id for the person who granted access (Meta's app-scoped user id). Meta's deauthorize and
+    #: data-deletion callbacks name only that, so it finds the accounts. Not secret.
+    grant_id: str | None = None
 
 
 class PublishErrorKind(str, Enum):
@@ -81,6 +88,18 @@ class PublishedPost:
     url: str | None = None
 
 
+@dataclass(frozen=True)
+class RecentPost:
+    """One post the account already published, as `recent_posts` reads it back."""
+
+    external_id: str
+    posted_at: datetime
+    text: str
+    url: str | None
+    #: "text", "image", "carousel", "video" or "other"
+    media: str
+
+
 class SocialNetwork(Protocol):
     key: str
     display_name: str
@@ -93,6 +112,8 @@ class SocialNetwork(Protocol):
     #: Names its OAuth app in the environment: `SOCIAL_<APP>_CLIENT_ID` / `_CLIENT_SECRET` (see `settings.social_app`)
     app: str
     limits: NetworkLimits
+    #: `recent_posts` works; a network whose scopes can't read the account's posts says False
+    reads_posts: bool
 
     def configured(self) -> bool:
         """Its OAuth app is registered: the network is offered only then."""
@@ -112,4 +133,8 @@ class SocialNetwork(Protocol):
 
     async def publish(self, credentials: dict[str, Any], post: PreparedPost) -> PublishedPost:
         """Create the post. Raises PublishError, classified so the publisher knows whether a retry is safe."""
+        ...
+
+    async def recent_posts(self, credentials: dict[str, Any], limit: int) -> list[RecentPost]:
+        """The account's own newest posts, newest first. Raises PublishError."""
         ...

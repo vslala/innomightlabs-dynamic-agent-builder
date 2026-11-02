@@ -11,7 +11,7 @@ Deletion order (child entities first):
 7. Knowledge Bases
 8. Agents
 9. API Keys
-10. Provider Settings
+10. Provider Settings, then social accounts (with their guards, grant items and post records)
 11. Subscriptions
 12. Usage Records (monthly + active + events)
 13. Email Events
@@ -94,14 +94,19 @@ class AccountDeletionHandler:
             f"Account#{personal_account_id(user_id)}", "ProviderSettings#"
         )
 
-        # 9a. Delete Leads: forms, statuses, captures and their counts (the personal account's, as above)
+        # 9a. Delete social accounts: each one's grant item (keyed by the network's user, outside the account), then
+        # the accounts, their uniqueness guards and post records. Revoking at the network is left to the person: the
+        # Lambda holds no network strategies, and deleting our copy is what they asked for.
+        counts["social"] = self._delete_social_accounts(f"Account#{personal_account_id(user_id)}")
+
+        # 9b. Delete Leads: forms, statuses, captures and their counts (the personal account's, as above)
         counts["leads"] = sum(
             self._delete_items_by_pattern(f"Account#{personal_account_id(user_id)}", sk_prefix)
             # "LeadForm" also covers the slug guards, "Capture" the id guards
             for sk_prefix in ("LeadForm", "LeadSettings", "Capture", "LeadUsage", "LeadEvent")
         )
 
-        # 9b. Delete refresh tokens issued to other apps that share this login
+        # 9c. Delete refresh tokens issued to other apps that share this login
         counts["refresh_tokens"] = self._delete_items_by_pattern(
             f"Identity#{user_id}", "RefreshToken#"
         )
@@ -162,6 +167,22 @@ class AccountDeletionHandler:
             log.error(f"Error deleting items pk={pk}, sk_prefix={sk_prefix}: {e}")
 
         return count
+
+    def _delete_social_accounts(self, pk: str) -> int:
+        count = 0
+        try:
+            response = self.table.query(KeyConditionExpression=Key("pk").eq(pk) & Key("sk").begins_with("SocialAccount#"))
+            for item in response.get("Items", []):
+                if item.get("grant_id"):
+                    self.table.delete_item(Key={
+                        "pk": f"SocialGrant#{item['network']}#{item['grant_id']}",
+                        "sk": f"Account#{item['account_id']}#{item['social_account_id']}",
+                    })
+                    count += 1
+        except Exception as e:
+            log.error(f"Error deleting social grant items for pk={pk}: {e}")
+        # "SocialAccount" also covers the SocialAccountExternal guards
+        return count + sum(self._delete_items_by_pattern(pk, sk_prefix) for sk_prefix in ("SocialAccount", "SocialPost#"))
 
     def _owned_in_personal_account(self, user_id: str, sk_prefix: str, id_field: str) -> List[str]:
         """Ids of what the person owns of one type in their personal account. Leaving shared accounts, and

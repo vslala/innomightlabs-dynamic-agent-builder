@@ -34,6 +34,7 @@ from src.connectors.router import router as connectors_router
 from src.connectors.oauth_completion import router as oauth_completion_router
 from src.connectors.mcp.router import public_router as mcp_connectors_public_router
 from src.connectors.mcp.router import router as mcp_connectors_router
+from src.connectors.social.meta_callbacks import router as social_meta_callbacks_router
 from src.connectors.social.router import public_router as social_connectors_public_router
 from src.connectors.social.router import router as social_connectors_router
 from src.skills.router import router as skills_router
@@ -188,6 +189,7 @@ def create_app() -> FastAPI:
     app.include_router(router=mcp_connectors_public_router)
     app.include_router(router=mcp_connectors_router)
     app.include_router(router=social_connectors_public_router)
+    app.include_router(router=social_meta_callbacks_router)
     app.include_router(router=social_connectors_router)
     app.include_router(router=skills_router)
     app.include_router(router=automations_router)

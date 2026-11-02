@@ -5,12 +5,18 @@ from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from src.connectors.social.models import SocialAccount
 from src.connectors.social.networks import network_for
+from src.connectors.social.networks.base import PublishError, PublishErrorKind
 from src.connectors.social.publisher import PublishRequest, SocialPublisher
 from src.connectors.social.repository import SocialAccountRepository
 from src.consent.preview import FieldsBlock, ImagesBlock, PreviewField, PreviewImage, PreviewTarget, TargetsBlock, TextBlock
 from src.skills.runtime_context import account_of
 
 from .images import load_images, resolve_images
+
+RECENT_POSTS_DEFAULT = 10
+RECENT_POSTS_MAX = 25
+#: Per post, so ten long posts can't flood the agent's context
+RECENT_POST_TEXT_MAX = 2000
 
 
 async def accounts(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -47,6 +53,29 @@ async def publish(arguments: dict[str, Any], config: dict[str, Any], context: di
     return result
 
 
+async def recent_posts(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """The account's own newest posts, so the agent doesn't repeat itself. Read-only, so it asks no consent."""
+    del config
+    account = SocialAccountRepository().get(account_of(context), str(arguments.get("social_account_id") or ""))
+    if account is None:
+        raise ValueError("No connected social account with that social_account_id. Call accounts for the ids.")
+    network = network_for(account.network)
+    if not network.reads_posts:
+        return {"supported": False, "posts": [], "reason": f"{network.display_name} doesn't let apps read posts"}
+    limit = max(1, min(int(arguments.get("limit") or RECENT_POSTS_DEFAULT), RECENT_POSTS_MAX))
+    try:
+        posts = await network.recent_posts(account.credentials(), limit)
+    except PublishError as error:
+        if error.kind == PublishErrorKind.AUTH:
+            SocialAccountRepository().mark_needs_reconnect(account, str(error))
+        raise ValueError(str(error)) from error
+    return {"supported": True, "posts": [
+        {"posted_at": post.posted_at.isoformat(), "text": post.text[:RECENT_POST_TEXT_MAX], "url": post.url,
+         "media": post.media}
+        for post in posts
+    ]}
+
+
 async def publish_preview(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """What the person approves before `publish`: the post, its images, and which accounts it goes to, or why not."""
     del config
@@ -62,7 +91,7 @@ async def publish_preview(arguments: dict[str, Any], config: dict[str, Any], con
         blocks.append(ImagesBlock(items=[PreviewImage(s3_key=image.s3_key, alt_text=image.alt_text or None) for image in images]))
     blocks.append(TargetsBlock(items=[
         PreviewTarget(
-            label=f"{plan.account.network.capitalize()} · {plan.account.handle}",
+            label=f"{network_for(plan.account.network).display_name} · {plan.account.handle}",
             will_run=plan.ok,
             reason=None if plan.ok else (plan.detail or plan.reason),
         )
@@ -102,5 +131,7 @@ def _describe(account: SocialAccount) -> dict[str, Any]:
         "status": account.effective_status().value,
         "max_characters": network.limits.max_text,
         "max_images": network.limits.max_images,
+        "requires_image": network.limits.requires_image,
+        "reads_posts": network.reads_posts,
         **({"token_expires_at": account.token_expires_at.isoformat()} if account.token_expires_at else {}),
     }

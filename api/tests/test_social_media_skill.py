@@ -66,9 +66,9 @@ async def publish(text: str = "Hello LinkedIn", ctx: dict | None = None, **argum
     return await actions.publish({"text": text, **arguments}, {}, ctx or context())
 
 
-def test_the_skill_is_in_the_catalog_with_its_three_actions():
+def test_the_skill_is_in_the_catalog_with_its_four_actions():
     manifest = get_skill_registry().get("social_media").manifest
-    assert [action.name for action in manifest.actions] == ["accounts", "check", "publish"]
+    assert [action.name for action in manifest.actions] == ["accounts", "check", "recent_posts", "publish"]
     assert manifest.owner_only
 
 
@@ -208,8 +208,8 @@ async def test_the_consent_preview_shows_the_post_and_where_it_goes_or_why_not(d
     text, targets, overrides = preview["blocks"]
     assert text == {"kind": "text", "label": "Post", "value": "Hello LinkedIn", "format": "plain", "argument": "text"}
     by_label = {target["label"]: target for target in targets["items"]}
-    assert by_label["Linkedin · Ada Lovelace"]["will_run"] is True
-    assert by_label["Linkedin · Old Page"]["will_run"] is False and by_label["Linkedin · Old Page"]["reason"]
+    assert by_label["LinkedIn · Ada Lovelace"]["will_run"] is True
+    assert by_label["LinkedIn · Old Page"]["will_run"] is False and by_label["LinkedIn · Old Page"]["reason"]
     assert overrides["items"] == [{"label": "linkedin", "value": "Longer", "argument": None}]
     assert linkedin.requests == []
 
@@ -218,3 +218,72 @@ def test_publish_asks_the_person_first_and_lets_them_edit_the_text():
     publish_action = get_skill_registry().get("social_media").manifest.find_action("publish")
     assert publish_action.consent is not None
     assert publish_action.consent.editable == ["text"] and publish_action.consent.preview == "actions:publish_preview"
+
+
+@pytest.fixture
+def facebook(monkeypatch):
+    from src.connectors.social.networks.facebook_pages import FacebookPagesNetwork
+    from tests.test_connectors_social_facebook_pages import FakeGraph
+
+    fake = FakeGraph()
+    monkeypatch.setattr(networks, "NETWORKS", (LinkedInNetwork(), FacebookPagesNetwork(transport=httpx.MockTransport(fake))))
+    monkeypatch.setattr(settings, "social_apps", {"linked_in": SocialAppCredentials("id", "secret"),
+                                                  "facebook_pages": SocialAppCredentials("meta-app", "meta-secret")})
+    monkeypatch.setattr(settings, "social_meta_graph_version", "v26.0")
+    return fake
+
+
+def connect_page(account_id: str = ACCOUNT_ID) -> SocialAccount:
+    return SocialAccountRepository().connect(SocialAccount(
+        account_id=account_id, network="facebook_page", external_id="111", handle="Acme", display_name="Acme",
+        encrypted_credentials=encrypt(json.dumps({"page_access_token": "page-token-111", "page_id": "111"})),
+        grant_id="fb-user-1", connected_by=user_id_for(TEST_USER_EMAIL),
+    ))
+
+
+@pytest.mark.asyncio
+async def test_accounts_say_which_ones_need_an_image_and_can_read_their_posts(dynamodb_table, facebook):
+    connect()
+    connect_page()
+    described = {account["network"]: account for account in (await actions.accounts({}, {}, context()))["accounts"]}
+    assert described["facebook_page"]["reads_posts"] is True and described["linkedin"]["reads_posts"] is False
+    assert described["facebook_page"]["requires_image"] is False and described["facebook_page"]["max_images"] == 10
+
+
+@pytest.mark.asyncio
+async def test_recent_posts_reads_a_pages_posts_with_the_limit_clamped_and_the_text_capped(dynamodb_table, facebook, monkeypatch):
+    page = connect_page()
+    monkeypatch.setattr(actions, "RECENT_POST_TEXT_MAX", 3)
+
+    result = await actions.recent_posts({"social_account_id": page.social_account_id, "limit": 500}, {}, context())
+
+    assert result["supported"] is True
+    assert [post["text"] for post in result["posts"]] == ["Sec", ""]
+    assert result["posts"][0] == {"posted_at": "2026-11-02T09:30:00+00:00", "text": "Sec",
+                                  "url": "https://www.facebook.com/111/posts/2", "media": "carousel"}
+    assert facebook.calls("/111/posts")[0].url.params["limit"] == "25"
+    assert "page-token" not in json.dumps(result)
+
+
+@pytest.mark.asyncio
+async def test_recent_posts_says_when_a_network_cannot_read_posts(dynamodb_table, facebook):
+    member = connect()
+    result = await actions.recent_posts({"social_account_id": member.social_account_id}, {}, context())
+    assert result == {"supported": False, "posts": [], "reason": "LinkedIn doesn't let apps read posts"}
+
+
+@pytest.mark.asyncio
+async def test_recent_posts_reads_only_the_accounts_own_connections(dynamodb_table, facebook):
+    elsewhere = connect_page(account_id="another-account")
+    with pytest.raises(ValueError, match="No connected social account"):
+        await actions.recent_posts({"social_account_id": elsewhere.social_account_id}, {}, context())
+
+
+@pytest.mark.asyncio
+async def test_a_sign_in_facebook_refuses_while_reading_asks_for_a_reconnect(dynamodb_table, facebook):
+    page = connect_page()
+    facebook.failures["/111/posts"] = httpx.Response(400, json={"error": {"code": 190, "message": "expired"}})
+
+    with pytest.raises(ValueError, match="no longer accepts"):
+        await actions.recent_posts({"social_account_id": page.social_account_id}, {}, context())
+    assert SocialAccountRepository().get(ACCOUNT_ID, page.social_account_id).status == SocialAccountStatus.NEEDS_RECONNECT

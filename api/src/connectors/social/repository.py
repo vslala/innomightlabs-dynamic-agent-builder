@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, List, Optional
 
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from src.config import settings
-from src.connectors.social.models import SocialAccount, SocialAccountStatus, external_key
+from src.connectors.social.models import SocialAccount, SocialAccountStatus, external_key, grant_key
 from src.db import get_dynamodb_resource
 
 log = logging.getLogger(__name__)
@@ -19,9 +19,11 @@ class SocialAccountRepository:
     Key structure (single table):
         pk: Account#{account_id}   sk: SocialAccount#{social_account_id}
         pk: Account#{account_id}   sk: SocialAccountExternal#{network}#{external_id}  -> social_account_id
+        pk: SocialGrant#{network}#{grant_id}   sk: Account#{account_id}#{social_account_id}
 
     The second item is a uniqueness guard: an identity is connected once per account, and connecting it again
-    (to refresh a token) updates the account it names instead of making a duplicate.
+    (to refresh a token) updates the account it names instead of making a duplicate. The third, written only for
+    networks that name who granted access, finds the accounts of one grant across InnomightLabs accounts.
     """
 
     def __init__(self) -> None:
@@ -54,6 +56,7 @@ class SocialAccountRepository:
                              "Item": {**external_key(account.account_id, account.network, account.external_id),
                                       "social_account_id": account.social_account_id},
                              "ConditionExpression": "attribute_not_exists(pk)"}},
+                    *self._grant_puts(account),
                 ])
                 return account
             except ClientError as error:
@@ -76,7 +79,22 @@ class SocialAccountRepository:
             {"Delete": {"TableName": self.table.name, "Key": {"pk": account.pk, "sk": account.sk}}},
             {"Delete": {"TableName": self.table.name,
                         "Key": external_key(account.account_id, account.network, account.external_id)}},
+            *self._grant_deletes(account),
         ])
+
+    def for_grant(self, network: str, grant_id: str) -> List[SocialAccount]:
+        """Every account one person's grant connected, in any InnomightLabs account."""
+        partition = grant_key(network, grant_id, "", "")["pk"]
+        items: List[dict[str, Any]] = []
+        query: dict[str, Any] = {"KeyConditionExpression": Key("pk").eq(partition)}
+        while True:
+            response = self.table.query(**query)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        accounts = (self.get(str(item["account_id"]), str(item["social_account_id"])) for item in items)
+        return [account for account in accounts if account is not None]
 
     def _existing(self, account: SocialAccount) -> Optional[SocialAccount]:
         reference = self.table.get_item(
@@ -94,8 +112,28 @@ class SocialAccountRepository:
             "scopes": connected.scopes,
             "token_expires_at": connected.token_expires_at,
             "last_error": None,
+            # Someone else may have reconnected the same Page: the grant is theirs now
+            "grant_id": connected.grant_id or existing.grant_id,
             "connected_by": connected.connected_by,
             "updated_at": datetime.now(timezone.utc),
         })
-        self.table.put_item(Item=refreshed.to_dynamo_item())
+        moved = existing.grant_id and existing.grant_key() != refreshed.grant_key()
+        self.table.meta.client.transact_write_items(TransactItems=[
+            {"Put": {"TableName": self.table.name, "Item": refreshed.to_dynamo_item()}},
+            *(self._grant_deletes(existing) if moved else []),
+            *self._grant_puts(refreshed),
+        ])
         return refreshed
+
+    def _grant_puts(self, account: SocialAccount) -> List[dict[str, Any]]:
+        key = account.grant_key()
+        if key is None:
+            return []
+        return [{"Put": {"TableName": self.table.name, "Item": {
+            **key, "entity_type": "SocialGrant", "account_id": account.account_id,
+            "social_account_id": account.social_account_id,
+        }}}]
+
+    def _grant_deletes(self, account: SocialAccount) -> List[dict[str, Any]]:
+        key = account.grant_key()
+        return [{"Delete": {"TableName": self.table.name, "Key": key}}] if key else []
