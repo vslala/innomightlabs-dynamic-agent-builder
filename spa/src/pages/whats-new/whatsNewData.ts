@@ -15,28 +15,156 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-11-02",
+    title: "Social publishing support for Facebook Pages, Instagram and Threads",
+    summary:
+      "The Social media skill adds support for publishing to Facebook Pages, Instagram professional accounts and Threads, alongside the existing LinkedIn connections. Connectors appear when their sign-in integration is configured; Instagram and Threads manual checks and Meta App Review are still pending, so this is not an announcement of unrestricted availability.",
+    items: [
+      {
+        title: "Publish to the Facebook Pages you manage",
+        description:
+          "In Dashboard → Connectors → Social, choose Facebook Pages and select the Pages you want to connect during Facebook sign-in. An agent with the Social media skill can publish a text post or a post with up to 10 still images to selected Pages, with a preview before publishing unless you have already allowed that action. One sign-in can connect multiple Pages. This connector publishes as a Page, not as your personal Facebook profile, and requires Page access that permits creating content. Connector support is implemented; availability depends on the configured Facebook integration and Meta App Review, which is still pending.",
+        category: "new",
+      },
+      {
+        title: "Instagram image posts and carousels for professional accounts",
+        description:
+          "The Instagram connector supports Business and Creator accounts linked to a Facebook Page. Connect through Facebook sign-in from Connectors → Social, sharing the Page linked to your Instagram account. Agents can prepare a caption and publish one still image or a carousel of up to 10 images; Instagram requires an image and supports captions up to 2,200 characters. Personal accounts, Reels, Stories and video publishing are not supported by this connector. Instagram manual checks and Meta App Review are still pending; this is implemented support, not confirmed general availability.",
+        category: "new",
+      },
+      {
+        title: "Threads text posts and image carousels",
+        description:
+          "Connect your Threads profile through its own sign-in in Connectors → Social. The Social media skill can publish text-only posts, text with one still image, or carousels of up to 20 images, within the connector's 500-character limit. Use it to adapt an announcement for Threads without copying it from another network by hand. The connector does not yet publish videos, replies, quote posts or polls. Threads manual checks and Meta App Review are still pending; this is implemented support, not confirmed general availability.",
+        category: "new",
+      },
+      {
+        title: "Check recent posts before drafting the next one",
+        description:
+          "Agents can read recent posts from connected Facebook Pages, Instagram accounts and Threads profiles, including their text, timestamps and post links. Ask an agent to review what you have already published before drafting a follow-up or planning the next announcement, helping it avoid repeating the same message. This reads your connected identities' own posts, not a general social feed; LinkedIn recent-post reading is not supported.",
+        category: "new",
+      },
+      {
+        title: "Prepare one announcement for different social networks",
+        description:
+          "Use the Social media skill to check a draft against each selected account's posting limits and provide different wording for each network. Images from the conversation, generated images and saved image artifacts are prepared for each destination; Instagram images outside its supported proportions are padded rather than cropped. Publishing reports success or failure separately for each account, with a post link where the network returns one, so a failed destination is not mistaken for a successful cross-post.",
+        category: "improved",
+      },
+      {
+        title: "Social sign-in explains why no accounts were connected",
+        description:
+          "If social sign-in completes without connecting an eligible account, the Social tab now explains the next step: select the right Facebook Pages, enable the requested permissions, obtain a Page role that can publish, or link an Instagram Business or Creator account. Facebook Page discovery also handles Pages accessed through Business portfolios when Facebook omits role details. Missing permissions in InnomightLabs' own Facebook app configuration are identified as a setup issue rather than blamed on your account.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
+    date: "2026-11-02",
+    title: "Understand and manage each member's account permissions",
+    summary:
+      "A dedicated member permissions page shows what a teammate can do in each service, which policies grant that access, and where restrictions apply. Authorized administrators can add or remove policies without treating account administration as blanket access to everyone's content.",
+    items: [
+      {
+        title: "See access by service, not just a list of policy names",
+        description:
+          "Open a member from Dashboard → IAM → Members to inspect their permissions. The Access by service table summarizes full, limited or no policy access in each part of InnomightLabs and lists the allowed, conditional and denied actions. The page also shows which policies apply and whether they come from the member or a group, making it easier to explain why a teammate can or cannot perform an action. Resources shared directly with that person can provide additional access beyond this policy summary.",
+        category: "new",
+      },
+      {
+        title: "Attach or remove built-in and custom policies",
+        description:
+          "Administrators with permission to manage member access can attach an existing built-in or custom policy, or remove a directly attached policy, from the member's permissions page. Changes apply on the member's next request. People with view-only permission can inspect access without changing it, and the account owner's full access cannot be removed. An explicit Deny takes precedence over an Allow, so attaching another policy does not silently bypass a restriction.",
+        category: "new",
+      },
+      {
+        title: "Clearer separation between account administration and private content",
+        description:
+          "Built-in role descriptions now explain the difference between managing the account and reading other people's work. AdministratorAccess covers members, permissions, billing, settings and resource administration, but does not by itself grant access to other members' private conversation or knowledge-base content. Content access still depends on ownership or sharing. This makes it easier to delegate account operations without assuming an administrator should see everything a teammate creates.",
+        category: "improved",
+      },
+    ],
+  },
+  {
     date: "2026-11-01",
     title: "Simpler plans, with every feature in each one",
     summary:
-      "Three plans instead of four: Free, Business and Growth. Every plan gets the whole platform; they differ only in how much you run and the support you get.",
+      "Free, Business and Growth are the three standard plans, with Enterprise available for custom requirements. Standard plans share the platform's features and differ in usage allowances and support. Bring your own AI provider credentials: model usage is billed separately by your provider, not included in the subscription.",
     items: [
       {
         title: "Business and Growth replace Starter and Pro",
         description:
-          "Business (£49 a month) runs 5 agents and 10,000 messages a month. Growth (£149 a month) runs 20 agents and 50,000 messages, with priority support and an onboarding call. Annual billing gives two months free.",
+          "Business costs £49 per month and includes 5 agents, 10,000 messages per month, 500 knowledge-base pages, 10 lead forms and 1,000 lead captures per month, with unlimited memory and email support. Growth costs £149 per month and includes 20 agents, 50,000 messages, 5,000 knowledge-base pages, unlimited lead forms and 10,000 lead captures per month, with unlimited memory, priority support and an onboarding call. Annual billing is £490 for Business or £1,490 for Growth, equivalent to two months free.",
         category: "new",
       },
       {
         title: "Done-with-you setup",
         description:
-          "Want help getting started? We build your first solution with you, connect it to your tools and show your team how to run it.",
+          "A separate £499 one-off setup service helps you launch your first working solution: we build it with you, connect it to your website and tools, and walk your team through running it. This is optional hands-on implementation help, not a recurring subscription charge or an AI-usage allowance.",
         category: "new",
       },
       {
         title: "A clearer pricing page",
         description:
-          "See what every plan includes, compare each plan's limits side by side, and read why your AI usage is billed by your own provider at cost.",
+          "Compare subscription prices, usage allowances and support side by side. Free remains £0 with 1 agent, 100 messages per month and 10 knowledge-base pages, while Enterprise offers custom limits, invoicing, a named contact and help with security reviews. The page distinguishes the platform subscription from AI-provider charges so you can estimate both costs before choosing a plan.",
         category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-11-01",
+    title: "More predictable provider setup and safer API calls",
+    summary:
+      "Model choices now reflect the AI providers your account has actually configured, LinkedIn Pages sign-in requests the correct permissions, and REST Template calls use public domain names rather than raw IP addresses.",
+    items: [
+      {
+        title: "Bedrock uses your account's configured AWS credentials",
+        description:
+          "Amazon Bedrock is offered in agent model selection only after your account configures it, matching the behavior of other AI providers. Model discovery and agent requests use your saved AWS credentials rather than falling back to the server's AWS identity. This keeps model selection tied to your own provider setup and avoids offering Bedrock as though it were already included or configured for every account.",
+        category: "fixed",
+      },
+      {
+        title: "Corrected LinkedIn Pages sign-in permissions",
+        description:
+          "Connecting LinkedIn Pages now requests the authorization scopes expected by the Pages integration, fixing a permission mismatch that could stop sign-in before it completed. This improves connecting company Pages you administer; it does not introduce a new LinkedIn connector or add LinkedIn feed-reading capabilities.",
+        category: "fixed",
+      },
+      {
+        title: "REST templates call public services by domain name",
+        description:
+          "REST Template requests and every redirect must use a domain name, not a raw IPv4 or IPv6 address, and cannot override the destination through a different Host header. Private and internal network destinations remain blocked. Public InnomightLabs endpoints are allowed, so a template can call an automation webhook by its public domain. If an existing template uses a numeric IP address, replace it with the service's public domain name before running it again.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-10-31",
+    title: "A conversation workspace designed for phones",
+    summary:
+      "The web dashboard is easier to use on a small screen, with a mobile-first conversation layout, touch-friendly controls and better recovery when you return to a chat. These improvements apply to the website; the iOS and Android app shells are development groundwork, not an App Store or Google Play launch.",
+    items: [
+      {
+        title: "Chat and work with attachments on a smaller screen",
+        description:
+          "The conversation workspace, message composer, attachment controls and canvas panel now adapt to phone-sized screens. Menus and actions are available without relying on a mouse hover, touch targets are larger, and dialogs open as bottom sheets on phones. This makes it easier to send a message, manage attached files and inspect an agent's output without needing the desktop layout.",
+        category: "improved",
+      },
+      {
+        title: "Catch up when you return to a conversation",
+        description:
+          "When you bring the browser tab or app back to the foreground, the conversation resynchronizes with the server so work completed while you were away appears in the chat. Requests also attempt a session refresh and retry once when authentication expires, reducing interruptions caused by a stale access token. This is recovery for an online session, not offline chat support.",
+        category: "improved",
+      },
+      {
+        title: "Delete your account from Settings",
+        description:
+          "Settings now includes a Delete account action with an email-confirmation step. Confirming permanently deletes the account and its agents, conversations, knowledge bases, automations and connections, and cancels an active subscription. Access is disabled immediately while the remaining deletion runs in the background. This is an irreversible account deletion, not a way to leave a single conversation or remove one agent.",
+        category: "new",
+      },
+      {
+        title: "Continue choosing a subscription after signing in",
+        description:
+          "If you choose a paid plan while signed out, the website preserves the pending checkout and resumes it after login. You no longer need to return to the pricing page and select the same plan again just because authentication interrupted the purchase flow.",
+        category: "fixed",
       },
     ],
   },
@@ -49,25 +177,25 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Approval cards in chat",
         description:
-          "When an agent is about to publish a post or send an email, you see the exact text, images, recipients and accounts first. Approve it as it is, change the text, or reject it with a reason, and the agent carries on from your answer.",
+          "For actions that require consent, such as social publishing and sending Gmail, the agent pauses and shows an approval card in the conversation before carrying out the action. The preview includes the relevant text, images, recipients or destination accounts. Approve the proposed action, edit supported fields, or reject it with a reason; the agent continues from that decision instead of treating a rejected action as completed. This lets you review work that leaves the chat before it is posted or sent.",
         category: "new",
       },
       {
         title: "Always allow",
         description:
-          "Approve once with Always allow and the agent stops asking for that action, in chat and when it runs on a schedule. Switch it back any time on the agent's Skills or MCP Tools page.",
+          "For actions you trust an agent to carry out, choose Always allow when approving the action. That agent can then run the action without repeated approval prompts in chat and scheduled work. Review or revoke this choice on the agent's Skills or MCP Tools page whenever your needs change. This is an explicit permission you grant for an action, not a switch that automatically authorizes every tool the agent can use.",
         category: "new",
       },
       {
         title: "Automations ask once, when you build them",
         description:
-          "A step that posts or sends for you asks for your approval when you add it, in the editor or in Ila's chat, then runs on its own. If you change the step, it asks again. If you have an automation that posts or sends email, open it and approve that step once so it keeps running.",
+          "Automation steps that need consent ask for it during setup, whether you build the workflow in the editor or through Ila's chat. Once approved, the step can run unattended on its schedule; changing the step requires approval again. Existing automations that publish posts or send email may need attention: open the workflow and approve the affected step so it can continue running. This moves the review to setup rather than leaving a scheduled job waiting for a live chat response.",
         category: "improved",
       },
       {
         title: "MCP tools that ask first",
         description:
-          "Tools a server marks as destructive now ask you before they run, and you can choose which tools ask from the connector's settings.",
+          "MCP tools that their server marks as destructive now request approval before execution. In the connector's settings, choose which tools should ask for consent, then manage an agent's Always allow choices from its MCP Tools page. This extends the review flow to connected tool servers; it does not mean every MCP action is automatically classified as destructive or that every tool always prompts.",
         category: "new",
       },
     ],
