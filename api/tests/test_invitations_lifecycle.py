@@ -456,3 +456,35 @@ def test_http_resend_then_revoke_after_failed_delivery(lifecycle, routes):
     assert raw not in listed.text and "token_hash" not in listed.text
     assert client.delete(f"/iam/invitations/{invite_id}").status_code == 204
     assert client.post("/invitations/preview", json={"token": raw}).status_code == 404
+
+
+@pytest.mark.parametrize("value", [None, 1])
+def test_superuser_owned_accounts_have_no_seat_limit(lifecycle, monkeypatch, value):
+    """Superusers are exempt from plan limits, so an account they own invites and accepts without seats."""
+    service, aid, identity, table, _ = lifecycle
+    if value is None:
+        table.update_item(Key={"pk": f"Account#{aid}", "sk": "Account#Metadata"}, UpdateExpression="REMOVE seat_limit")
+    else:
+        set_metadata(table, aid, "seat_limit", value)  # already used by the owner alone
+    monkeypatch.setattr(settings, "superuser_emails", [TEST_USER_EMAIL.lower()])
+    invite, _ = issue(lifecycle)
+    service.create(aid, OWNER, "second@example.com")
+    _, raw = service.resend(aid, OWNER, invite.invite_id)  # resending rotates the token
+    assert service.accept(raw, identity).invite_id == invite.invite_id
+
+
+def test_superuser_exemption_keeps_the_pending_cap(lifecycle, monkeypatch):
+    service, aid, _, table, _ = lifecycle
+    table.update_item(Key={"pk": f"Account#{aid}", "sk": "Account#Metadata"}, UpdateExpression="REMOVE seat_limit")
+    monkeypatch.setattr(settings, "superuser_emails", [TEST_USER_EMAIL.lower()])
+    monkeypatch.setattr(settings, "account_invite_pending_limit", 1)
+    issue(lifecycle)
+    error_code("PENDING_LIMIT_REACHED", service.create, aid, OWNER, "other@example.com")
+
+
+def test_superuser_exemption_follows_the_owner_not_the_caller(lifecycle, monkeypatch):
+    """A superuser who is only a member doesn't lift another owner's seat limit."""
+    service, aid, identity, table, _ = lifecycle
+    table.update_item(Key={"pk": f"Account#{aid}", "sk": "Account#Metadata"}, UpdateExpression="REMOVE seat_limit")
+    monkeypatch.setattr(settings, "superuser_emails", [identity.email.lower()])
+    error_code("SEAT_LIMIT_UNAVAILABLE", service.create, aid, OWNER, "other@example.com")

@@ -81,12 +81,20 @@ class InvitationService:
             raise IamError(409, "SEAT_LIMIT_UNAVAILABLE", "The account has no valid seat limit")
         return int(value)
 
-    def _capacity(self, account: dict[str, Any], members: list[dict[str, Any]], invites: list[Invite],
-                  *, additional: int) -> int:
-        seats = self._seat_limit(account)
+    @staticmethod
+    def _owned_by_superuser(state: AccountIam, members: list[dict[str, Any]]) -> bool:
+        """Superusers are exempt from plan limits (as in `RateLimitService`), so their accounts have no seat limit."""
+        owner = next((member for member in members if member["user_id"] == state.owner_id), None)
+        return owner is not None and settings.is_superuser_email(owner.get("email"))
+
+    def _capacity(self, snapshot: Snapshot, *, additional: int) -> int | None:
+        """The seat limit the commit must still see, or None when the account has none to enforce."""
+        state, account, members, invites = snapshot
         pending = sum(invite.effective_status(self.clock()) == "pending" for invite in invites)
-        if len(members) + pending + additional > seats:
+        seats = None if self._owned_by_superuser(state, members) else self._seat_limit(account)
+        if seats is not None and len(members) + pending + additional > seats:
             raise IamError(409, "SEAT_LIMIT_REACHED", "The account has no available seats")
+        # The pending cap is abuse protection, not a plan limit, so it applies to superusers too
         if pending + additional > settings.account_invite_pending_limit:
             raise IamError(409, "PENDING_LIMIT_REACHED", "The account has too many pending invitations")
         return seats
@@ -138,7 +146,7 @@ class InvitationService:
         self._not_member(account_id, email, members)
         self._no_duplicate(email, invites, previous.invite_id if previous else None)
         additional = 0 if previous and previous.effective_status(self.clock()) == "pending" else 1
-        seats = self._capacity(account, members, invites, additional=additional)
+        seats = self._capacity(snapshot, additional=additional)
         timestamp = self.clock()
         expiry = timestamp + settings.account_invite_expiry_days * 86400
         raw = secrets.token_urlsafe(32)
@@ -251,12 +259,13 @@ class InvitationService:
     def accept(self, token: str, identity: Identity) -> AcceptResponse:
         token_hash = token_digest(token)
         located = self._lookup(token_hash)
-        state, account, members, invites = self._snapshot(located.account_id)
+        snapshot = self._snapshot(located.account_id)
+        state, account, members, invites = snapshot
         invite = next((item for item in invites if item.invite_id == located.invite_id), None)
         if not invite or invite.token_hash != token_hash or invite.effective_status(self.clock()) not in {"pending", "accepted"}:
             raise unavailable()
         current, identity_unchanged = self._verified_identity(identity.user_id, invite.email)
-        seats = self._capacity(account, members, invites, additional=0)
+        seats = self._capacity(snapshot, additional=0)
         member = next((item for item in members if item["user_id"] == current.user_id), None)
         if invite.status == "accepted":
             if invite.accepted_by != current.user_id or not member or member.get("status") != "active":
