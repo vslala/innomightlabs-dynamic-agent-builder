@@ -28,17 +28,14 @@ class ArtifactStorage:
         safe_filename = sanitize_filename(filename)
         return f"{member_prefix(account_id, user_id)}/artifacts/{date_prefix}/{artifact_id}/{safe_filename}"
 
-    def put_artifact(self, *, key: str, body: bytes | IO[bytes], content_type: str) -> None:
+    def put_artifact(self, *, key: str, body: bytes | IO[bytes], content_type: str, tagging: str | None = None) -> None:
+        """`tagging` ("retention=...") puts the object under one of the bucket's lifecycle rules."""
+        extra = {"ContentType": content_type, **({"Tagging": tagging} if tagging else {})}
         if not isinstance(body, bytes):
             # A file (a video) is streamed in parts, so it never has to fit in memory at once
-            self.client.upload_fileobj(body, self.bucket, key, ExtraArgs={"ContentType": content_type})
+            self.client.upload_fileobj(body, self.bucket, key, ExtraArgs=extra)
             return
-        self.client.put_object(
-            Bucket=self.bucket,
-            Key=key,
-            Body=body,
-            ContentType=content_type,
-        )
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=body, **extra)
 
     def delete_artifact(self, key: str) -> None:
         # Exact-key deletion is idempotent for missing objects in the unversioned media bucket.

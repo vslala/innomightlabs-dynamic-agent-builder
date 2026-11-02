@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: Facebook Pages built (2026-11-02); Threads and Instagram to come |
+| Status | 🚧 In progress: Facebook Pages, Instagram and Threads built (2026-11-02); manual checks on Instagram and Threads, and App Review, pending |
 | Owner | InnomightLabs API / connectors |
 | Last reviewed | 2026-11-02 |
 | Depends on | [Social cross-posting](LLD-social-cross-posting.md) (parent: social connectors, the `social_media` skill, the publisher), [Action consent](LLD-action-consent.md) (publishing asks first), [Upload file artifacts](../api/docs/LLD-upload-file-artifact-skill.md) |
@@ -21,6 +21,7 @@
 
 - [Decisions taken with the owner](#decisions-taken-with-the-owner)
 - [Implementation notes (2026-11-02)](#implementation-notes-2026-11-02)
+  - [Instagram and Threads (2026-11-02)](#instagram-and-threads-2026-11-02)
 - [Context: what exists today](#context-what-exists-today)
 - [Goals and non-goals](#goals-and-non-goals)
 - [Design](#design)
@@ -72,9 +73,8 @@ Phase A it needs. Built:
 | Settings | `SOCIAL_FACEBOOK_LOGIN_CONFIG_ID`, `SOCIAL_META_GRAPH_VERSION` (both deploy scripts) |
 | Dashboard | `spa/src/assets/connectors/facebook.svg`; the privacy policy names Facebook Pages, reading posts, the callbacks and account deletion |
 
-Not built yet, and needed only by Threads and Instagram: `fresh_credentials`, renditions and the public media route,
-`text_length`, `aspect_range`, the hashtag and mention limits, and their settings. LinkedIn Pages `recent_posts` is
-also still to do (`reads_posts = False` for now).
+Threads and Instagram followed the same day (see [Instagram and Threads](#instagram-and-threads-2026-11-02)
+below). LinkedIn Pages `recent_posts` is still to do (`reads_posts = False` for now).
 
 Departures from the design below:
 
@@ -103,22 +103,75 @@ Departures from the design below:
   `last_error` on an account that needs a new sign-in ("Access was removed in Facebook Pages"), and counts the
   accounts one sign-in added.
 
-**Instagram through unified login.** Meta no longer offers Instagram Login to new apps, so Instagram will connect
-through the same Facebook Login for Business sign-in, as an Instagram professional account linked to a Page.
-Section 1's Instagram column and §2's Instagram notes describe Instagram Login and are rewritten in Phase C. What
-is already true for it:
+### Instagram and Threads (2026-11-02)
 
-- Instagram will use the same app, `facebook_pages` (one `SOCIAL_FACEBOOK_PAGES_*` pair, one Login configuration
-  that also asks for `instagram_basic` and `instagram_content_publish`).
-- It finds its accounts through `/me/accounts?fields=instagram_business_account`, and posts with the Page token on
-  `graph.facebook.com`.
-- `networks_of_app("facebook_pages")` already makes the callbacks cover every network of the app.
-- Disconnect must then also count the other network's accounts of the same grant before revoking it.
+Built:
 
-**Register in the Meta app** (Facebook Login for Business settings and App settings › Basic):
+| Area | Code |
+| --- | --- |
+| The networks | `networks/threads.py` (`ThreadsNetwork`, `threads_length`), `networks/instagram.py` (`InstagramNetwork`), both in `NETWORKS` |
+| The shared Facebook sign-in | `networks/facebook_login.py`: `FacebookLogin` (dialog, code → long-lived user token, reads, `/me/permissions`, revoke), `permission_problem`, `diagnostic`. Facebook Pages and Instagram both use it |
+| Meta shared | `networks/meta.py`: `bearer`, `wait_for_container` (polls every `POLL_SECONDS`, bounded by `social_publish_timeout_seconds`), `permalink` |
+| Protocol | `NetworkLimits.text_length`, `aspect_range`, `max_hashtags`, `max_mentions`, `public_media`; `PreparedImage.url`; `RefreshedCredentials`; `fresh_credentials` on every network (`None` except Threads) |
+| Renditions | `api/src/connectors/social/renditions.py`: `Renditions.for_network` prepares once per network and stores `public_media` ones; `media_url`, `rendition_key`. `media.prepare` pads into `aspect_range` |
+| Media route | `GET`/`HEAD /connectors/social/media/{token}.jpg` in `router.py` (`public_router`), public through `SOCIAL_MEDIA_PATH_PREFIX` in `auth/middleware.py`; `ArtifactStorage.put_artifact(tagging=...)` |
+| Lifecycle | `expire-social-renditions` (tag `retention=social-rendition`, 2 days) in `terraform/conversation_media.tf` |
+| Publisher | `SocialPublisher.fresh(account, network)` renews and saves before publishing; the skill's `recent_posts` uses it too. `SocialAccountRepository.update_credentials` |
+| Planning | `limits.text_length`; skip reasons `too_many_hashtags`, `too_many_mentions` |
+| Settings | `SOCIAL_MEDIA_URL_TTL_SECONDS`, `SOCIAL_MEDIA_BASE_URL`, `SOCIAL_PUBLISH_TIMEOUT_SECONDS` (both deploy scripts); the Threads app is `SOCIAL_THREADS_CLIENT_ID` / `_CLIENT_SECRET` |
+| Dashboard | `spa/src/assets/connectors/instagram.svg`, `threads.svg`; the privacy policy names both, and the temporary image copies |
+| Tests | `test_connectors_social_threads.py`, `_instagram.py`, `_renditions.py`, `_planning.py`; contract and callback additions |
+
+Departures from the design below:
+
+- **Instagram connects through the Facebook sign-in** (unified login), not Instagram Login, which Meta no longer
+  offers new apps. `InstagramNetwork.app` is `facebook_pages`: the same client id, Login configuration and
+  callbacks as Facebook Pages. It reads `/me/accounts?fields=…,instagram_business_account{id,username,name,
+  profile_picture_url}` and connects one account per linked professional account. It posts with that **Page's
+  token** on `graph.facebook.com`, so it has no expiry and no renewal. Credentials: `page_access_token`,
+  `instagram_id`, `page_id`, `user_access_token` (only to revoke). Its scopes, sent only without a Login
+  configuration: `pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish`. **The Login
+  configuration must ask for `instagram_basic` and `instagram_content_publish` too**, else connecting says it is
+  our setup.
+- **One grant, two networks.** Facebook Pages and Instagram accounts of one person share the grant, so disconnect
+  counts `for_grant` over every network of the app (`networks_of_app`) before revoking. Revoking ends both.
+- **Instagram's account check** is the linked `instagram_business_account` itself: Facebook returns one only for a
+  Business or Creator account, so there is no `account_type` check. A Page with none is explained: "No Instagram
+  professional account is linked to …".
+- **Instagram `max_images` is 10**, as open question 1 allowed.
+- **Alt text** goes on a Threads image and carousel item, and on a single Instagram image. Instagram carousel items
+  get none: Meta documents `alt_text` for image posts only.
+- **Container status `ERROR` is `REJECTED`** with Meta's reason (usually an image it couldn't fetch); `EXPIRED` and
+  a wait that runs out are `TRANSIENT`. Carousel items are each waited for before the parent is created.
+- **Threads' long-lived exchange** sends the short-lived token and app secret in the query, as Meta requires. Every
+  other Threads call sends the token in the `Authorization: Bearer` header.
+- **A Threads renewal that fails other than AUTH** (a 5xx, a timeout) keeps the current token, which still works,
+  and is retried on the next post. An already-lapsed token isn't renewed (planning skips it as needs_reconnect).
+- **Threads revoke** calls `DELETE /v1.0/me/permissions` best effort and logs when Threads doesn't support it.
+- **Renditions** are prepared synchronously inside `for_network`, before the target's first `await`, so two
+  targets on one network can't both encode and upload. The media URL token is our Fernet `encrypt` of
+  `{"k": key, "exp": …}`. `rendition_key` accepts only `accounts/{id}/social/{post}/{network}/{n}.jpg`.
+
+**Before connecting in production:**
+
+1. Add `instagram_basic` and `instagram_content_publish` to the Facebook Login configuration (assets: Pages and
+   Instagram accounts), or create one that has them and update `SOCIAL_FACEBOOK_LOGIN_CONFIG_ID`.
+2. In the Threads use case, set the redirect `https://api.innomightlabs.com/connectors/social/oauth/callback`, and the
+   uninstall and delete callbacks below. Put `PROD_SOCIAL_THREADS_CLIENT_ID` / `_CLIENT_SECRET` (the **Threads**
+   app id and secret) in `.envrc`, then deploy.
+3. The Railway IAM user writes `accounts/*/social/*` in the conversation media bucket with a tag
+   (`s3:PutObject`, `s3:PutObjectTagging`) and reads it back (`s3:GetObject`); its policy is not in Terraform.
+4. `terraform apply` the lifecycle rule (through `scripts/deploy_<env>.sh`).
+
+**Register in the Meta app** (Facebook Login for Business settings and App settings › Basic; they cover Instagram too):
 
 - Deauthorize callback URL: `https://api.innomightlabs.com/connectors/social/meta/facebook_pages/deauthorize`.
 - Data deletion request URL: `https://api.innomightlabs.com/connectors/social/meta/facebook_pages/data-deletion`.
+
+**And in the Threads use case** (signed with the Threads app secret):
+
+- Uninstall callback URL: `https://api.innomightlabs.com/connectors/social/meta/threads/deauthorize`.
+- Delete callback URL: `https://api.innomightlabs.com/connectors/social/meta/threads/data-deletion`.
 
 ## Context: what exists today
 

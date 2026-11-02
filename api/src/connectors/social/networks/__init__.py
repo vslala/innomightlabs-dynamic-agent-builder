@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from src.connectors.social.networks.base import SocialNetwork
 from src.connectors.social.networks.facebook_pages import FacebookPagesNetwork
+from src.connectors.social.networks.instagram import InstagramNetwork
 from src.connectors.social.networks.linkedin import LinkedInNetwork
 from src.connectors.social.networks.linkedin_pages import LinkedInPagesNetwork
+from src.connectors.social.networks.threads import ThreadsNetwork
 
 #: Adding a network: write networks/<key>.py and add it here. Nothing else changes.
-NETWORKS: tuple[SocialNetwork, ...] = (LinkedInNetwork(), LinkedInPagesNetwork(), FacebookPagesNetwork())
+NETWORKS: tuple[SocialNetwork, ...] = (
+    LinkedInNetwork(), LinkedInPagesNetwork(), FacebookPagesNetwork(), InstagramNetwork(), ThreadsNetwork(),
+)
 
 
 def network_for(key: str) -> SocialNetwork:
@@ -22,5 +26,5 @@ def enabled_networks() -> list[SocialNetwork]:
 
 
 def networks_of_app(app: str) -> list[SocialNetwork]:
-    """The networks one OAuth app serves (Meta's unified login serves Facebook Pages and, later, Instagram)."""
+    """The networks one OAuth app serves (one Facebook sign-in serves Facebook Pages and Instagram)."""
     return [network for network in NETWORKS if network.app == app]

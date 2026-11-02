@@ -3,6 +3,7 @@ protocol, so a new network is one file in this folder and one line in `networks/
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -72,6 +73,14 @@ class NetworkLimits:
     #: The longest side and the file size a post's image may have; `media.prepare` fits each image to them
     max_image_side: int = 4096
     max_image_bytes: int = 8 * 1024 * 1024
+    #: How the network counts text (Threads counts an emoji as its UTF-8 bytes)
+    text_length: Callable[[str], int] = len
+    #: The width / height range the network accepts (Instagram); an image outside it is padded onto white
+    aspect_range: tuple[float, float] | None = None
+    max_hashtags: int | None = None
+    max_mentions: int | None = None
+    #: The network fetches each image from a public URL (Threads, Instagram) instead of receiving its bytes
+    public_media: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,6 +90,8 @@ class PreparedImage:
     data: bytes
     mime_type: str
     alt_text: str = ""
+    #: For a `public_media` network: where it fetches this rendition from
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +116,14 @@ class RecentPost:
     url: str | None
     #: "text", "image", "carousel", "video" or "other"
     media: str
+
+
+@dataclass(frozen=True)
+class RefreshedCredentials:
+    """A renewed token, to be saved before it is used."""
+
+    credentials: dict[str, Any]
+    expires_at: datetime | None
 
 
 class SocialNetwork(Protocol):
@@ -132,6 +151,11 @@ class SocialNetwork(Protocol):
 
     async def complete(self, code: str, code_verifier: str) -> list[ConnectedProfile]:
         """Exchange the sign-in's code for the identities it granted (usually one). Raises ConnectError."""
+        ...
+
+    async def fresh_credentials(self, credentials: dict[str, Any]) -> RefreshedCredentials | None:
+        """New credentials when the token should be renewed now, else None. Raises PublishError(AUTH) when the
+        network refuses to renew it."""
         ...
 
     async def revoke(self, credentials: dict[str, Any]) -> None:

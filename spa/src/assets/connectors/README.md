@@ -30,6 +30,8 @@ Refreshed from the providers' sites on 2026-10-20:
 | `google_ads.png` | https://www.gstatic.com/images/branding/product/2x/ads_96dp.png |
 | `linkedin.svg` | Simple Icons LinkedIn mark (CC0), in LinkedIn blue; used by the Social tab (`api/src/connectors/social/networks/linkedin.py`) |
 | `facebook.svg` | Simple Icons Facebook mark (CC0), in Facebook blue `#0866FF`; used by the Social tab (`api/src/connectors/social/networks/facebook_pages.py`) |
+| `instagram.svg` | Simple Icons Instagram mark (CC0), in Instagram pink `#FF0069`; used by the Social tab (`api/src/connectors/social/networks/instagram.py`) |
+| `threads.svg` | Simple Icons Threads mark (CC0), in black; used by the Social tab (`api/src/connectors/social/networks/threads.py`) |
 
 `ConnectorIcon.tsx` resolves the backend's `icon` key to `<icon>.png|svg`. The legacy Google Ads
 account key `megaphone` resolves to `google_ads`. Keep one asset per key to avoid ambiguous selection.

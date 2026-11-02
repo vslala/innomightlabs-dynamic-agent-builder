@@ -65,6 +65,20 @@ class SocialAccountRepository:
                     raise
         raise RuntimeError("Could not save the social account")
 
+    def update_credentials(self, account: SocialAccount, encrypted_credentials: str,
+                           token_expires_at: Optional[datetime]) -> SocialAccount:
+        """Save a renewed token and nothing else, and only while the account is still connected."""
+        now = datetime.now(timezone.utc)
+        self.table.update_item(
+            Key={"pk": account.pk, "sk": account.sk},
+            UpdateExpression="SET encrypted_credentials = :credentials, token_expires_at = :expires, updated_at = :now",
+            ConditionExpression="attribute_exists(pk)",
+            ExpressionAttributeValues={":credentials": encrypted_credentials, ":now": now.isoformat(),
+                                       ":expires": token_expires_at.isoformat() if token_expires_at else None},
+        )
+        return account.model_copy(update={"encrypted_credentials": encrypted_credentials,
+                                          "token_expires_at": token_expires_at, "updated_at": now})
+
     def mark_needs_reconnect(self, account: SocialAccount, reason: str) -> None:
         self.table.update_item(
             Key={"pk": account.pk, "sk": account.sk},

@@ -4,17 +4,20 @@ others, and each is claimed before the network is called so a retry can't post i
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from src.connectors.social.models import SocialAccount
+from src.connectors.social.media import SourceImage
 from src.connectors.social.networks import network_for
-from src.connectors.social.media import SourceImage, prepare
-from src.connectors.social.networks.base import PreparedPost, PublishError, PublishErrorKind
+from src.connectors.social.networks.base import PreparedPost, PublishError, PublishErrorKind, SocialNetwork
 from src.connectors.social.planning import TargetPlan, plan_targets, select_accounts
 from src.connectors.social.posts import PostTarget, SocialPostRepository, TargetStatus
+from src.connectors.social.renditions import Renditions
 from src.connectors.social.repository import SocialAccountRepository
+from src.crypto import encrypt
 
 log = logging.getLogger(__name__)
 
@@ -46,12 +49,23 @@ class SocialPublisher:
                           overrides=request.overrides, image_count=len(request.images))
         if not plans:
             raise ValueError("No connected social account matches. Connect one in Connectors, on the Social tab.")
-        targets = await asyncio.gather(*(self._publish_target(request, plan) for plan in plans))
+        renditions = Renditions(request.account_id, request.post_id, request.images)
+        targets = await asyncio.gather(*(self._publish_target(request, plan, renditions) for plan in plans))
         published = [target for target in targets if target.status == TargetStatus.PUBLISHED]
         status = "failed" if not published else "published" if len(published) == len(targets) else "partial"
         return {"post_id": request.post_id, "status": status, "targets": [target.to_result() for target in targets]}
 
-    async def _publish_target(self, request: PublishRequest, plan: TargetPlan) -> PostTarget:
+    async def fresh(self, account: SocialAccount, network: SocialNetwork) -> dict[str, Any]:
+        """The account's credentials, its token renewed and saved first when the network says it is time (Threads).
+        Raises PublishError(AUTH) when the network refuses to renew it."""
+        credentials = account.credentials()
+        refreshed = await network.fresh_credentials(credentials)
+        if refreshed is None:
+            return credentials
+        self.accounts.update_credentials(account, encrypt(json.dumps(refreshed.credentials)), refreshed.expires_at)
+        return refreshed.credentials
+
+    async def _publish_target(self, request: PublishRequest, plan: TargetPlan, renditions: Renditions) -> PostTarget:
         account = plan.account
         target = PostTarget(account_id=account.account_id, post_id=request.post_id,
                             social_account_id=account.social_account_id, network=account.network,
@@ -63,8 +77,9 @@ class SocialPublisher:
             return self._already(self.posts.get(target))
         network = network_for(account.network)
         try:
-            images = tuple(prepare(image, network.limits) for image in request.images)
-            published = await network.publish(account.credentials(), PreparedPost(text=plan.text, images=images))
+            images = renditions.for_network(network)
+            credentials = await self.fresh(account, network)
+            published = await network.publish(credentials, PreparedPost(text=plan.text, images=images))
         except PublishError as error:
             return self._failed(claimed, account, error)
         except Exception:  # a network strategy's own bug must not take the other accounts down, nor leave this one locked

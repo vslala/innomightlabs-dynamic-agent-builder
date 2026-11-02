@@ -17,6 +17,7 @@ from src.connectors.social import networks
 from src.connectors.social.meta_callbacks import parse_signed_request
 from src.connectors.social.models import SocialAccount, SocialAccountStatus
 from src.connectors.social.networks.facebook_pages import FacebookPagesNetwork
+from src.connectors.social.networks.threads import ThreadsNetwork
 from src.connectors.social.repository import SocialAccountRepository
 from src.crypto import encrypt
 
@@ -113,3 +114,22 @@ def test_a_callback_with_a_bad_signature_changes_nothing(test_client, dynamodb_t
 
 def test_a_callback_for_an_app_we_do_not_have_is_not_found(test_client, dynamodb_table, meta_app):
     assert test_client.post("/connectors/social/meta/myspace/deauthorize", data={"signed_request": "x.y"}).status_code == 404
+
+
+def test_threads_callbacks_are_signed_by_the_threads_app_and_cover_its_profiles(test_client, dynamodb_table, monkeypatch):
+    monkeypatch.setattr(networks, "NETWORKS", (ThreadsNetwork(),))
+    monkeypatch.setattr(settings, "social_apps", {"threads": SocialAppCredentials("threads-app", "threads-secret")})
+    account = SocialAccountRepository().connect(SocialAccount(
+        account_id="account-a", network="threads", external_id="th-1", handle="@acme", display_name="Acme",
+        encrypted_credentials=encrypt(json.dumps({"access_token": "t", "user_id": "th-1"})), grant_id="th-1",
+        connected_by="someone",
+    ))
+    payload = {"algorithm": "HMAC-SHA256", "issued_at": 1, "user_id": "th-1"}
+
+    forged = test_client.post("/connectors/social/meta/threads/deauthorize", data={"signed_request": signed(payload)})
+    assert forged.status_code == 400, "the Facebook app's secret doesn't sign for Threads"
+
+    response = test_client.post("/connectors/social/meta/threads/deauthorize",
+                                data={"signed_request": signed(payload, "threads-secret")})
+    assert response.status_code == 200
+    assert SocialAccountRepository().get("account-a", account.social_account_id).status == SocialAccountStatus.NEEDS_RECONNECT

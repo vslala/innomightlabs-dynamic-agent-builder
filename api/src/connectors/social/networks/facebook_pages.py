@@ -8,30 +8,25 @@ nothing here refreshes. The user token is kept only to end the grant when the la
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime
 from typing import Any
-from urllib.parse import quote, urlencode
 
 import httpx
 
-from src.config import settings
 from src.connectors.social.networks.base import (
     ConnectedProfile,
-    ConnectError,
     NetworkLimits,
     NothingToPostAs,
     PreparedImage,
     PreparedPost,
     PublishedPost,
     RecentPost,
+    RefreshedCredentials,
 )
-from src.connectors.social.networks.meta import graph_call, graph_json, graph_message
-
-log = logging.getLogger(__name__)
+from src.connectors.social.networks.facebook_login import FacebookLogin, diagnostic, graph_url, permission_problem
+from src.connectors.social.networks.meta import bearer, graph_call
 
 NAME = "Facebook"
-TIMEOUT_SECONDS = 30
 #: The Page tasks that let a person publish as the Page; an Analyst can't
 POSTING_TASKS = {"CREATE_CONTENT", "MANAGE"}
 POST_URL = "https://www.facebook.com/"
@@ -39,10 +34,6 @@ POST_URL = "https://www.facebook.com/"
 NEEDED_PERMISSIONS = {"pages_show_list": "see your Pages", "pages_manage_posts": "post to your Pages"}
 #: A Page's attachment `media_type`, as the media kinds `recent_posts` reports
 MEDIA_KINDS = {"photo": "image", "album": "carousel", "video": "video"}
-
-
-def graph_url(path: str) -> str:
-    return f"https://graph.facebook.com/{settings.social_meta_graph_version}{path}"
 
 
 class FacebookPagesNetwork:
@@ -58,40 +49,23 @@ class FacebookPagesNetwork:
     reads_posts = True
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
-        #: Tests answer the Graph API through this
-        self._transport = transport
+        self._login = FacebookLogin(transport)
 
     def configured(self) -> bool:
-        return settings.social_app(self.app) is not None
+        return self._login.configured()
 
     def authorize_url(self, state: str, code_challenge: str) -> str:
-        # Facebook documents no PKCE for this flow; the sealed state is the CSRF guard
-        params = {
-            "client_id": self._app().client_id,
-            "redirect_uri": settings.social_oauth_redirect_uri,
-            "state": state,
-            "response_type": "code",
-        }
-        if settings.social_facebook_login_config_id:
-            params |= {"config_id": settings.social_facebook_login_config_id, "override_default_response_type": "true"}
-        else:
-            params["scope"] = self.scopes
-        return f"https://www.facebook.com/{settings.social_meta_graph_version}/dialog/oauth?{urlencode(params, quote_via=quote)}"
+        return self._login.authorize_url(state, self.scopes)
 
     async def complete(self, code: str, code_verifier: str) -> list[ConnectedProfile]:
-        app = self._app()
-        async with self._client() as client:
-            short = await self._token(client, "sign-in", client_id=app.client_id, client_secret=app.client_secret,
-                                      redirect_uri=settings.social_oauth_redirect_uri, code=code)
-            user_token = await self._token(client, "long-lived token", grant_type="fb_exchange_token",
-                                           client_id=app.client_id, client_secret=app.client_secret,
-                                           fb_exchange_token=short)
-            me = await self._read(client, "/me", user_token, fields="id")
-            pages = await self._read(client, "/me/accounts", user_token,
-                                     fields="id,name,access_token,tasks,picture{url}", limit="100")
-            postable = [page for page in pages.get("data", []) if _can_post(page)]
+        async with self._login.client() as client:
+            user_token = await self._login.user_token(client, code)
+            me = await self._login.read(client, "/me", user_token, fields="id")
+            pages = (await self._login.read(client, "/me/accounts", user_token,
+                                            fields="id,name,access_token,tasks,picture{url}", limit="100")).get("data", [])
+            postable = [page for page in pages if _can_post(page)]
             if not postable:
-                raise await self._nothing_to_post_as(client, user_token, pages.get("data", []))
+                raise await self._nothing_to_post_as(client, user_token, pages)
         return [ConnectedProfile(
             external_id=str(page["id"]),
             handle=str(page.get("name") or f"Facebook Page {page['id']}"),
@@ -103,19 +77,16 @@ class FacebookPagesNetwork:
             grant_id=str(me["id"]),
         ) for page in postable]
 
+    async def fresh_credentials(self, credentials: dict[str, Any]) -> RefreshedCredentials | None:
+        """Page tokens have no fixed expiry."""
+        return None
+
     async def revoke(self, credentials: dict[str, Any]) -> None:
-        try:
-            async with self._client() as client:
-                response = await client.delete(graph_url("/me/permissions"),
-                                               headers=_bearer(credentials["user_access_token"]))
-            if response.status_code != 200:
-                log.warning("Facebook did not end the grant (%s)", graph_message(response))
-        except Exception as error:  # a failed revoke must not stop the account from being disconnected
-            log.warning("Facebook grant revoke failed: %s", type(error).__name__)
+        await self._login.revoke(credentials["user_access_token"], NAME)
 
     async def publish(self, credentials: dict[str, Any], post: PreparedPost) -> PublishedPost:
-        page, headers = credentials["page_id"], _bearer(credentials["page_access_token"])
-        async with self._client() as client:
+        page, headers = credentials["page_id"], bearer(credentials["page_access_token"])
+        async with self._login.client() as client:
             if len(post.images) == 1:
                 # One call uploads the photo and posts it
                 body = await graph_call(client, "POST", graph_url(f"/{page}/photos"), network=NAME, created=True,
@@ -134,10 +105,10 @@ class FacebookPagesNetwork:
         return PublishedPost(external_id=post_id, url=f"{POST_URL}{post_id}" if post_id else None)
 
     async def recent_posts(self, credentials: dict[str, Any], limit: int) -> list[RecentPost]:
-        async with self._client() as client:
+        async with self._login.client() as client:
             body = await graph_call(
                 client, "GET", graph_url(f"/{credentials['page_id']}/posts"), network=NAME, created=False,
-                headers=_bearer(credentials["page_access_token"]),
+                headers=bearer(credentials["page_access_token"]),
                 params={"fields": "id,message,created_time,permalink_url,attachments{media_type}", "limit": str(limit)},
             )
         return [RecentPost(
@@ -152,54 +123,16 @@ class FacebookPagesNetwork:
                                   pages: list[dict[str, Any]]) -> NothingToPostAs:
         """Why the sign-in gave no Page to post as, told to the person in Facebook's terms: a permission switched off,
         no Page chosen, or no role that can post on the Pages chosen."""
-        response = await client.get(graph_url("/me/permissions"), headers=_bearer(token))
-        listed = graph_json(response).get("data") if response.status_code == 200 else None
-        status = {str(item.get("permission")): str(item.get("status")) for item in listed or []}
-        tasks = sorted({task for page in pages for task in page.get("tasks") or []})
-        granted = sorted(permission for permission, state in status.items() if state == "granted")
-        diagnostic = (f"(Pages returned: {len(pages)}, their tasks: {', '.join(tasks) or 'none'}; permissions "
-                      f"granted: {', '.join(granted) or 'unknown'})")
-        # A permission Facebook never asked for is our app's setup (the Login configuration), not the person's choice
-        not_asked = [need for permission, need in NEEDED_PERMISSIONS.items() if listed is not None and permission not in status]
-        declined = [need for permission, need in NEEDED_PERMISSIONS.items() if status.get(permission) == "declined"]
-        if not_asked:
-            log.error("The Facebook Login configuration doesn't ask for %s", ", ".join(
-                permission for permission in NEEDED_PERMISSIONS if permission not in status))
-            message = (f"InnoMight Labs' Facebook connection isn't set up to ask to {' and '.join(not_asked)} yet, "
-                       "so no Page could be connected. This is on our side: contact hello@innomightlabs.com.")
-        elif declined:
-            message = (f"Facebook didn't give permission to {' and '.join(declined)}. Connect again and leave every "
-                       "permission Facebook asks for switched on.")
-        elif not pages:
+        status = await self._login.permissions(client, token)
+        message = permission_problem(status, NEEDED_PERMISSIONS, "Page")
+        if message is None and not pages:
             message = ("No Page was shared with InnoMight Labs. Connect again, choose \"Edit previous settings\" on "
                        "Facebook if it offers it, and tick the Pages you want to post to.")
-        else:
+        elif message is None:
             names = ", ".join(str(page.get("name") or page.get("id")) for page in pages)
             message = (f"Your role on {names} doesn't allow posting. Ask a Page admin for Facebook access that "
                        "includes creating content, then connect again.")
-        return NothingToPostAs(message, diagnostic)
-
-    async def _token(self, client: httpx.AsyncClient, what: str, **params: str) -> str:
-        response = await client.get(graph_url("/oauth/access_token"), params=params)
-        token = graph_json(response).get("access_token")
-        if response.status_code != 200 or not token:
-            raise ConnectError(f"Facebook did not grant the {what} ({graph_message(response)})")
-        return str(token)
-
-    async def _read(self, client: httpx.AsyncClient, path: str, token: str, **params: str) -> dict[str, Any]:
-        response = await client.get(graph_url(path), params=params, headers=_bearer(token))
-        if response.status_code != 200:
-            raise ConnectError(f"Facebook did not return {path} ({graph_message(response)})")
-        return graph_json(response)
-
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=self._transport, timeout=TIMEOUT_SECONDS)
-
-    def _app(self):
-        app = settings.social_app(self.app)
-        if app is None:
-            raise ConnectError("Facebook is not set up on this server")
-        return app
+        return NothingToPostAs(message, diagnostic(status, pages))
 
 
 def _can_post(page: dict[str, Any]) -> bool:
@@ -207,10 +140,6 @@ def _can_post(page: dict[str, Any]) -> bool:
     through a Business portfolio), and then the Page token is what the person was given to post with."""
     tasks = page.get("tasks")
     return bool(page.get("access_token")) and (tasks is None or bool(POSTING_TASKS & set(tasks)))
-
-
-def _bearer(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def _source(image: PreparedImage) -> dict[str, tuple[str, bytes, str]]:

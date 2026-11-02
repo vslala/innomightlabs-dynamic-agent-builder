@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from botocore.exceptions import ClientError
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer
+
+from src.artifacts.storage import ArtifactStorage
 
 from src.auth.oauth_handoff import handoff_redirect, safe_return_to
 from src.config import settings
@@ -16,7 +19,8 @@ from src.connectors.social.models import (
     SocialConnectResponse,
     SocialNetworkResponse,
 )
-from src.connectors.social.networks import enabled_networks, network_for
+from src.connectors.social.networks import enabled_networks, network_for, networks_of_app
+from src.connectors.social.renditions import MEDIA_PATH, rendition_key
 from src.connectors.social.repository import SocialAccountRepository
 from src.iam.dependencies import get_principal
 from src.iam.principal import Principal
@@ -80,6 +84,20 @@ async def social_oauth_callback(
     return handoff_redirect(return_to, flow="social", state=state, code=code, error=error)
 
 
+@public_router.api_route(MEDIA_PATH + "{token}.jpg", methods=["GET", "HEAD"])
+def social_media_rendition(token: str) -> Response:
+    """A post's image for Threads or Instagram to fetch. Public, because Meta fetches it without signing in; the
+    token is sealed by us, names one rendition and expires (src/connectors/social/renditions.py)."""
+    key = rendition_key(token)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        body = ArtifactStorage().get_object_body(key)
+    except ClientError as error:
+        raise HTTPException(status_code=404, detail="Not found") from error
+    return Response(body, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
+
+
 @router.get("/accounts", response_model=list[SocialAccountResponse])
 async def list_accounts(principal: Member) -> list[SocialAccountResponse]:
     return [account.to_response() for account in SocialAccountRepository().list(principal.account_id)]
@@ -93,8 +111,10 @@ async def disconnect_account(social_account_id: str, principal: Manager) -> None
         raise HTTPException(status_code=404, detail="Social account not found")
     network = network_for(account.network)
     # Accounts that share one grant (every page of a member) keep it until the last of them goes. A grant the network
-    # names is found wherever it is used, in this InnomightLabs account or another.
-    sharing = (repository.for_grant(account.network, account.grant_id) if account.grant_id
+    # names is found wherever it is used, in this InnomightLabs account or another, and on every network of its app
+    # (one Facebook sign-in serves Facebook Pages and Instagram).
+    sharing = ([other for sibling in networks_of_app(network.app) for other in repository.for_grant(sibling.key, account.grant_id)]
+               if account.grant_id
                else [other for other in repository.list(principal.account_id) if other.network == account.network])
     others = [other for other in sharing if other.social_account_id != account.social_account_id]
     try:

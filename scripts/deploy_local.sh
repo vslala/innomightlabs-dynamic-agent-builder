@@ -109,6 +109,10 @@ while IFS= read -r social_app; do
 done < <(compgen -A variable | sed -nE 's/^(LOCAL_)?(SOCIAL_[A-Z0-9_]+)_CLIENT_ID$/\2/p' | sort -u)
 export SOCIAL_FACEBOOK_LOGIN_CONFIG_ID="$(get_var_default 'SOCIAL_FACEBOOK_LOGIN_CONFIG_ID' '')"
 export SOCIAL_META_GRAPH_VERSION="$(get_var_default 'SOCIAL_META_GRAPH_VERSION' 'v26.0')"
+export SOCIAL_MEDIA_URL_TTL_SECONDS="$(get_var_default 'SOCIAL_MEDIA_URL_TTL_SECONDS' '3600')"
+# Meta fetches Threads and Instagram images from this base: localhost is unreachable, so set a tunnel URL
+export SOCIAL_MEDIA_BASE_URL="$(get_var_default 'SOCIAL_MEDIA_BASE_URL' "${api_base_url}")"
+export SOCIAL_PUBLISH_TIMEOUT_SECONDS="$(get_var_default 'SOCIAL_PUBLISH_TIMEOUT_SECONDS' '120')"
 export JWT_SECRET="$(get_var 'JWT_SECRET')"
 export COGNITO_DOMAIN_PREFIX="$(get_var 'COGNITO_DOMAIN_PREFIX')"
 export COGNITO_DOMAIN="$(get_var_default 'COGNITO_DOMAIN' "$(get_var 'COGNITO_DOMAIN_URL')")"

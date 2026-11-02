@@ -158,7 +158,8 @@ export function Privacy() {
 
                 <p id="social-accounts">
                   <strong>Social accounts.</strong> You can connect social accounts, such as a
-                  LinkedIn profile, a LinkedIn Page you administer or a Facebook Page you manage, so
+                  LinkedIn profile, a LinkedIn Page you administer, a Facebook Page you manage, an
+                  Instagram professional account linked to one of your Pages, or a Threads profile, so
                   that your agents and automations can publish posts to them. An account admin connects each one. When you
                   connect a social account, we receive and store:
                 </p>
@@ -172,23 +173,26 @@ export function Privacy() {
                     profile picture address;
                   </li>
                   <li>
-                    for Facebook, the identifier Facebook gives InnoMight Labs for the person who
-                    granted access, so that we can act when they remove the app or ask for their
-                    data to be deleted; and
+                    for Facebook, Instagram and Threads, the identifier Meta gives InnoMight Labs for
+                    the person who granted access, so that we can act when they remove the app or ask
+                    for their data to be deleted; and
                   </li>
                   <li>
-                    for a Page, the list of Pages you can post to, so that each one can be connected
-                    as a separate account.
+                    for a Page, the list of Pages you can post to and the Instagram accounts linked
+                    to them, so that each one can be connected as a separate account.
                   </li>
                 </ul>
                 <p>
                   We use this information only to show which accounts are connected, to publish the
-                  posts you or your agents prepare and, where the network allows it (Facebook Pages),
+                  posts you or your agents prepare and, where the network allows it (Facebook Pages, Instagram and Threads),
                   to read back the account's own recent posts when an agent asks, so it does not
                   repeat a post. We do not store the posts it reads. An agent can publish only after you have
                   approved it: either the exact post, shown to you before it is sent, or a step in an
                   automation that you approved in advance. When a post is published, its text and
-                  images are sent to the network. We keep a record of each post's destination,
+                  images are sent to the network. Instagram and Threads fetch a post's images from a
+                  web address instead of receiving them, so we keep a copy of each image, fitted to
+                  the network, at an unguessable address that stops working after an hour, and
+                  delete the copy within two days. We keep a record of each post's destination,
                   status and link for 180 days, so you can see what was published and so that a post
                   is never sent twice. We use data from social networks only for these features. We
                   do not use it for advertising or profiling, or to train generalized AI models.
@@ -437,9 +441,12 @@ export function Privacy() {
                     Social tab. Disconnecting deletes the stored credentials and account details,
                     and we ask the network to end the authorization where it supports that. You can
                     also remove InnoMight Labs from the apps connected in your social network's
-                    settings. For Facebook, removing the app stops all posting to your Pages straight
-                    away, and asking Facebook to delete your data deletes the connected Pages and
-                    their stored credentials, with a confirmation code and a status page. To have
+                    settings. For Facebook, Instagram and Threads, removing the app stops all posting
+                    to the accounts you connected through it straight away, and asking Meta to delete
+                    your data deletes those connected accounts and their stored credentials, with a
+                    confirmation code and a status page. Facebook Pages and Instagram share one
+                    Facebook sign-in, so we end it only when the last account connected through it is
+                    disconnected. To have
                     data we received from any social network deleted, email us at the address below.
                     Deleting your InnoMight Labs account deletes its connected social accounts.
                   </li>

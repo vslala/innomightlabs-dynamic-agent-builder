@@ -4,6 +4,7 @@ rules never leak into the others."""
 from __future__ import annotations
 
 import io
+import math
 from dataclasses import dataclass
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -21,7 +22,8 @@ class SourceImage:
 
 
 def prepare(source: SourceImage, limits: NetworkLimits) -> PreparedImage:
-    """An upright JPEG, flattened onto white (JPEG has no transparency), within the network's side and size limits."""
+    """An upright JPEG, flattened onto white (JPEG has no transparency), within the network's side and size limits,
+    and padded onto white into the network's aspect range (Instagram) rather than cropped."""
     try:
         with Image.open(io.BytesIO(source.data)) as opened:
             image = ImageOps.exif_transpose(opened)
@@ -30,9 +32,10 @@ def prepare(source: SourceImage, limits: NetworkLimits) -> PreparedImage:
         raise PublishError(PublishErrorKind.REJECTED, "One of the images could not be read") from error
 
     image.thumbnail((limits.max_image_side, limits.max_image_side))
-    flat = Image.new("RGB", image.size, "white")
     rgba = image.convert("RGBA")
-    flat.paste(rgba, mask=rgba.getchannel("A"))
+    flat = Image.new("RGB", _padded_size(rgba.size, limits.aspect_range), "white")
+    flat.paste(rgba, ((flat.width - rgba.width) // 2, (flat.height - rgba.height) // 2), mask=rgba.getchannel("A"))
+    flat.thumbnail((limits.max_image_side, limits.max_image_side))
 
     for quality in QUALITY_STEPS:
         out = io.BytesIO()
@@ -40,3 +43,17 @@ def prepare(source: SourceImage, limits: NetworkLimits) -> PreparedImage:
         if out.tell() <= limits.max_image_bytes:
             return PreparedImage(data=out.getvalue(), mime_type="image/jpeg", alt_text=source.alt_text)
     raise PublishError(PublishErrorKind.REJECTED, "One of the images is too large for this network")
+
+
+def _padded_size(size: tuple[int, int], aspect_range: tuple[float, float] | None) -> tuple[int, int]:
+    """The smallest canvas around `size` whose width / height is within `aspect_range`: a tall phone screenshot gets
+    white bars at the sides, a wide panorama above and below."""
+    width, height = size
+    if aspect_range is None:
+        return size
+    narrowest, widest = aspect_range
+    if width / height < narrowest:
+        return math.ceil(height * narrowest), height
+    if width / height > widest:
+        return width, math.ceil(width / widest)
+    return size

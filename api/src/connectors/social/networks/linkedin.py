@@ -25,6 +25,7 @@ from src.connectors.social.networks.base import (
     PublishError,
     PublishErrorKind,
     RecentPost,
+    RefreshedCredentials,
 )
 
 log = logging.getLogger(__name__)
@@ -121,6 +122,10 @@ class LinkedInNetwork:
             bool(tokens.get("refresh_token")), tokens.get("expires_in"), tokens.get("refresh_token_expires_in"),
         )
         return tokens
+
+    async def fresh_credentials(self, credentials: dict[str, Any]) -> RefreshedCredentials | None:
+        """LinkedIn renews a token only by signing in again."""
+        return None
 
     async def revoke(self, credentials: dict[str, Any]) -> None:
         app = self._app()

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -33,6 +34,11 @@ def test_a_network_describes_itself(network):
     assert any(CONNECTOR_ASSETS.glob(f"{network.icon}.*")), f"no brand mark for {network.icon!r} in spa/src/assets/connectors"
     assert network.limits.max_text > 0
     assert callable(network.publish)
+    assert isinstance(network.reads_posts, bool)
+    for method in (network.complete, network.publish, network.revoke, network.fresh_credentials, network.recent_posts):
+        assert inspect.iscoroutinefunction(method), f"{method.__name__} must be async"
+    if network.limits.public_media or network.limits.requires_image:
+        assert network.limits.max_images > 0, "a network that takes images by URL, or needs one, must take some"
 
 
 @pytest.mark.parametrize("network", NETWORKS, ids=lambda network: network.key)

@@ -4,9 +4,11 @@ owner_only: true
 name: Social media
 description: See your connected social accounts, check a post against each network's limits, and publish it to them.
 system_prompt: |
-  Use this skill to prepare and publish posts to the person's connected social accounts: LinkedIn, LinkedIn Pages
-  and Facebook Pages.
+  Use this skill to prepare and publish posts to the person's connected social accounts: LinkedIn, LinkedIn Pages,
+  Facebook Pages, Instagram and Threads.
   - Call `accounts` to see what is connected and what each one takes (max_characters, max_images, requires_image).
+    Instagram always needs at least one image and allows 30 hashtags and 20 @mentions. Threads allows 500
+    characters and counts an emoji as several. Write a shorter version in `overrides` for a network that needs one.
     An account whose status is needs_reconnect can't be posted to: tell the person to reconnect it in Connectors, on
     the Social tab.
   - To avoid repeating a post or to continue a series, call `recent_posts` for an account whose reads_posts is true.
@@ -53,7 +55,7 @@ actions:
           description: A short description of each image for screen readers, in the same order as images. Optional.
     handler: actions:check
   - name: recent_posts
-    description: The newest posts one connected account already published, newest first, to avoid repeating a post or to continue a series. Works for accounts whose reads_posts is true (Facebook Pages).
+    description: The newest posts one connected account already published, newest first, to avoid repeating a post or to continue a series. Works for accounts whose reads_posts is true (Facebook Pages, Instagram, Threads).
     input_schema:
       type: object
       required: [social_account_id]

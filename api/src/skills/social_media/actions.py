@@ -64,7 +64,7 @@ async def recent_posts(arguments: dict[str, Any], config: dict[str, Any], contex
         return {"supported": False, "posts": [], "reason": f"{network.display_name} doesn't let apps read posts"}
     limit = max(1, min(int(arguments.get("limit") or RECENT_POSTS_DEFAULT), RECENT_POSTS_MAX))
     try:
-        posts = await network.recent_posts(account.credentials(), limit)
+        posts = await network.recent_posts(await SocialPublisher().fresh(account, network), limit)
     except PublishError as error:
         if error.kind == PublishErrorKind.AUTH:
             SocialAccountRepository().mark_needs_reconnect(account, str(error))

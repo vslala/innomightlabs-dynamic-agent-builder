@@ -3,6 +3,7 @@ before posting is exactly what happens when it posts. It makes no network calls.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,12 @@ TOO_MANY_IMAGES = "too_many_images"
 NEEDS_RECONNECT = "needs_reconnect"
 NETWORK_DISABLED = "network_disabled"
 EMPTY_TEXT = "empty_text"
+TOO_MANY_HASHTAGS = "too_many_hashtags"
+TOO_MANY_MENTIONS = "too_many_mentions"
+
+#: A #tag or an @handle starts a word: an email address or "C#" isn't one
+HASHTAG = re.compile(r"(?<![\w&])#\w+")
+MENTION = re.compile(r"(?<![\w@])@[\w.]+")
 
 
 @dataclass(frozen=True)
@@ -71,9 +78,15 @@ def _plan(account: SocialAccount, text: str, image_count: int, enabled: set[str]
     limits = network_for(account.network).limits
     if not text:
         return skip(EMPTY_TEXT, "There is no text to post")
-    if len(text) > limits.max_text:
-        return skip(TEXT_TOO_LONG, f"{len(text)}/{limits.max_text} characters")
+    length = limits.text_length(text)
+    if length > limits.max_text:
+        return skip(TEXT_TOO_LONG, f"{length}/{limits.max_text} characters")
     name = network_for(account.network).display_name
+    hashtags, mentions = len(HASHTAG.findall(text)), len(MENTION.findall(text))
+    if limits.max_hashtags is not None and hashtags > limits.max_hashtags:
+        return skip(TOO_MANY_HASHTAGS, f"{hashtags}/{limits.max_hashtags} hashtags")
+    if limits.max_mentions is not None and mentions > limits.max_mentions:
+        return skip(TOO_MANY_MENTIONS, f"{mentions}/{limits.max_mentions} @mentions")
     if image_count and not limits.max_images:
         return skip(IMAGES_NOT_SUPPORTED, f"{name} posts text only")
     if image_count > limits.max_images:

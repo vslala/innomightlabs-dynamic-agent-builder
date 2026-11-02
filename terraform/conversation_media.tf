@@ -70,6 +70,24 @@ resource "aws_s3_bucket_lifecycle_configuration" "guest_session_archives" {
       days = 1
     }
   }
+
+  # A post's image as Threads or Instagram fetch it (api/src/connectors/social/renditions.py). Meta fetches it while
+  # publishing, which takes minutes; the copy is kept two days, then deleted.
+  rule {
+    id     = "expire-social-renditions"
+    status = "Enabled"
+
+    filter {
+      tag {
+        key   = "retention"
+        value = "social-rendition"
+      }
+    }
+
+    expiration {
+      days = 2
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_conversation_media" {

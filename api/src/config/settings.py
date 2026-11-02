@@ -210,8 +210,14 @@ class Settings:
     #: Facebook Login for Business (docs/LLD-meta-social-networks.md): the Login configuration whose permissions the
     #: Facebook dialog asks for. Empty sends `scope` instead, which only app-role testers can use.
     social_facebook_login_config_id: str = ""
-    #: The Graph API version Facebook (and later Instagram) calls go to
+    #: The Graph API version Facebook and Instagram calls go to (Threads has its own, v1.0)
     social_meta_graph_version: str = "v26.0"
+    #: Threads and Instagram fetch a post's images from a signed URL on this API, which stops working after this long
+    social_media_url_ttl_seconds: int = 3600
+    #: The base of those URLs; Meta can't reach localhost, so local runs point it at a tunnel
+    social_media_base_url: str = ""
+    #: How long publishing waits for Threads or Instagram to process a post's media
+    social_publish_timeout_seconds: int = 120
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
     cli_runner_timeout_seconds: int = 30
@@ -646,6 +652,9 @@ class Settings:
             social_apps=social_apps_from_env(os.environ),
             social_facebook_login_config_id=os.getenv("SOCIAL_FACEBOOK_LOGIN_CONFIG_ID", "").strip(),
             social_meta_graph_version=os.getenv("SOCIAL_META_GRAPH_VERSION", "v26.0").strip() or "v26.0",
+            social_media_url_ttl_seconds=int(os.getenv("SOCIAL_MEDIA_URL_TTL_SECONDS", "3600")),
+            social_media_base_url=os.getenv("SOCIAL_MEDIA_BASE_URL", "").strip() or api_base_url,
+            social_publish_timeout_seconds=int(os.getenv("SOCIAL_PUBLISH_TIMEOUT_SECONDS", "120")),
             cli_runner_base_url=os.getenv("CLI_RUNNER_BASE_URL", ""),
             cli_runner_shared_token=os.getenv("CLI_RUNNER_SHARED_TOKEN", ""),
             cli_runner_timeout_seconds=int(os.getenv("CLI_RUNNER_TIMEOUT_SECONDS", "30")),

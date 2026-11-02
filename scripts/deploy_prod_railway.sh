@@ -364,6 +364,9 @@ while IFS= read -r social_app; do
 done < <(compgen -A variable | sed -nE 's/^(PROD_)?(SOCIAL_[A-Z0-9_]+)_CLIENT_ID$/\2/p' | sort -u)
 set_railway_var "SOCIAL_FACEBOOK_LOGIN_CONFIG_ID" "$(get_var_default 'SOCIAL_FACEBOOK_LOGIN_CONFIG_ID' '')"
 set_railway_var "SOCIAL_META_GRAPH_VERSION" "$(get_var_default 'SOCIAL_META_GRAPH_VERSION' 'v26.0')"
+set_railway_var "SOCIAL_MEDIA_URL_TTL_SECONDS" "$(get_var_default 'SOCIAL_MEDIA_URL_TTL_SECONDS' '3600')"
+set_railway_var "SOCIAL_MEDIA_BASE_URL" "$(get_var_default 'SOCIAL_MEDIA_BASE_URL' "$(url_for '')")"
+set_railway_var "SOCIAL_PUBLISH_TIMEOUT_SECONDS" "$(get_var_default 'SOCIAL_PUBLISH_TIMEOUT_SECONDS' '120')"
 
 set_railway_var "OPENAI_OAUTH_CLIENT_ID" "$(get_var 'OPENAI_OAUTH_CLIENT_ID')"
 set_railway_var "OPENAI_OAUTH_SCOPES" "$(get_var 'OPENAI_OAUTH_SCOPES')"
