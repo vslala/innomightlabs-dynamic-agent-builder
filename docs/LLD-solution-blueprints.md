@@ -184,7 +184,7 @@ Where the POC differs from the design below, and why:
       now also used by the marketplace.
     - `SkillService.check_install`: every install check without installing. `install_skill` calls it, and so does
       the plan, so the plan and the install can't disagree.
-    - `check_agent_limit(user_email, additional=1)`.
+    - `RateLimitService.check(billed_email, quota, requested)`: one check for every plan quota (`rate_limits/quotas.py`), billed to the account owner.
 - **Required secrets block at validation.** The design said a skill with a required secret would be installed
   disabled. An install can't skip a required field, though. So the validator reports "*Skill* needs *API key*, which
   can't be written in a blueprint" and asks for the skill to be installed from the Skills tab after apply. Optional
@@ -694,8 +694,8 @@ sequenceDiagram
         P->>K: kind.check(spec, ctx)
         K-->>P: blockers (provider not configured, OAuth missing, name taken, unknown skill)
     end
-    P->>RL: check_agent_limit(user, additional=n_agents)
-    P->>RL: check_kb_pages_limit(user, sum(max_pages))
+    P->>RL: check(owner, AGENTS, n_agents)
+    P->>RL: check(owner, KB_PAGES, sum(max_pages))
     P-->>C: {steps: [create …], blockers: [...], ok}
 ```
 
@@ -711,8 +711,8 @@ The plan's checks reuse existing code:
   OAuth-provider check from `install_skill`, and the `runs_only_for_owner` rule (`skills/models.py:125-127`) when
   `available_to` asks for anyone other than the owner.
 - **Agent name taken:** `AgentRepository.find_by_name` (`agents/repository.py:158`).
-- **Quotas:** `RateLimitService.check_agent_limit` gains an `additional: int = 1` argument so one plan can create
-  several agents. `check_kb_pages_limit` takes the sum of `max_pages`.
+- **Quotas:** `RateLimitService.check(billed_email, quota, requested)` with `AGENTS` and the number of agents, and
+  `KB_PAGES` with the sum of `max_pages`. The billed email is the account owner's.
 - **Pinecone configured** (`settings.require_pinecone()`) when any resource has `crawl`.
 
 ### 8. Apply
