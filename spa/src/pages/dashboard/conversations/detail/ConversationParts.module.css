@@ -1,4 +1,4 @@
-/* The cards the page adds to the end of the transcript: forms, pending notes, the image being painted. */
+/* The cards the page adds to the end of the transcript: forms and the image being painted. */
 
 .panel {
   width: 100%;
@@ -8,12 +8,6 @@
   color: var(--text-primary);
 }
 
-.pending {
-  composes: panel;
-  width: fit-content;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-}
 
 .imageTitle {
   margin-bottom: 12px;

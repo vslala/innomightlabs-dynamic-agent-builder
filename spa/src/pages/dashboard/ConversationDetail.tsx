@@ -104,7 +104,7 @@ export function ConversationDetail() {
   const [streamingContent, setStreamingContent] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string; leadForm?: string } | null>(null);
-  const [pendingFormLabel, setPendingFormLabel] = useState<string | null>(null);
+
   const [activeConnect, setActiveConnect] = useState<ConnectRequestPayload | null>(null);
   // Consent cards by id, as they stand now: messages say which they raised, this says what became of them
   const [consents, setConsents] = useState<Record<string, ConsentRequest>>({});
@@ -449,7 +449,7 @@ export function ConversationDetail() {
       case SSEEventType.UI_FORM_RENDER:
         if (event.form) {
           renderedFormRef.current = true;
-          setPendingFormLabel(null);
+
           setActiveForm({
             form: event.form,
             submitLabel: event.submit_label || undefined,
@@ -851,7 +851,7 @@ export function ConversationDetail() {
   const handleFormSubmit = async (answers: FormAnswer[]) => {
     if (!activeForm) return;
     const label = activeForm.form.form_name;
-    setPendingFormLabel(label);
+
     await handleSendMessage(formSubmissionContent(label, answers), `Submitted: ${label}`);
   };
 
@@ -1052,7 +1052,7 @@ export function ConversationDetail() {
                   onExpandCanvas={setExpandedCanvas}
                   renderConsent={renderConsent}
                   extraNode={
-                    (ilaWorkingStatus || activeConnect || activeForm || pendingFormLabel || streamingImagePreview) && (
+                    (ilaWorkingStatus || activeConnect || activeForm || streamingImagePreview) && (
                       <>
                         {ilaWorkingStatus && <IlaWorking label={ilaWorkingStatus} />}
                         {activeConnect && (
@@ -1073,14 +1073,12 @@ export function ConversationDetail() {
                               submitLabel={activeForm.submitLabel}
                               onSubmit={handleFormSubmit}
                               onCancel={() => setActiveForm(null)}
-                              disabled={isSending || Boolean(pendingFormLabel)}
+                              disabled={isSending}
                               uploadFile={uploadLeadFileFor(activeForm.leadForm)}
                             />
                           </div>
                         )}
-                        {pendingFormLabel && (
-                          <div className={parts.pending}>Captured "{pendingFormLabel}". Processing...</div>
-                        )}
+
                         {streamingImagePreview && <StreamingImagePreview image={streamingImagePreview} />}
                       </>
                     )
