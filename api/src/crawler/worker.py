@@ -642,6 +642,7 @@ class CrawlerWorker:
         ctx.page_repo.save(CrawledPage(
             job_id=ctx.job.job_id,
             created_by=ctx.kb.owner_id,
+            account_id=ctx.kb.account_id,
             url=url,
             status=status,
             page_metadata=PageMetadata(

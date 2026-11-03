@@ -12,8 +12,8 @@ from tests.mock_data import TEST_USER_EMAIL, kb_fields
 def test_usage_record_normalizes_dynamodb_counters(counter_value):
     from src.rate_limits.models import UsageRecord
 
-    counters = ("messages_used", "kb_pages_used", "agents_active")
-    item = {"user_email": TEST_USER_EMAIL, "period_key": "active"}
+    counters = ("messages_used", "kb_pages_used")
+    item = {"user_email": TEST_USER_EMAIL, "period_key": "2026-11"}
     if counter_value is not None:
         item.update(dict.fromkeys(counters, counter_value))
 
@@ -26,15 +26,14 @@ def test_usage_record_normalizes_dynamodb_counters(counter_value):
 
 
 @pytest.mark.parametrize(
-    ("path", "counter", "period_key"),
+    ("path", "counter"),
     [
-        ("/agents", "agents_active", "active"),
-        ("/agents/test-agent/test-conversation/send-message", "messages_used", None),
-        ("/knowledge-bases/test-kb/crawl-jobs", "kb_pages_used", None),
+        ("/agents/test-agent/test-conversation/send-message", "messages_used"),
+        ("/knowledge-bases/test-kb/crawl-jobs", "kb_pages_used"),
     ],
 )
 def test_quota_response_serializes_dynamodb_usage(
-    test_client, auth_headers, dynamodb_table, monkeypatch, path, counter, period_key
+    test_client, auth_headers, dynamodb_table, monkeypatch, path, counter
 ):
     from src.config import settings
     from src.payments.pricing_config import PricingTierLimits
@@ -49,7 +48,7 @@ def test_quota_response_serializes_dynamodb_usage(
             agents=1, messages_per_month=1, kb_pages=1, memory_blocks=1,
         ),
     )
-    period_key = period_key or datetime.now(timezone.utc).strftime("%Y-%m")
+    period_key = datetime.now(timezone.utc).strftime("%Y-%m")
     usage_key = {"pk": f"User#{TEST_USER_EMAIL}", "sk": f"Usage#{period_key}"}
     dynamodb_table.put_item(Item={
         **usage_key,
@@ -85,14 +84,14 @@ def test_quota_middleware_encodes_exception_detail_and_preserves_headers(
 ):
     from src.rate_limits.service import RateLimitService
 
-    def reject_agent(self, user_email, additional=1):
+    def reject_agent(self, billed_email, quota, requested=1):
         raise HTTPException(
             status_code=429,
             detail={"current": Decimal("2"), "nested": {"remaining": Decimal("0")}},
             headers={"Retry-After": "60", "X-Quota-Limit": "agents"},
         )
 
-    monkeypatch.setattr(RateLimitService, "check_agent_limit", reject_agent)
+    monkeypatch.setattr(RateLimitService, "check", reject_agent)
     items_before = dynamodb_table.scan()["Items"]
 
     response = test_client.post(
@@ -220,80 +219,111 @@ def _agent_payload():
     }
 
 
-def test_superuser_bypasses_all_rate_limit_checks(dynamodb_table, monkeypatch):
+def _service_at_its_limits(monkeypatch, superusers: list[str]):
+    """A service whose free plan allows one of everything, with one of everything already used."""
     from src.config import settings
     from src.payments.pricing_config import PricingTierLimits
     from src.rate_limits.models import UsageRecord
     from src.rate_limits.service import RateLimitService
 
     service = RateLimitService()
-    monkeypatch.setattr(settings, "superuser_emails", [TEST_USER_EMAIL.lower()])
+    monkeypatch.setattr(settings, "superuser_emails", superusers)
     monkeypatch.setattr(service, "get_tier_limits", lambda _tier: PricingTierLimits(
-        agents=1,
-        messages_per_month=1,
-        kb_pages=1,
-        memory_blocks=1,
+        agents=1, messages_per_month=1, kb_pages=1, memory_blocks=1,
     ))
     monkeypatch.setattr(service, "get_user_tier", lambda _email: "free")
-    monkeypatch.setattr(
-        service.usage_repo,
-        "get_usage",
-        lambda _email, period: UsageRecord(
-            user_email=TEST_USER_EMAIL,
-            period_key=period,
-            messages_used=1,
-            kb_pages_used=1,
-            agents_active=1,
-        ),
+    monkeypatch.setattr(service, "_agents_charged_to", lambda _email: [object()])
+    monkeypatch.setattr(service.usage_repo, "get_usage", lambda _email, period: UsageRecord(
+        user_email=TEST_USER_EMAIL, period_key=period, messages_used=1, kb_pages_used=1,
+    ))
+    return service
+
+
+QUOTA_REQUESTS = [("agents", 1), ("messages", 1), ("kb_pages", 10)]
+
+
+@pytest.mark.parametrize(("quota_name", "requested"), QUOTA_REQUESTS)
+def test_superuser_bypasses_all_rate_limit_checks(dynamodb_table, monkeypatch, quota_name, requested):
+    from src.rate_limits import quotas
+
+    service = _service_at_its_limits(monkeypatch, [TEST_USER_EMAIL.lower()])
+
+    service.check(TEST_USER_EMAIL, getattr(quotas, quota_name.upper()), requested)
+
+
+@pytest.mark.parametrize(("quota_name", "requested"), QUOTA_REQUESTS)
+def test_non_superuser_still_gets_rate_limit_errors(dynamodb_table, monkeypatch, quota_name, requested):
+    from src.rate_limits import quotas
+
+    service = _service_at_its_limits(monkeypatch, [])
+
+    with pytest.raises(HTTPException) as refused:
+        service.check(TEST_USER_EMAIL, getattr(quotas, quota_name.upper()), requested)
+
+    assert refused.value.status_code == 429
+    assert refused.value.detail["remaining"] == 0
+
+
+def test_a_request_that_fits_what_is_left_is_allowed(dynamodb_table, monkeypatch):
+    from src.payments.pricing_config import PricingTierLimits
+    from src.rate_limits.quotas import KB_PAGES
+
+    service = _service_at_its_limits(monkeypatch, [])  # one page used
+    monkeypatch.setattr(service, "get_tier_limits", lambda _tier: PricingTierLimits(
+        agents=1, messages_per_month=1, kb_pages=5, memory_blocks=1,
+    ))
+
+    service.check(TEST_USER_EMAIL, KB_PAGES, 4)
+    with pytest.raises(HTTPException):
+        service.check(TEST_USER_EMAIL, KB_PAGES, 5)
+
+
+@pytest.mark.parametrize(("method", "path", "quota_name"), [
+    ("POST", "/agents", "agents"),
+    ("POST", "/agents/a1/c1/send-message", "messages"),
+    ("POST", "/builder/s1/send-message", "messages"),
+    ("POST", "/knowledge-bases/kb1/crawl-jobs", "kb_pages"),
+    ("POST", "/knowledge-bases/kb1/crawl-jobs/j1/run", "kb_pages"),
+    ("POST", "/knowledge-bases/kb1/crawl-jobs/j1/run-stream", "kb_pages"),
+    ("GET", "/agents", None),
+    ("POST", "/agents/a1", None),
+    ("POST", "/agents/a1/c1/send-message/extra", None),
+    ("POST", "/knowledge-bases/kb1/crawl-jobs/j1", None),
+])
+def test_each_limited_route_selects_its_quota(method, path, quota_name):
+    from starlette.requests import Request
+    from src.rate_limits.middleware import rule_for
+
+    selected = rule_for(Request({"type": "http", "method": method, "path": path, "headers": [], "query_string": b""}))
+
+    assert (selected[0].quota.name if selected else None) == quota_name
+
+
+def test_a_limited_route_with_a_broken_body_is_refused(test_client, auth_headers):
+    response = test_client.post(
+        "/agents", content=b"{not json", headers={**auth_headers, "Content-Type": "application/json"},
     )
 
-    # Should not raise even though all limits are already reached.
-    service.check_agent_limit(TEST_USER_EMAIL)
-    service.check_message_limit(TEST_USER_EMAIL)
-    service.check_kb_pages_limit(TEST_USER_EMAIL, requested_pages=10)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json()["detail"]["message"] == "Invalid JSON payload."
 
 
-def test_non_superuser_still_gets_rate_limit_errors(dynamodb_table, monkeypatch):
+def test_recreating_an_agent_by_name_is_not_counted_again(test_client, auth_headers, monkeypatch):
     from src.config import settings
     from src.payments.pricing_config import PricingTierLimits
-    from src.rate_limits.models import UsageRecord
     from src.rate_limits.service import RateLimitService
 
-    service = RateLimitService()
     monkeypatch.setattr(settings, "superuser_emails", [])
-    monkeypatch.setattr(service, "get_tier_limits", lambda _tier: PricingTierLimits(
-        agents=1,
-        messages_per_month=1,
-        kb_pages=1,
-        memory_blocks=1,
+    monkeypatch.setattr(RateLimitService, "get_user_tier", lambda self, email: "free")
+    monkeypatch.setattr(RateLimitService, "get_tier_limits", lambda self, tier: PricingTierLimits(
+        agents=1, messages_per_month=1, kb_pages=1, memory_blocks=1,
     ))
-    monkeypatch.setattr(service, "get_user_tier", lambda _email: "free")
-    monkeypatch.setattr(
-        service.usage_repo,
-        "get_usage",
-        lambda _email, period: UsageRecord(
-            user_email=TEST_USER_EMAIL,
-            period_key=period,
-            messages_used=1,
-            kb_pages_used=1,
-            agents_active=1,
-        ),
-    )
+    body = {"agent_name": "Only One", **_agent_payload()}
 
-    try:
-        service.check_agent_limit(TEST_USER_EMAIL)
-        assert False, "Expected check_agent_limit to raise"
-    except HTTPException as exc:
-        assert exc.status_code == 429
+    first = test_client.post("/agents", json=body, headers=auth_headers)
+    again = test_client.post("/agents", json=body, headers=auth_headers)
+    another = test_client.post("/agents", json={**body, "agent_name": "Second"}, headers=auth_headers)
 
-    try:
-        service.check_message_limit(TEST_USER_EMAIL)
-        assert False, "Expected check_message_limit to raise"
-    except HTTPException as exc:
-        assert exc.status_code == 429
-
-    try:
-        service.check_kb_pages_limit(TEST_USER_EMAIL, requested_pages=10)
-        assert False, "Expected check_kb_pages_limit to raise"
-    except HTTPException as exc:
-        assert exc.status_code == 429
+    assert first.status_code == status.HTTP_201_CREATED
+    assert again.status_code != status.HTTP_429_TOO_MANY_REQUESTS
+    assert another.status_code == status.HTTP_429_TOO_MANY_REQUESTS

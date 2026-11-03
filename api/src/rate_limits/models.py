@@ -9,7 +9,6 @@ class UsageRecord:
     period_key: str
     messages_used: int = 0
     kb_pages_used: int = 0
-    agents_active: int = 0
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -36,7 +35,6 @@ class UsageRecord:
             "period_key": self.period_key,
             "messages_used": self.messages_used,
             "kb_pages_used": self.kb_pages_used,
-            "agents_active": self.agents_active,
             "entity_type": "Usage",
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -49,7 +47,6 @@ class UsageRecord:
             period_key=item["period_key"],
             messages_used=int(item.get("messages_used", 0)),
             kb_pages_used=int(item.get("kb_pages_used", 0)),
-            agents_active=int(item.get("agents_active", 0)),
             created_at=item.get("created_at"),
             updated_at=item.get("updated_at"),
         )

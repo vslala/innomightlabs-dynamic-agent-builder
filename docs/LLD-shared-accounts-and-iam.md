@@ -317,9 +317,10 @@ through the principal, and leaves the suite green.
   - Their conversation is their own (slice 2). Their memory is still keyed by their email until the
     memory slice.
 - **Middleware.** The analytics special case in `AuthMiddleware` is gone; the analytics routes authorize
-  through the principal. Rate limits stay per person until KAN-86, and count the agents a person owns
-  across all their accounts.
-- **Lambdas.** The usage stream finds an agent's owner email through `owner_id`. Account deletion removes
+  through the principal. Rate limits were per person at first (counting the agents a person owns across all
+  their accounts); since 2026-11-03 they are the account owner's (see KAN-86 below).
+- **Lambdas.** The usage stream charges messages and crawled pages to the owner of the account they happened
+  in (see KAN-86 below). Account deletion removes
   the person's agents in their personal account; offboarding from shared accounts is KAN-83.
 - **SPA.** `AgentResponse` gains `account_id`, `owner_id` and `access`. The agent list shows "Shared with
   you" or "Admin view" on agents the person doesn't own.
@@ -657,6 +658,22 @@ through the principal, and leaves the suite green.
   - a shared agent's file going to whoever is chatting, and a key's to the agent's owner;
   - a job being found only for the owner it ran as;
   - publishing needing `agents:Share`, and archiving the publisher.
+
+### KAN-86: limits are the account owner's (interim, 2026-11-03)
+
+- **A member's work uses the owner's plan.** Agents, messages and crawled pages in a shared account are checked
+  against, and counted for, the account owner: their tier, their usage and their superuser exemption. Before, the
+  member's own free plan stopped them from creating a first agent in an account the owner pays for. A member's
+  personal account is still their own to pay for.
+- **One place decides.** `rate_limits/billing.account_billing_email(account_id)` returns the owner's email. The rate
+  limit middleware (for the account the request acts in), the blueprint planner and the usage stream use it.
+  Quota is still keyed by the owner's email; moving it to `Account#{aid}` is the rest of KAN-86.
+- **Counting.**
+  - Agents have no counter: the `AGENTS` quota counts the agents in every account the billed person owns.
+  - The usage stream resolves a message's account through its conversation, and a crawled page records its own
+    `account_id`. A message whose conversation can't be found (a widget visitor's) is still charged to its author,
+    and a page from before `account_id` was recorded to no one.
+  - The old `Usage#active` agent counters are no longer read or written.
 
 ### KAN-84: IAM portal (member permissions done)
 
@@ -1218,7 +1235,8 @@ stateDiagram-v2
 - **Usage:** `Usage#{YYYY-MM}` and `Usage#active` move to the account.
   - `RateLimitService` becomes account-based, so `get_user_tier(email)` becomes `get_account_tier(account_id)`.
   - Every member's messages count, including messages to shared agents.
-  - The superuser bypass (`settings.is_superuser_email`) checks the caller's identity email.
+  - The superuser bypass (`settings.is_superuser_email`) checks the account owner's email: a superuser's account has no
+    limits for any member (interim rule from 2026-11-03, see KAN-86 above).
 - **Seats:** a new `limits.seats` field in `api/src/payments/{dev,uat,prod}_pricing_config.json`. A
   downgrade below the current member count removes nobody. The account is marked over its limit and new
   invites are blocked.

@@ -14,9 +14,6 @@ def test_usage_stream_still_tracks_superuser_analytics(monkeypatch):
             return DummyTable()
 
     class FakeUsageRepo:
-        def adjust_active_agents(self, _user_email: str, _delta: int):
-            return None
-
         def increment_messages(self, tracked_user: str, period_key: str, count: int):
             calls.append((tracked_user, period_key, count))
             return None

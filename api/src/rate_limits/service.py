@@ -1,7 +1,7 @@
-"""
-Simplified rate limiting service.
+"""Plan limits: the billed person's tier → its allowance for a quota → what is used → allow or refuse (429).
 
-Design: Get user tier → Get tier limits → Check usage → Enforce limits
+The billed person is the account owner (`billing.account_billing_email`), whoever does the work, so a member's
+agents, messages and crawled pages count against the owner's plan. The quotas themselves are in `quotas.py`.
 """
 
 import logging
@@ -11,9 +11,12 @@ from fastapi import HTTPException
 from ..payments.subscriptions import SubscriptionRepository
 from ..payments.pricing_config import get_pricing_config, PricingTierLimits
 from ..accounts.repository import AccountRepository
+from ..agents.models import Agent
 from ..agents.repository import AgentRepository
 from ..identity import IdentityRepository
 from ..config import settings
+from .billing import account_billing_email
+from .quotas import Quota
 from .repository import UsageRepository
 
 log = logging.getLogger(__name__)
@@ -57,204 +60,55 @@ class RateLimitService:
     def get_account_limits(self, account_id: str) -> PricingTierLimits:
         """Limits on what an account owns, such as its leads: its owner's tier, until billing moves to accounts
         (KAN-86)."""
-        accounts = AccountRepository()
-        account = accounts.get(account_id)
-        owner = accounts.get_member(account_id, account.owner_id) if account else None
-        owner_email = owner.email if owner else ""
+        owner_email = account_billing_email(account_id) or ""
         if settings.is_superuser_email(owner_email):
             return UNLIMITED
         return self.get_tier_limits(self.get_user_tier(owner_email))
 
-    def check_agent_limit(self, user_email: str, additional: int = 1) -> None:
+    def check(self, billed_email: str, quota: Quota, requested: int = 1) -> None:
+        """Refuse (HTTP 429) when the billed person's plan has less than `requested` left of `quota`.
+
+        The email is the account owner's (`billing.account_billing_email`), whoever does the work. Superusers and
+        an allowance of 0 are unlimited.
         """
-        Check if user can create `additional` new agents.
-
-        Raises:
-            HTTPException: 429 if limit exceeded
-        """
-        if settings.is_superuser_email(user_email):
-            log.info(
-                "Rate-limit bypass applied",
-                extra={"user": user_email, "limit_type": "agents"},
-            )
+        if settings.is_superuser_email(billed_email):
+            log.info("Rate-limit bypass applied", extra={"user": billed_email, "limit_type": quota.name})
             return
 
-        tier = self.get_user_tier(user_email)
-        limits = self.get_tier_limits(tier)
-
-        if limits.agents == 0:
+        tier = self.get_user_tier(billed_email)
+        limit = quota.allowance(self.get_tier_limits(tier))
+        if limit == 0:
             return
 
-        usage = self.usage_repo.get_usage(user_email, "active")
-        current_agents = usage.agents_active if usage else 0
-
-        if not usage:
-            actual_agents = self._owned_agents(user_email)
-            current_agents = len(actual_agents)
-            if current_agents > 0:
-                self.usage_repo.adjust_active_agents(user_email, current_agents)
-
-        if current_agents + additional > limits.agents:
-            log.info(
-                "Agent limit reached",
-                extra={
-                    "user": user_email,
-                    "tier": tier,
-                    "limit": limits.agents,
-                    "current": current_agents,
-                },
-            )
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "message": f"Agent limit reached ({limits.agents}). Upgrade to create more.",
-                    "limit": limits.agents,
-                    "current": current_agents,
-                    "tier": tier,
-                    "upgrade_url": f"{settings.frontend_url}/pricing",
-                },
-            )
-
-    def check_message_limit(self, user_email: str) -> None:
-        """
-        Check if user can send a message this month.
-
-        Raises:
-            HTTPException: 429 if limit exceeded
-        """
-        if settings.is_superuser_email(user_email):
-            log.info(
-                "Rate-limit bypass applied",
-                extra={"user": user_email, "limit_type": "messages"},
-            )
+        current = self._used(billed_email, quota)
+        remaining = limit - current
+        if requested <= remaining:
             return
 
-        tier = self.get_user_tier(user_email)
-        limits = self.get_tier_limits(tier)
+        detail = {"limit": limit, "current": current, "remaining": remaining, "tier": tier}
+        log.info("Plan limit reached", extra={"user": billed_email, "limit_type": quota.name,
+                                               "requested": requested, **detail})
+        raise HTTPException(status_code=429, detail={
+            "message": quota.refusal(limit, remaining), **detail,
+            "upgrade_url": f"{settings.frontend_url}/pricing",
+        })
 
-        if limits.messages_per_month == 0:
-            return
+    def _used(self, billed_email: str, quota: Quota) -> int:
+        if quota.monthly is None:
+            return len(self._agents_charged_to(billed_email))
+        usage = self.usage_repo.get_usage(billed_email, datetime.now(timezone.utc).strftime("%Y-%m"))
+        return quota.monthly(usage) if usage else 0
 
-        period_key = datetime.now(timezone.utc).strftime("%Y-%m")
-        usage = self.usage_repo.get_usage(user_email, period_key)
-        current = usage.messages_used if usage else 0
-
-        if current >= limits.messages_per_month:
-            log.info(
-                "Message limit reached",
-                extra={
-                    "user": user_email,
-                    "tier": tier,
-                    "limit": limits.messages_per_month,
-                    "current": current,
-                },
-            )
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "message": f"Monthly message limit reached ({limits.messages_per_month}). Upgrade for more.",
-                    "limit": limits.messages_per_month,
-                    "current": current,
-                    "tier": tier,
-                    "upgrade_url": f"{settings.frontend_url}/pricing",
-                },
-            )
-
-    def check_kb_pages_limit(self, user_email: str, requested_pages: int) -> None:
-        """
-        Check if user can crawl requested pages.
-
-        Raises:
-            HTTPException: 429 if limit exceeded
-        """
-        if settings.is_superuser_email(user_email):
-            log.info(
-                "Rate-limit bypass applied",
-                extra={"user": user_email, "limit_type": "kb_pages"},
-            )
-            return
-
-        tier = self.get_user_tier(user_email)
-        limits = self.get_tier_limits(tier)
-
-        if limits.kb_pages == 0:
-            return
-
-        period_key = datetime.now(timezone.utc).strftime("%Y-%m")
-        usage = self.usage_repo.get_usage(user_email, period_key)
-        current = usage.kb_pages_used if usage else 0
-
-        remaining = limits.kb_pages - current
-
-        if requested_pages > remaining:
-            log.info(
-                "Knowledge base page limit reached",
-                extra={
-                    "user": user_email,
-                    "tier": tier,
-                    "limit": limits.kb_pages,
-                    "current": current,
-                    "requested": requested_pages,
-                    "remaining": remaining,
-                },
-            )
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "message": f"Knowledge base page limit exceeded. {remaining} pages remaining.",
-                    "limit": limits.kb_pages,
-                    "current": current,
-                    "remaining": remaining,
-                    "tier": tier,
-                    "upgrade_url": f"{settings.frontend_url}/pricing",
-                },
-            )
-
-    def record_message_usage(self, user_email: str) -> None:
-        """Record a message sent."""
-        period_key = datetime.now(timezone.utc).strftime("%Y-%m")
-        self.usage_repo.increment_messages(user_email, period_key, 1)
-
-    def record_kb_pages(self, user_email: str, count: int) -> None:
-        """Record pages crawled."""
-        if count <= 0:
-            return
-        period_key = datetime.now(timezone.utc).strftime("%Y-%m")
-        self.usage_repo.increment_kb_pages(user_email, period_key, count)
-
-    def _owned_agents(self, user_email: str) -> list:
-        """The agents this person owns, in every account they belong to. Limits stay per person until
-        billing moves to accounts (KAN-86)."""
-        identity = IdentityRepository().find_by_email(user_email)
+    def _agents_charged_to(self, billed_email: str) -> list[Agent]:
+        """Every agent in the accounts this person owns, whoever created it: the agents their plan pays for.
+        Agents they have in someone else's account are charged to that account's owner."""
+        identity = IdentityRepository().find_by_email(billed_email)
         if identity is None:
             return []
+        accounts = AccountRepository()
+        member_of = [member.account_id for member in accounts.list_memberships(identity.user_id)]
         return [
             agent
-            for member in AccountRepository().list_memberships(identity.user_id)
-            for agent in self.agent_repo.list_owned(member.account_id, identity.user_id)
+            for account in accounts.get_many(member_of).values() if account.owner_id == identity.user_id
+            for agent in self.agent_repo.list_in_account(account.account_id)
         ]
-
-    def get_usage_summary(self, user_email: str) -> dict:
-        """Get usage summary for current month."""
-        tier = self.get_user_tier(user_email)
-        limits = self.get_tier_limits(tier)
-
-        period_key = datetime.now(timezone.utc).strftime("%Y-%m")
-        usage = self.usage_repo.get_usage(user_email, period_key)
-        agents = self._owned_agents(user_email)
-
-        return {
-            "tier": tier,
-            "period": period_key,
-            "limits": {
-                "agents": limits.agents if limits.agents > 0 else "unlimited",
-                "messages_per_month": limits.messages_per_month if limits.messages_per_month > 0 else "unlimited",
-                "kb_pages": limits.kb_pages if limits.kb_pages > 0 else "unlimited",
-                "memory_blocks": limits.memory_blocks if limits.memory_blocks > 0 else "unlimited",
-            },
-            "usage": {
-                "agents": len(agents),
-                "messages": usage.messages_used if usage else 0,
-                "kb_pages": usage.kb_pages_used if usage else 0,
-            },
-        }

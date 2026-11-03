@@ -1,7 +1,8 @@
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
@@ -9,7 +10,9 @@ import httpx
 
 from src.config import settings
 from src.db import get_dynamodb_resource
+from src.conversations.repository import ConversationRepository
 from src.email import send_email
+from src.rate_limits.billing import account_billing_email
 from src.rate_limits.repository import UsageRepository
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "ERROR").upper())
@@ -24,12 +27,54 @@ def _deserialize(image: Optional[dict[str, Any]]) -> dict[str, Any]:
     return {key: deserializer.deserialize(value) for key, value in image.items()}
 
 
-def _owner_email(agent_image: dict) -> str | None:
-    from src.identity import IdentityRepository
+@dataclass(frozen=True)
+class UsageMeter:
+    """How one kind of item spends a plan quota: which change uses a unit, when, and who pays for it.
 
-    owner_id = agent_image.get("owner_id")
-    identity = IdentityRepository().get(owner_id) if owner_id else None
-    return identity.email if identity else None
+    Usage is the account owner's, by email, until billing moves to accounts (KAN-86). Agents have no meter: the
+    limit counts the agents in the owner's accounts when one is created.
+    """
+
+    entity_type: str
+    #: The month the change uses one unit in, or None when it uses nothing
+    period: Callable[[str, dict[str, Any], dict[str, Any]], Optional[str]]
+    #: Who the unit is charged to: the owner of the account it happened in, whoever did it
+    billed_email: Callable[[dict[str, Any]], Optional[str]]
+    record: Callable[[UsageRepository, str, str], Any]
+
+
+def _message_period(event_name: str, _old: dict[str, Any], new: dict[str, Any]) -> Optional[str]:
+    created_at = new.get("created_at")
+    return _period_key(created_at) if event_name == "INSERT" and created_at else None
+
+
+def _message_billed_email(image: dict[str, Any]) -> Optional[str]:
+    conversation_id = image.get("conversation_id")
+    conversation = ConversationRepository().get(conversation_id) if conversation_id else None
+    # A message whose conversation can't be found is charged to whoever wrote it, as before accounts
+    return account_billing_email(conversation.account_id) if conversation else image.get("created_by")
+
+
+def _page_period(event_name: str, old: dict[str, Any], new: dict[str, Any]) -> Optional[str]:
+    """A page counts once, when it first succeeds: inserted as a success, or a pending page finishing."""
+    became_success = new.get("status") == "success" and (event_name == "INSERT" or (
+        event_name == "MODIFY" and old.get("status") != "success"))
+    crawled_at = new.get("crawled_at")
+    return _period_key(crawled_at) if became_success and crawled_at else None
+
+
+def _page_billed_email(image: dict[str, Any]) -> Optional[str]:
+    # Pages from before they recorded their account have none, and are charged to no one
+    account_id = image.get("account_id")
+    return account_billing_email(account_id) if account_id else None
+
+
+USAGE_METERS: dict[str, UsageMeter] = {meter.entity_type: meter for meter in (
+    UsageMeter("Message", _message_period, _message_billed_email,
+               lambda usage, email, period: usage.increment_messages(email, period, 1)),
+    UsageMeter("CrawledPage", _page_period, _page_billed_email,
+               lambda usage, email, period: usage.increment_kb_pages(email, period, 1)),
+)}
 
 
 def _period_key(iso_date: str) -> str:
@@ -166,65 +211,23 @@ def handler(event, context):  # noqa: ARG001
                 if invoice_url:
                     _send_invoice_email(user_email, invoice_url)
 
-        entity_type = image.get("entity_type")
-        if entity_type not in {"Agent", "Message", "CrawledPage"}:
+        meter = USAGE_METERS.get(image.get("entity_type", ""))
+        period = meter.period(event_name, old_image, new_image) if meter and new_image else None
+        if meter is None or period is None:
             continue
 
-        # Usage stays per person (by email) until billing moves to accounts (KAN-86). An agent records
-        # its owner by user_id.
-        user_email = _owner_email(image) if entity_type == "Agent" else image.get("created_by")
+        user_email = meter.billed_email(image)
         if not user_email:
+            log.warning("Usage event has no account to charge", extra={"event_id": event_id, "entity_type": meter.entity_type})
             continue
-
-        if not _dedupe_event(table, user_email, event_id, entity_type):
+        if not _dedupe_event(table, user_email, event_id, meter.entity_type):
             log.warning(
                 "Duplicate usage event skipped",
-                extra={"user": user_email, "event_id": event_id, "entity_type": entity_type},
+                extra={"user": user_email, "event_id": event_id, "entity_type": meter.entity_type},
             )
             continue
 
-        if entity_type == "Agent":
-            if event_name == "INSERT":
-                usage_repo.adjust_active_agents(user_email, 1)
-            elif event_name == "REMOVE":
-                usage_repo.adjust_active_agents(user_email, -1)
-            continue
-
-        if entity_type == "Message" and event_name == "INSERT":
-            created_at = image.get("created_at")
-            if created_at:
-                period_key = _period_key(created_at)
-                usage_repo.increment_messages(user_email, period_key, 1)
-                log.debug(
-                    "Incremented messages usage",
-                    extra={"user": user_email, "period": period_key},
-                )
-            continue
-
-        if entity_type == "CrawledPage":
-            if event_name == "INSERT":
-                status = image.get("status")
-                if status != "success":
-                    continue
-                crawled_at = image.get("crawled_at")
-                if crawled_at:
-                    period_key = _period_key(crawled_at)
-                    usage_repo.increment_kb_pages(user_email, period_key, 1)
-                    log.debug(
-                        "Incremented kb pages usage",
-                        extra={"user": user_email, "period": period_key},
-                    )
-            elif event_name == "MODIFY":
-                old_status = old_image.get("status")
-                new_status = new_image.get("status")
-                if old_status != "success" and new_status == "success":
-                    crawled_at = new_image.get("crawled_at")
-                    if crawled_at:
-                        period_key = _period_key(crawled_at)
-                        usage_repo.increment_kb_pages(user_email, period_key, 1)
-                        log.debug(
-                            "Incremented kb pages usage after status transition",
-                            extra={"user": user_email, "period": period_key},
-                        )
+        meter.record(usage_repo, user_email, period)
+        log.debug("Recorded usage", extra={"user": user_email, "period": period, "entity_type": meter.entity_type})
 
     return {"status": "ok"}

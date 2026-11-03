@@ -712,6 +712,7 @@ class CrawledPage(BaseModel):
 
     job_id: str
     created_by: str
+    account_id: str = ""  # whose plan the page is charged to; pages from before it was recorded have none
     url: str
     url_hash: str = ""  # Set from URL if not provided
     status: CrawledPageStatus = CrawledPageStatus.PENDING
@@ -740,6 +741,7 @@ class CrawledPage(BaseModel):
             "sk": self.sk,
             "job_id": self.job_id,
             "created_by": self.created_by,
+            "account_id": self.account_id,
             "url": self.url,
             "url_hash": self.url_hash,
             "status": self.status.value,
@@ -756,6 +758,7 @@ class CrawledPage(BaseModel):
         return cls(
             job_id=item["job_id"],
             created_by=item.get("created_by", ""),
+            account_id=item.get("account_id", ""),
             url=item["url"],
             url_hash=item["url_hash"],
             status=CrawledPageStatus(item["status"]),

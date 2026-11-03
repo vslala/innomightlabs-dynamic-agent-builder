@@ -28,6 +28,8 @@ from src.blueprints.kinds import (
 from src.blueprints.validator import ValidatedBlueprint
 from src.leads.errors import LeadsError
 from src.leads.service import LeadsService
+from src.rate_limits.billing import account_billing_email
+from src.rate_limits.quotas import AGENTS, KB_PAGES
 from src.rate_limits.service import RateLimitService
 
 
@@ -194,10 +196,11 @@ def _plan(
 
     # Called directly: the subscription middleware only sees the HTTP routes, not blueprint applies.
     limits = RateLimitService()
+    billed_email = account_billing_email(owner.account_id) or owner.email
     if agents:
-        plan.blockers += _limit_issue(lambda: limits.check_agent_limit(owner.email, additional=agents))
+        plan.blockers += _limit_issue(lambda: limits.check(billed_email, AGENTS, agents))
     if kb_pages:
-        plan.blockers += _limit_issue(lambda: limits.check_kb_pages_limit(owner.email, kb_pages))
+        plan.blockers += _limit_issue(lambda: limits.check(billed_email, KB_PAGES, kb_pages))
     if lead_forms:
         plan.blockers += _lead_form_limit_issue(owner.account_id, lead_forms)
     return plan
