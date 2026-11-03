@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, ExternalLink, Trash2 } from "lucide-react";
 import {
   Alert,
@@ -31,6 +31,11 @@ export function CaptureDetail({ capture, agentName, statuses, onChange, onDelete
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const heading = useRef<HTMLHeadingElement | null>(null);
+
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+  }, []);
 
   const changeStatus = async (status: string) => {
     setError(null);
@@ -66,8 +71,8 @@ export function CaptureDetail({ capture, agentName, statuses, onChange, onDelete
   return (
     <aside className={styles.panel} aria-label="Selected lead">
       <div className={styles.panelBody}>
-        <div className={styles.toolbar}>
-          <h3 className={styles.heading}>{capture.form_name}</h3>
+        <div className={styles.detailHeader}>
+          <h3 ref={heading} tabIndex={-1} className={styles.heading}>{capture.form_name}</h3>
           <Select value={capture.status} onValueChange={(status) => void changeStatus(status)}>
             <SelectTrigger className={styles.filter} aria-label="Status"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -83,18 +88,18 @@ export function CaptureDetail({ capture, agentName, statuses, onChange, onDelete
 
         <dl className={styles.answers}>
           {capture.form_inputs.map((input) => (
-            <Fragment key={input.name}>
+            <div key={input.name} className={styles.answer}>
               <dt>{input.label}</dt>
               <dd>{answerText(capture, input) || "—"}</dd>
-            </Fragment>
+            </div>
           ))}
         </dl>
 
         {capture.files.length > 0 && (
-          <div className={styles.actions}>
+          <div className={`${styles.actions} ${styles.attachments}`}>
             {capture.files.map((file) => (
               <Button key={file.file_id} type="button" variant="outline" size="sm" onClick={() => void download(file.file_id)}>
-                <Download aria-hidden="true" />{file.filename}
+                <Download aria-hidden="true" /><span>{file.filename}</span>
               </Button>
             ))}
           </div>

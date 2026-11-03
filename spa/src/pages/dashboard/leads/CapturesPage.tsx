@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Inbox, Lock } from "lucide-react";
+import { ArrowLeft, Inbox, Lock } from "lucide-react";
 import {
   Alert,
   AlertDescription,
@@ -41,6 +41,7 @@ export function CapturesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedButton = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     void Promise.all([agentApiService.listAgents(), leadsApiService.listForms(), leadsApiService.getSettings()])
@@ -94,7 +95,7 @@ export function CapturesPage() {
   const statusLabel = (key: string) => choices.statuses.find((status) => status.key === key)?.label ?? key;
 
   return (
-    <section className={styles.content} aria-labelledby="leads-heading" aria-busy={loading}>
+    <section className={styles.content} aria-labelledby="leads-heading" aria-busy={loading} data-selected={Boolean(selected)}>
       <div className={styles.toolbar}>
         <h2 id="leads-heading" className={styles.heading}>Leads</h2>
         <div className={styles.filters}>
@@ -133,13 +134,16 @@ export function CapturesPage() {
       )}
 
       {captures.length > 0 && (
-        <div className={styles.split}>
-          <div className={styles.panel}>
+        <div className={styles.split} data-selected={Boolean(selected)}>
+          <div className={`${styles.panel} ${styles.listPane}`}>
             <ul className={styles.list} aria-label="Leads">
               {captures.map((capture) => (
                 <li key={capture.capture_id}>
                   <Button type="button" variant="ghost" className={styles.rowButton} aria-current={capture.capture_id === selectedId}
-                    onClick={() => setSelectedId(capture.capture_id)}>
+                    onClick={(event) => {
+                      selectedButton.current = event.currentTarget;
+                      setSelectedId(capture.capture_id);
+                    }}>
                     <span className={styles.rowTitle}>{captureHeadline(capture)}</span>
                     <Pill size="sm" variant="secondary">{statusLabel(capture.status)}</Pill>
                     <span className={styles.rowMeta}>
@@ -157,10 +161,18 @@ export function CapturesPage() {
             )}
           </div>
           {selected ? (
-            <CaptureDetail key={selected.capture_id} capture={selected} agentName={agentName(selected.agent_id)}
-              statuses={choices.statuses} onChange={replace} onDelete={forget} />
+            <div className={styles.detailPane}>
+              <Button type="button" variant="ghost" className={styles.backButton} onClick={() => {
+                setSelectedId(null);
+                requestAnimationFrame(() => selectedButton.current?.focus());
+              }}>
+                <ArrowLeft aria-hidden="true" />Back to leads
+              </Button>
+              <CaptureDetail key={selected.capture_id} capture={selected} agentName={agentName(selected.agent_id)}
+                statuses={choices.statuses} onChange={replace} onDelete={forget} />
+            </div>
           ) : (
-            <div className={styles.panel}><div className={styles.panelBody}><p className={styles.muted}>Select a lead to see everything it holds.</p></div></div>
+            <div className={`${styles.panel} ${styles.emptyDetail}`}><div className={styles.panelBody}><p className={styles.muted}>Select a lead to see everything it holds.</p></div></div>
           )}
         </div>
       )}
