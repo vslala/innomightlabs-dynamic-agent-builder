@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { SchemaForm } from "../../components/forms";
 import { agentApiService } from "../../services/agents/AgentApiService";
+import { HttpError } from "../../services/http/client";
 import type { FormSchema, FormValue } from "../../types/form";
 
 export function AgentCreate() {
@@ -43,7 +44,17 @@ export function AgentCreate() {
       await agentApiService.createAgent(payload);
       navigate("/dashboard/agents");
     } catch (err) {
-      setError("Failed to create agent. Please try again.");
+      let message = "Failed to create agent. Please try again.";
+      if (err instanceof HttpError) {
+        if (err.status === 0) {
+          message = "Network error. Check your connection and try again.";
+        } else if (err.status === 403) {
+          message = "You don't have permission to create an agent in this account. Ask an account administrator for access.";
+        } else if ((err.status === 400 || err.status === 429) && err.message.trim() && err.message !== "Request failed") {
+          message = err.message;
+        }
+      }
+      setError(message);
       console.error("Error creating agent:", err);
     } finally {
       setIsSubmitting(false);
@@ -99,7 +110,7 @@ export function AgentCreate() {
         </CardHeader>
         <CardContent>
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            <div role="alert" className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
               {error}
             </div>
           )}

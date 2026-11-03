@@ -4,6 +4,7 @@ import re
 from typing import Optional
 
 from fastapi import HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
@@ -53,7 +54,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     if job:
                         self.rate_limits.check_kb_pages_limit(user_email, job.config.max_pages)
         except HTTPException as exc:
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=jsonable_encoder({"detail": exc.detail}),
+                headers=exc.headers,
+            )
 
         return await call_next(request)
 

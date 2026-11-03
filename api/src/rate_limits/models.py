@@ -47,9 +47,9 @@ class UsageRecord:
         return cls(
             user_email=item["user_email"],
             period_key=item["period_key"],
-            messages_used=item.get("messages_used", 0),
-            kb_pages_used=item.get("kb_pages_used", 0),
-            agents_active=item.get("agents_active", 0),
+            messages_used=int(item.get("messages_used", 0)),
+            kb_pages_used=int(item.get("kb_pages_used", 0)),
+            agents_active=int(item.get("agents_active", 0)),
             created_at=item.get("created_at"),
             updated_at=item.get("updated_at"),
         )
