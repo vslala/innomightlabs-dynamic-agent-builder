@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from types import SimpleNamespace
 
 import pytest
 
@@ -334,6 +335,24 @@ async def test_waiting_on_a_job_reports_progress_to_the_client(monkeypatch):
         if getattr(event, "event_type", None) == SSEEventType.LIFECYCLE_NOTIFICATION
     ]
     assert notices == ["Rendering page 2 of 9...", "Rendering page 2 of 9..."]
+
+
+@pytest.mark.parametrize("elapsed_seconds", [601, 7199, 7200])
+async def test_async_job_wait_budget_is_120_minutes(monkeypatch, elapsed_seconds):
+    from src.agents import agentic_loop
+
+    assert agentic_loop.ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS == 7200
+    clock = iter([0, elapsed_seconds])
+    monkeypatch.setattr(agentic_loop, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    monkeypatch.setattr(agentic_loop, "ASYNC_JOB_POLL_SECONDS", 0)
+    router = RecordingAsyncRouter(statuses=["running", "succeeded"])
+
+    if elapsed_seconds >= 7200:
+        with pytest.raises(AsyncToolJobStillRunningError):
+            await agentic_loop._await_async_job(job_id="job-1", tool_router=router, state=object())
+    else:
+        outcome = await agentic_loop._await_async_job(job_id="job-1", tool_router=router, state=object())
+        assert json.loads(outcome.result)["status"] == "succeeded"
 
 
 async def test_the_turn_fails_if_a_job_outlives_the_in_turn_budget(monkeypatch):

@@ -6,6 +6,14 @@ Owner: InnomightLabs API
 
 ## Implementation notes
 
+**Per-job wait budget: 120 minutes.** `src/agents/agentic_loop.py` polls an async job every two seconds
+and waits up to `ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 120 * 60` before raising
+`AsyncToolJobStillRunningError` if the job remains queued or running. This is per job, not a total turn
+budget, and polling does not consume model-call iterations. It supersedes the original ten-minute
+self-check design below. The detached chat turn does not require one SSE connection to last two hours;
+clients reattach to its transcript. Provider/tool execution timeouts, stale-job detection, and the model-call
+iteration limit are unchanged. Tests simulate the clock rather than actually waiting two hours.
+
 **Large results (KAN-67, 2026-10-09).** A job's result used to be written whole onto its DynamoDB item.
 DynamoDB refuses items over 400 KB, so a large result made `mark_succeeded` raise. The service then stored
 `ValidationException … Item size has exceeded the maximum allowed size` as the job's error, and the result was

@@ -35,7 +35,7 @@ from src.token_usage.service import TokenUsageService
 log = logging.getLogger(__name__)
 
 #: How long the loop will wait, in total, for one async tool job to finish.
-ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 10 * 60
+ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 120 * 60
 ASYNC_JOB_POLL_SECONDS = 2
 
 POST_TOOL_CONTINUATION_PROMPT = (
