@@ -323,6 +323,25 @@ async def test_a_long_run_keeps_one_continuation_nudge_on_the_latest_results():
     assert all(first != second for first, second in zip(roles, roles[1:]))
 
 
+async def test_default_iteration_budget_allows_200_model_calls_then_a_summary():
+    from src.common import MAX_TOOL_ITERATIONS
+
+    assert MAX_TOOL_ITERATIONS == 200
+    provider = ScriptedProvider(
+        *(tool_call(f"t{index}") for index in range(200)),
+        text("Completed 200 iterations."),
+    )
+
+    events = await _run(provider)
+
+    assert len(provider.contexts) == 201
+    assert all(tools == ["lookup_customer"] for tools in provider.tools[:-1])
+    assert provider.tools[-1] == []
+    assert "limit of 200 model calls" in ITERATION_LIMIT_SUMMARY_PROMPT
+    assert sum(_type(event) == SSEEventType.TOOL_CALL_RESULT for event in events) == 200
+    assert events[-1] == TurnComplete(full_text="Completed 200 iterations.", stop_reason="end_turn")
+
+
 async def test_reaching_the_iteration_limit_still_ends_with_what_was_done(monkeypatch):
     monkeypatch.setattr("src.agents.agentic_loop.MAX_TOOL_ITERATIONS", 2)
     provider = ScriptedProvider(tool_call("t1"), tool_call("t2"), text("Did two of three."))

@@ -29,3 +29,27 @@ resource "aws_cognito_user_pool_domain" "hosted_ui" {
   domain       = var.cognito_domain_prefix
   user_pool_id = aws_cognito_user_pool.main.id
 }
+
+# The demo user that Playwright signs in as to record product videos. Its credentials are private to
+# the team; it is not a shared trial login. The password is set permanently (no forced change on first
+# login) and no invitation email is sent, so the hosted UI form is all a script has to fill in.
+resource "aws_cognito_user" "demo" {
+  count = var.demo_user_email == "" ? 0 : 1
+
+  user_pool_id   = aws_cognito_user_pool.main.id
+  username       = var.demo_user_email
+  password       = var.demo_user_password
+  message_action = "SUPPRESS"
+
+  attributes = {
+    email          = var.demo_user_email
+    email_verified = true
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.demo_user_password != ""
+      error_message = "Set DEMO_USER_PASSWORD when DEMO_USER_EMAIL is set."
+    }
+  }
+}

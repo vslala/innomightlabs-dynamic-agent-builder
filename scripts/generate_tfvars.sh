@@ -209,6 +209,8 @@ write_kv "cognito_domain_prefix" "$(get_var 'COGNITO_DOMAIN_PREFIX')"
 write_kv "cognito_redirect_uri" "$(get_var 'COGNITO_REDIRECT_URI')"
 write_list "cognito_callback_urls" "$(get_var 'COGNITO_CALLBACK_URLS')"
 write_list "cognito_logout_urls" "$(get_var 'COGNITO_LOGOUT_URLS')"
+write_kv "demo_user_email" "$(get_var 'DEMO_USER_EMAIL')"
+write_kv "demo_user_password" "$(get_var 'DEMO_USER_PASSWORD')"
 
 # ============================================================================
 # Stripe Configuration (environment-specific keys, common prices)

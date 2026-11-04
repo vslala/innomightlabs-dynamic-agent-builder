@@ -233,6 +233,29 @@ variable "cognito_logout_urls" {
   default     = ["http://localhost:5173/"]
 }
 
+variable "demo_user_email" {
+  description = "Email of the Cognito demo user that records product videos; empty creates no user"
+  type        = string
+  default     = ""
+}
+
+variable "demo_user_password" {
+  description = "Permanent password of the Cognito demo user"
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition = var.demo_user_password == "" || (
+      length(var.demo_user_password) >= 8 &&
+      can(regex("[A-Z]", var.demo_user_password)) &&
+      can(regex("[a-z]", var.demo_user_password)) &&
+      can(regex("[0-9]", var.demo_user_password))
+    )
+    error_message = "The demo user password must meet the user pool policy: 8+ characters with an upper case letter, a lower case letter and a number."
+  }
+}
+
 # Stripe
 variable "stripe_secret_key" {
   description = "Stripe secret key"

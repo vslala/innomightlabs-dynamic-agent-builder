@@ -12,7 +12,13 @@ and waits up to `ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 120 * 60` before raising
 budget, and polling does not consume model-call iterations. It supersedes the original ten-minute
 self-check design below. The detached chat turn does not require one SSE connection to last two hours;
 clients reattach to its transcript. Provider/tool execution timeouts, stale-job detection, and the model-call
-iteration limit are unchanged. Tests simulate the clock rather than actually waiting two hours.
+iteration limit are separate. Tests simulate the clock rather than actually waiting two hours.
+
+**Model-call budget: 200 per turn.** `src/common/constants.py` sets `MAX_TOOL_ITERATIONS = 200`.
+Tools requested on the last ordinary model call still run; if the loop needs to continue, it makes one
+additional tools-disabled summary call (up to 201 model calls total). This is not a conversation-message
+limit or a count of individual tools, since one model call may request several tools. Async-job polls do
+not consume this budget. Longer runs may use more provider tokens and cost more.
 
 **Large results (KAN-67, 2026-10-09).** A job's result used to be written whole onto its DynamoDB item.
 DynamoDB refuses items over 400 KB, so a large result made `mark_succeeded` raise. The service then stored
