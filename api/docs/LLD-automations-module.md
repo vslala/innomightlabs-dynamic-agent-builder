@@ -97,6 +97,8 @@ The Phase 2 runner is synchronous and in-process:
 - Walks the graph from the selected trigger entry node.
 - Executes `start`, `condition`, `action.invoke_agent`, and `final` nodes.
 - Stores each node result and updates the run context document.
+- Moves an agent's tool-call events out of the node output into an S3 log first, keeping `event_log_key` and
+  `tool_call_count` on the result (2026-11-09; see [Automation run inspector](../../docs/LLD-automation-run-inspector.md)).
 
 Run context shape:
 ```json

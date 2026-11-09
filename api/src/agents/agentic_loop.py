@@ -13,6 +13,7 @@ import copy
 import logging
 import time
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from enum import Enum, auto
 from typing import Any, AsyncIterator, Optional, Protocol
 
@@ -327,9 +328,11 @@ class _Turn:
         tool_results: list[dict[str, Any]] = []
         refresh_prompt = False
         for tool_event in call.tool_calls:
+            started_at: datetime | None = None
             if self.paused_on:
                 outcome = SKIPPED_FOR_CONSENT
             else:
+                started_at = datetime.now(timezone.utc)
                 task = asyncio.create_task(self._execute_and_settle(tool_event))
                 async for event in self.runtime.stream_while(task):
                     yield event
@@ -338,7 +341,7 @@ class _Turn:
                     self.paused_on = tool_event.tool_use_id
 
             refresh_prompt = refresh_prompt or outcome.refresh_prompt
-            yield _tool_call_result_event(tool_event, outcome)
+            yield _tool_call_result_event(tool_event, outcome, started_at=started_at)
             tool_results.append(tool_result_block(tool_event.tool_use_id, outcome.result))
 
         append_user_tool_results(self.context, tool_results)
@@ -410,7 +413,10 @@ def _tool_call_start_event(tool_event: LLMEvent) -> SSEEvent:
     )
 
 
-def _tool_call_result_event(tool_event: LLMEvent, outcome: ToolExecutionOutcome) -> SSEEvent:
+def _tool_call_result_event(
+    tool_event: LLMEvent, outcome: ToolExecutionOutcome, *, started_at: datetime | None
+) -> SSEEvent:
+    """`started_at` is None for a call that never ran (skipped while the turn waits for consent)."""
     display_name, display_args = derive_display_tool(tool_event.tool_name, tool_event.tool_input)
     return SSEEvent(
         event_type=SSEEventType.TOOL_CALL_RESULT,
@@ -420,6 +426,8 @@ def _tool_call_result_event(tool_event: LLMEvent, outcome: ToolExecutionOutcome)
         success=outcome.success,
         display_tool_name=display_name,
         display_tool_args=display_args,
+        started_at=started_at,
+        completed_at=datetime.now(timezone.utc) if started_at else None,
     )
 
 

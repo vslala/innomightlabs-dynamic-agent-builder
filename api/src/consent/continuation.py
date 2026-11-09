@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Callable
 
 from src.agents.agentic_loop import TurnResume
@@ -96,6 +97,7 @@ class ConsentContinuation:
             )
         )
         request = self.repository.mark_running(request)
+        started_at = datetime.now(timezone.utc)
         try:
             result = await self._execute(request)
             request = self.repository.finish(request, succeeded=True, result=result)
@@ -111,6 +113,8 @@ class ConsentContinuation:
                 tool_name=tool_name,
                 display_tool_name=display_name,
                 display_tool_args=display_args,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
             )
         )
         return request

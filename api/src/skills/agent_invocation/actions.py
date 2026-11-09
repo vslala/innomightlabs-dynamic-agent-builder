@@ -7,7 +7,7 @@ from src.agents.architectures import get_agent_architecture
 from src.consent.models import ConsentScope
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
-from src.llm.events import recorded_events
+from src.llm.events import tool_call_events
 from src.messages.repositories import get_message_repository
 from src.skills.agent_invocation.history import InvocationHistoryStore
 from src.skills.agent_invocation.models import InvokeAgentRequest
@@ -71,10 +71,10 @@ async def invoke(
         if value
     }
     if _for_automation(context):
-        # An automation run's inspector shows the invoked agent's tool calls.
+        # An automation run's inspector shows the invoked agent's tool calls; the runner moves them to the step's log.
         return {
             "response_text": invocation.response_text,
-            "events": recorded_events(invocation.events),
+            "events": tool_call_events(invocation.events),
             "message_ids": message_ids,
         }
 

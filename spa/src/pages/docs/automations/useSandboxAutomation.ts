@@ -163,6 +163,8 @@ function useLocalParams(initialStep: string | null): WorkspaceParams {
       panel: search.get("panel"),
       run: search.get("run"),
       focus: search.get("focus"),
+      tab: search.get("tab"),
+      call: search.get("call"),
       update,
     }),
     [search, update]
@@ -269,6 +271,7 @@ function simulateRun(
       message_ids: {},
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
+      tool_call_count: 0,
     });
     recordStep(context, current, status, output, error);
 

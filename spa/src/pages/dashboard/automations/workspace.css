@@ -567,8 +567,13 @@
   align-items: center;
   color: var(--text-muted);
   display: flex;
+  flex-wrap: wrap;
   font-size: 0.75rem;
   gap: var(--space-2);
+}
+
+.chain-data__inspect {
+  margin-left: auto;
 }
 
 .chain-data__error {
@@ -600,12 +605,6 @@
   letter-spacing: 0.05em;
   margin: 0;
   text-transform: uppercase;
-}
-
-.chain-data__accordion-title {
-  color: var(--text-primary);
-  font-size: 0.8125rem;
-  font-weight: 600;
 }
 
 .chain-output-tree {

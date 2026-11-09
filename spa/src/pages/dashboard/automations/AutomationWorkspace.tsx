@@ -72,6 +72,8 @@ export interface WorkspaceOperations {
     skillId: string,
     config: Record<string, unknown>
   ) => Promise<{ installed_skill_id: string; skill_id: string }>;
+  /** Where a run (optionally one step of it) is inspected. Absent where runs are simulated (the docs sandbox). */
+  inspectRunHref?: (runId: string, resultId?: string) => string;
 }
 
 export function AutomationWorkspace({
@@ -340,8 +342,9 @@ export function AutomationWorkspace({
       },
       onEditTriggers: draft.refreshGraph,
       stepConsents,
+      inspectRunHref: operations.inspectRunHref,
     };
-  }, [draft, expandedNodeId, gateway, insert, requestDelete, runs, stepConsents, toggleExpand]);
+  }, [draft, expandedNodeId, gateway, insert, operations.inspectRunHref, requestDelete, runs, stepConsents, toggleExpand]);
 
   if (draft.loading) return <LoadingState />;
   if (draft.loadError || !draft.graph || !draft.chain || !chainValue) {
@@ -428,6 +431,7 @@ export function AutomationWorkspace({
         tab={drawerTab}
         onHeightChange={setDrawerHeight}
         onTabChange={(tab) => update({ panel: tab })}
+        inspectRunHref={operations.inspectRunHref}
       />
 
       <AddStepPalette

@@ -8,7 +8,7 @@ These components render the chain and its operational panels. They are shared wi
 
 `StepCard.tsx` combines action-schema editing, reference names, smart values, menus, and `StepDataPanel.tsx`. `ConditionBuilder.tsx` handles structured/raw expressions. `TriggerCard.tsx` owns trigger setup in place. `StepIcon.tsx` and `RunStatusBadge.tsx` provide consistent affordances; `runStatus.ts` maps statuses/time/duration.
 
-`WorkspaceTopBar.tsx` presents title/status/save/actions. `IssuesPanel.tsx` combines client issues and save failures. `TestPanel.tsx` derives input fields from graph `input.*` references and offers JSON editing via `AutomationJsonEditor.tsx`. `RunsDrawer.tsx` combines history and `AutomationAnalyticsPanel.tsx`; analytics are derived from the loaded page of runs, not complete all-time backend analytics. Runtime display transforms live in parent `runDisplay.ts`.
+`WorkspaceTopBar.tsx` presents title/status/save/actions. `IssuesPanel.tsx` combines client issues and save failures. `TestPanel.tsx` derives input fields from graph `input.*` references and offers JSON editing via `AutomationJsonEditor.tsx`. `RunsDrawer.tsx` combines history and `AutomationAnalyticsPanel.tsx`; analytics are derived from the loaded page of runs, not complete all-time backend analytics. `StepDataPanel.tsx` shows a step's input and output with insert-a-smart-value; its tool calls live in `../run-inspector/`, reached through the optional `inspectRunHref` (in `ChainContextValue` and `WorkspaceOperations`), which the docs sandbox leaves out.
 
 ## Extension and CSS
 

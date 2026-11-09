@@ -98,7 +98,8 @@ class ToolCallAuditLog:
             tool_args=start.tool_args,
             result=event.content,
             success=bool(event.success),
-            started_at=start.started_at,
+            # When the tool ran, not when the model asked for it (it asks for a turn's tools all at once)
+            started_at=event.started_at or start.started_at,
         )
         self.message_repo.save(
             Message(

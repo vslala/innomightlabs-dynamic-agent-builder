@@ -265,6 +265,10 @@ async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     assert start.tool_name == "lookup_customer"
     assert result.tool_call_id == "tooluse_1"
     assert result.content == "customer found"
+    # When the tool ran, for the run inspector's timeline and the tool audit
+    assert result.started_at is not None and result.completed_at is not None
+    assert result.started_at <= result.completed_at
+    assert start.started_at is None
 
 
 async def test_agentic_loop_prompts_model_to_continue_or_finish_after_tool_results():

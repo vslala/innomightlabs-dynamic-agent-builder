@@ -255,6 +255,28 @@ export interface AutomationRunNodeResult {
   message_ids: Record<string, string>;
   started_at: string;
   completed_at?: string | null;
+  /** Tool calls the step's agent made; when above zero, `getStepEvents` lists them. */
+  tool_call_count: number;
+}
+
+/** One recorded tool event of a step, as the API keeps it (TOOL_CALL_START or TOOL_CALL_RESULT). */
+export interface AutomationStepEvent {
+  event_type: string;
+  content: string;
+  tool_call_id?: string | null;
+  tool_name?: string | null;
+  tool_args?: Record<string, unknown> | null;
+  /** The real tool behind a wrapper such as `call_mcp_tool`, when there is one. */
+  display_tool_name?: string | null;
+  display_tool_args?: Record<string, unknown> | null;
+  success?: boolean | null;
+  /** On a result: when the tool itself ran. Absent on runs recorded before timings were kept. */
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface AutomationStepEventsResponse {
+  events: AutomationStepEvent[];
 }
 
 export interface AutomationRunDetailResponse {

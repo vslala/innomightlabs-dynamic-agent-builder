@@ -72,6 +72,7 @@ const AutomationsListPage = lazyRoute(() => import('./pages/dashboard/automation
 const AutomationDetailLayout = lazyRoute(() => import('./pages/dashboard/automations/AutomationDetailLayout'), 'AutomationDetailLayout');
 const AutomationWorkspacePage = lazyRoute(() => import('./pages/dashboard/automations/AutomationWorkspacePage'), 'AutomationWorkspacePage');
 const WorkspaceRedirect = lazyRoute(() => import('./pages/dashboard/automations/WorkspaceRedirect'), 'WorkspaceRedirect');
+const RunInspectorPage = lazyRoute(() => import('./pages/dashboard/automations/run-inspector/RunInspectorPage'), 'RunInspectorPage');
 const AutomationMarketplacePage = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplacePage'), 'AutomationMarketplacePage');
 const AutomationMarketplaceDetail = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplaceDetail'), 'AutomationMarketplaceDetail');
 const WhatsNewPage = lazyRoute(() => import('./pages/dashboard/WhatsNewPage'), 'WhatsNewPage');
@@ -198,6 +199,7 @@ function App() {
             {/* Triggers, runs, and analytics are panels in the workspace now. */}
             <Route path="triggers" element={<WorkspaceRedirect step="trigger" />} />
             <Route path="runs" element={<WorkspaceRedirect panel="runs" />} />
+            <Route path="runs/:runId" element={<RunInspectorPage />} />
             <Route path="analytics" element={<WorkspaceRedirect panel="analytics" />} />
           </Route>
           <Route path="leads" element={<LeadsLayout />}>

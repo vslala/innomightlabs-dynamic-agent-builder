@@ -14,18 +14,9 @@ from datetime import datetime, timezone
 from typing import Any, Optional, cast
 from src.accounts.owner import Owner
 from src.artifacts.storage import ArtifactStorage, member_prefix
-from src.llm.events import RECORDED_EVENT_TYPES, SSEEvent
+from src.llm.events import SSEEvent, tool_call_events
 
 log = logging.getLogger(__name__)
-
-
-def tool_history(events: list[SSEEvent]) -> list[dict[str, Any]]:
-    """Every tool call and result, uncapped: this is the audit copy, not something a model reads."""
-    return [
-        event.model_dump(mode="json", exclude_none=True)
-        for event in events
-        if event.event_type in RECORDED_EVENT_TYPES
-    ]
 
 
 def key_for(owner: Owner, conversation_id: str, tool_call_id: str) -> str:
@@ -68,7 +59,7 @@ class InvocationHistoryStore:
             "prompt": prompt,
             "response_text": response_text,
             "message_ids": message_ids,
-            "tool_calls": tool_history(events),
+            "tool_calls": tool_call_events(events),
         }
         try:
             self.storage.put_artifact(

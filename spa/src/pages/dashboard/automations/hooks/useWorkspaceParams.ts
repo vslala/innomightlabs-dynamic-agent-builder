@@ -1,6 +1,7 @@
 /**
- * Query-string state for the workspace: which step is expanded, which panel is
- * open, which run is selected.
+ * Query-string state for the workspace (which step is expanded, which panel is
+ * open, which run is selected) and the run inspector (which step, tab and tool
+ * call are open), so any of it can be linked to.
  *
  * `useSearchParams` cannot be used directly for this. Its setter closes over the
  * params from the render that created it, so two writes before the next commit
@@ -16,7 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 
-export type WorkspaceParamKey = "step" | "panel" | "run" | "focus";
+export type WorkspaceParamKey = "step" | "panel" | "run" | "focus" | "tab" | "call";
 
 export type WorkspaceParamPatch = Partial<Record<WorkspaceParamKey, string | null>>;
 
@@ -25,6 +26,8 @@ export interface WorkspaceParams {
   panel: string | null;
   run: string | null;
   focus: string | null;
+  tab: string | null;
+  call: string | null;
   /** Apply several keys in one navigation. Stable across renders. */
   update: (patch: WorkspaceParamPatch) => void;
 }
@@ -54,6 +57,8 @@ export function useWorkspaceParams(): WorkspaceParams {
       panel: search.get("panel"),
       run: search.get("run"),
       focus: search.get("focus"),
+      tab: search.get("tab"),
+      call: search.get("call"),
       update,
     }),
     [search, update]

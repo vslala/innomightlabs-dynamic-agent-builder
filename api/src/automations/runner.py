@@ -33,12 +33,13 @@ from src.automations.run_state import (
     AutomationRunStateService,
 )
 from src.automations.errors import AutomationValidationError
+from src.automations.event_log import StepEventLogStore, count_tool_calls, events_holder
 from src.automations.service import AutomationGraph, AutomationService
 from src.automations.smart_values import SmartValueResolver
 from src.consent.models import ConsentScope
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
-from src.llm.events import recorded_events
+from src.llm.events import capped_events, tool_call_events
 from src.connectors.service import ConnectorService, get_connector_service
 from src.skills.service import SkillService
 from src.skills.service import get_skill_service
@@ -95,6 +96,7 @@ class AutomationRunner:
         skill_service: SkillService | None = None,
         connector_service: ConnectorService | None = None,
         run_state: AutomationRunStateService | None = None,
+        event_logs: StepEventLogStore | None = None,
     ):
         self.automation_repo = automation_repo or AutomationRepository()
         self.agent_repo = agent_repo or AgentRepository()
@@ -102,6 +104,7 @@ class AutomationRunner:
         self.skill_service = skill_service or get_skill_service()
         self.connector_service = connector_service or get_connector_service()
         self.run_state = run_state or AutomationRunStateService(self.automation_repo)
+        self.event_logs = event_logs or StepEventLogStore()
         self.consent = AutomationConsentService(repo=self.automation_repo, skill_registry=self.skill_service.registry)
         self._node_executors: dict[AutomationNodeType, NodeExecutor] = {
             AutomationNodeType.START: self._execute_start_node,
@@ -269,6 +272,7 @@ class AutomationRunner:
                     conversation=conversation,
                     owner=owner,
                 )
+                result = self._move_events_to_log(result, owner)
                 self.automation_repo.save_node_result(result)
 
                 self._store_context_node(
@@ -396,7 +400,7 @@ class AutomationRunner:
             input_data={"agent_id": agent_id, "prompt": prompt},
             output={
                 "response_text": invocation.response_text,
-                "events": recorded_events(invocation.events),
+                "events": tool_call_events(invocation.events),
             },
             error=invocation.error,
             message_ids={
@@ -514,6 +518,24 @@ class AutomationRunner:
                 **executed_input,
                 "result": result,
             },
+        )
+
+    def _move_events_to_log(self, result: AutomationRunNodeResult, owner: Owner) -> AutomationRunNodeResult:
+        """Take the invoked agent's tool-call events out of the step's output and keep them whole in S3, so the
+        step's item and the run's context stay small (see `event_log.py`). If S3 is unavailable, a capped copy stays
+        inline where the events were, which is how runs were recorded before."""
+        output = deepcopy(result.output)
+        holder = events_holder(output)
+        if holder is None:
+            return result
+        events = holder.pop("events")
+        if not events:
+            return result.model_copy(update={"output": output})
+        key = self.event_logs.save(owner, result.run_id, result.result_id, events)
+        if key is None:
+            holder["events"] = capped_events(events)
+        return result.model_copy(
+            update={"output": output, "event_log_key": key, "tool_call_count": count_tool_calls(events)}
         )
 
     def _node_result(

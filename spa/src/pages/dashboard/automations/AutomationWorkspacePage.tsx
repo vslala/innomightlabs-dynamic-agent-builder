@@ -41,6 +41,8 @@ export function AutomationWorkspacePage() {
       },
       publish: openPublishDialog,
       enableSkill: (skillId, config) => automationApiService.enableSkill(automationId, skillId, { config }),
+      inspectRunHref: (runId, resultId) =>
+        `/dashboard/automations/${automationId}/runs/${runId}${resultId ? `?step=${resultId}` : ""}`,
     }),
     [automationId, navigate, openPublishDialog, reloadAutomation]
   );

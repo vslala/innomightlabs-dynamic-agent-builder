@@ -22,6 +22,12 @@ Owner: InnomightLabs SPA/API
 > | Runs drawer fixed to the viewport | Drawer is a flex child; the chain scrolls between top bar and drawer | A viewport-fixed drawer would have covered the dashboard sidebar |
 > | Analytics tab shows the old placeholder | Summary computed from the loaded runs | Says something true without inventing an endpoint |
 >
+> **2026-11-09.** A step card's data panel no longer lists the step's tool calls
+> (the "Lifecycle" and "Tool calls" accordions and `runDisplay.ts` are gone). Every
+> tool call now lives on its own run page, linked from the card and the runs drawer:
+> see [Automation run inspector](../../docs/LLD-automation-run-inspector.md). The
+> card keeps input, output and insert-a-smart-value.
+>
 > Also added, not in the plan: `vitest` as a dev dependency plus a `yarn test`
 > script (the SPA had no test runner, and phase 2 called for unit tests), and
 > `ConfirmationDialog` exported from the UI barrel (it existed but was unexported).

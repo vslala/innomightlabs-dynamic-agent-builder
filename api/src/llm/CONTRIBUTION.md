@@ -24,7 +24,7 @@ src/llm/
   ollama.py          OllamaConnection: endpoint validation and headers, shared by chat and discovery
   messages.py        normalize_messages / split_system_messages: provider-neutral ChatMessage blocks
   tools.py           ToolDefinition and to_openai / to_anthropic / to_bedrock / to_ollama converters
-  events.py          SSEEvent, SSEEventType, recorded_events (what the run log keeps)
+  events.py          SSEEvent, SSEEventType, tool_call_events (what a run log keeps), capped_events
   conversation_strategy.py  ConversationStrategy, FixedWindowStrategy (history windowing)
 ```
 
@@ -70,7 +70,8 @@ recall tool), and renders attachments as `<attached_file>` blocks. Architectures
 strategies only select history.
 
 **Events.** `SSEEventType` is the wire vocabulary the SPA and widget consume. Adding a type means updating the SPA
-(and `embed/` if the widget shows it), and deciding whether it belongs in `RECORDED_EVENT_TYPES`.
+(and `embed/` if the widget shows it), and deciding whether it belongs in `RECORDED_EVENT_TYPES`. A TOOL_CALL_RESULT
+carries `started_at`/`completed_at` for when the tool itself ran; the agentic loop and consent continuation set them.
 
 ## How to add a provider
 

@@ -1,5 +1,5 @@
 /**
- * Run status helpers shared by the cards, the drawer, and the top bar.
+ * Run status helpers shared by the cards, the drawer, the top bar, and the run inspector.
  */
 
 import type { StatusBadgeProps } from "../../../../components/ui";
@@ -38,11 +38,23 @@ export function formatRelativeTime(value: string): string {
   return formatRunTime(value);
 }
 
+/** A clock time to the second, for lining up what happened within one run. */
+export function formatClockTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
 export function formatDuration(startedAt: string, completedAt?: string | null): string | null {
   if (!completedAt) return null;
   const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return null;
-  if (ms < 1000) return `${ms}ms`;
+  return Number.isFinite(ms) && ms >= 0 ? formatMs(ms) : null;
+}
+
+export function formatMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   const minutes = Math.floor(ms / 60000);
   const seconds = Math.round((ms % 60000) / 1000);

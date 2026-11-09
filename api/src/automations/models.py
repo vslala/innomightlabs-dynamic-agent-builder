@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.automations.event_log import count_tool_calls, inline_events
 from src.iam.actions import ResourceRef
 from src.utils.dynamodb import convert_decimals
 
@@ -207,6 +208,14 @@ class AutomationRunNodeResultResponse(BaseModel):
     message_ids: dict[str, str] = Field(default_factory=dict)
     started_at: datetime
     completed_at: Optional[datetime] = None
+    #: Tool calls the step's agent made; when above zero, its event log lists them
+    tool_call_count: int = 0
+
+
+class AutomationStepEventsResponse(BaseModel):
+    """Every tool call and result of one step, in the order they happened (see `automations/event_log.py`)."""
+
+    events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AutomationRunDetailResponse(BaseModel):
@@ -778,6 +787,9 @@ class AutomationRunNodeResult(BaseModel):
     message_ids: dict[str, str] = Field(default_factory=dict)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
+    #: Where the step's tool-call events are kept in S3 (`automations/event_log.py`); None when they are inline
+    event_log_key: Optional[str] = None
+    tool_call_count: int = 0
 
     @property
     def pk(self) -> str:
@@ -802,12 +814,15 @@ class AutomationRunNodeResult(BaseModel):
             "message_ids": self.message_ids,
             "started_at": self.started_at.isoformat(),
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "event_log_key": self.event_log_key,
+            "tool_call_count": self.tool_call_count,
             "entity_type": "AutomationRunNodeResult",
         })
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "AutomationRunNodeResult":
         item = convert_decimals(item)
+        output = item.get("output") or {}
         return cls(
             result_id=item["result_id"],
             run_id=item["run_id"],
@@ -817,11 +832,16 @@ class AutomationRunNodeResult(BaseModel):
                 item.get("status", AutomationNodeRunStatus.PENDING.value)
             ),
             input=item.get("input") or {},
-            output=item.get("output") or {},
+            output=output,
             error=item.get("error"),
             message_ids=item.get("message_ids") or {},
             started_at=datetime.fromisoformat(item["started_at"]),
             completed_at=datetime.fromisoformat(item["completed_at"]) if item.get("completed_at") else None,
+            event_log_key=item.get("event_log_key"),
+            # A result saved before event logs kept its events inline, and no count
+            tool_call_count=(
+                item["tool_call_count"] if "tool_call_count" in item else count_tool_calls(inline_events(output))
+            ),
         )
 
     def to_response(self) -> AutomationRunNodeResultResponse:

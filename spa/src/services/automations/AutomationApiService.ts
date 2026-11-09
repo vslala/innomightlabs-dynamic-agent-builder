@@ -6,6 +6,7 @@ import type {
   AutomationResponse,
   AutomationSkillResponse,
   AutomationRunDetailResponse,
+  AutomationStepEventsResponse,
   AutomationRunResponse,
   CreateAutomationRequest,
   CreateAutomationTriggerRequest,
@@ -180,6 +181,17 @@ class AutomationApiService {
   ): Promise<AutomationRunDetailResponse> {
     return httpClient.get<AutomationRunDetailResponse>(
       `/automations/${automationId}/runs/${runId}`
+    );
+  }
+
+  /** Every tool call and result of one step, whole and in order. Loaded on demand: run polling stays light. */
+  async getStepEvents(
+    automationId: string,
+    runId: string,
+    resultId: string
+  ): Promise<AutomationStepEventsResponse> {
+    return httpClient.get<AutomationStepEventsResponse>(
+      `/automations/${automationId}/runs/${runId}/results/${resultId}/events`
     );
   }
 }

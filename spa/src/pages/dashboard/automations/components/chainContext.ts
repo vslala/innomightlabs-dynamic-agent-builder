@@ -44,6 +44,8 @@ export interface ChainContextValue {
   onEditTriggers: () => Promise<void>;
   /** The owner's approval of the steps that act for them. */
   stepConsents: StepConsents;
+  /** Where a run's step is inspected in full. Absent in the docs sandbox, whose runs are simulated. */
+  inspectRunHref?: (runId: string, resultId?: string) => string;
 }
 
 export const ChainContext = createContext<ChainContextValue | null>(null);

@@ -7,7 +7,7 @@
  */
 
 import type { AutomationRunResponse } from "../../../../types/automation";
-import { formatRelativeTime } from "./runStatus";
+import { formatMs, formatRelativeTime } from "./runStatus";
 
 export function AutomationAnalyticsPanel({ runs }: { runs: AutomationRunResponse[] }) {
   if (runs.length === 0) {
@@ -65,12 +65,4 @@ function medianOf(values: number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
-}
-
-function formatMs(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.round((ms % 60000) / 1000);
-  return `${minutes}m ${seconds}s`;
 }

@@ -15,6 +15,7 @@ src/automations/
   service.py       AutomationService: CRUD, graph save, status changes, skills, action catalog, smart-value preview
   runner.py        AutomationRunner: executes a graph node by node (start/condition/action executors)
   run_state.py     AutomationRunStateService: run status transitions and heartbeat staleness
+  event_log.py     StepEventLogStore: a step's tool-call events, whole, in S3 (the run inspector reads them)
   validation.py    AutomationGraphValidator + per-node policies + action config validators
   models.py        Pydantic models: items (to/from_dynamo_item), request and response schemas, enums
   repository.py    AutomationRepository: all DynamoDB access
@@ -60,6 +61,11 @@ src/automations/
 - **Run execution.** `POST /{id}/test-run` creates a PENDING run, then `invoke_automation_run_async` (`dispatch.py`) runs it with
   `asyncio.create_task` locally or invokes a Lambda when `ASYNC_JOB_BACKEND=lambda` (`ASYNC_JOB_LAMBDA_NAME`); `runner.py` updates heartbeats through `AutomationRunStateService`,
   and reading a run with an expired heartbeat marks it failed.
+- **Step event logs.** Before a node result is saved, `AutomationRunner._move_events_to_log` takes the invoked agent's
+  tool-call events out of its output (`events_holder`: `output.events`, or `output.result.events` for an invoke-agent
+  skill action) into `StepEventLogStore`, and keeps `event_log_key` and `tool_call_count` on the result. Keep events
+  whole (`tool_call_events`); only the inline fallback, used when S3 fails, is capped. The browser reads them through
+  `GET /{id}/runs/{run_id}/results/{result_id}/events`, never by key. See `docs/LLD-automation-run-inspector.md`.
 
 ## How to add a new action type
 

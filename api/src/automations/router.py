@@ -16,8 +16,10 @@ from src.automations.models import (
     AutomationActionCatalogResponse,
     AutomationResponse,
     AutomationSkillResponse,
+    AutomationRun,
     AutomationRunDetailResponse,
     AutomationRunResponse,
+    AutomationStepEventsResponse,
     AutomationNodeResponse,
     AutomationEdgeResponse,
     AutomationTriggerResponse,
@@ -47,6 +49,7 @@ from src.automations.runner import AutomationRunner
 from src.automations.run_state import AutomationRunStateService
 from src.automations.consent import StepChangedError, StepConsentState
 from src.automations.errors import AutomationNotFoundError, AutomationValidationError
+from src.automations.event_log import StepEventLogStore, inline_events
 from src.automations.service import AutomationService
 from src.common.pagination import Paginated
 from src.iam.actions import ResourceRef
@@ -76,6 +79,10 @@ def get_automation_service(
     repo: Annotated[AutomationRepository, Depends(get_automation_repository)],
 ) -> AutomationService:
     return AutomationService(repo=repo)
+
+
+def get_step_event_logs() -> StepEventLogStore:
+    return StepEventLogStore()
 
 
 def get_automation_runner(
@@ -561,10 +568,7 @@ async def get_run(
     repo: Annotated[AutomationRepository, Depends(get_automation_repository)],
 ) -> AutomationRunDetailResponse:
     try:
-        run = repo.find_run_by_id(run_id)
-        if not run or run.automation_id != automation_id:
-            raise AutomationNotFoundError("Run not found")
-        run = AutomationRunStateService(repo).fail_if_stale(run)
+        run = AutomationRunStateService(repo).fail_if_stale(_run_of(automation_id, run_id, repo))
         return AutomationRunDetailResponse(
             run=run.to_response(),
             context=run.context,
@@ -574,3 +578,34 @@ async def get_run(
         )
     except Exception as exc:
         raise translate_error(exc) from exc
+
+
+@router.get(
+    "/{automation_id}/runs/{run_id}/results/{result_id}/events",
+    response_model=AutomationStepEventsResponse,
+)
+async def get_step_events(
+    automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
+    run_id: str,
+    result_id: str,
+    repo: Annotated[AutomationRepository, Depends(get_automation_repository)],
+    event_logs: Annotated[StepEventLogStore, Depends(get_step_event_logs)],
+) -> AutomationStepEventsResponse:
+    """One step's tool calls and results, whole and in order: loaded on demand, so polling a run stays light."""
+    try:
+        _run_of(automation_id, run_id, repo)
+        result = next((item for item in repo.find_node_results(run_id) if item.result_id == result_id), None)
+        if result is None:
+            raise AutomationNotFoundError("Step result not found")
+        events = event_logs.load(result.event_log_key) if result.event_log_key else inline_events(result.output)
+        return AutomationStepEventsResponse(events=events)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+def _run_of(automation_id: str, run_id: str, repo: AutomationRepository) -> AutomationRun:
+    run = repo.find_run_by_id(run_id)
+    if not run or run.automation_id != automation_id:
+        raise AutomationNotFoundError("Run not found")
+    return run

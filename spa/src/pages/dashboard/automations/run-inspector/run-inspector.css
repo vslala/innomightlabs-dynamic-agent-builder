@@ -1,0 +1,788 @@
+/*
+ * The run inspector, phone first. One column by default; from a wide container the run overview becomes a
+ * sticky left column and the step panel takes the rest. Breakpoints are container queries, so the layout
+ * follows the space the dashboard gives the page, not the window.
+ *
+ * Row buttons reuse the shared Button; selectors are scoped under the page (or the dialog) so they reliably
+ * win over its centred, single-line defaults.
+ */
+
+.run-inspector {
+  container: run-inspector / inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Bar ---------------------------------------------------------------------- */
+
+.run-inspector__bar {
+  align-items: center;
+  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--surface-page) 92%, transparent);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.run-inspector__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.run-inspector__title small {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.6875rem;
+}
+
+.run-inspector__title h1 {
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 650;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-inspector__layout {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+/* Shared pieces -------------------------------------------------------------- */
+
+.run-inspector-card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+
+.run-inspector-empty {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  justify-content: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.run-inspector-muted {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.run-inspector-error {
+  background: var(--danger-bg);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  padding: var(--space-2) var(--space-3);
+}
+
+.run-inspector-wide {
+  width: 100%;
+}
+
+.run-inspector-copy {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Overview: summary and steps ------------------------------------------------ */
+
+.run-inspector-overview {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.run-inspector-summary {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.run-inspector-summary__head {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  gap: var(--space-2);
+}
+
+.run-inspector-kpis {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.run-inspector-kpis__item {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.run-inspector-kpis__item dt {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.run-inspector-kpis__item dd {
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 650;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.run-inspector-steps {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+}
+
+.run-inspector .run-inspector-steps__row {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr);
+  height: auto;
+  justify-content: stretch;
+  text-align: left;
+  white-space: normal;
+  width: 100%;
+}
+
+.run-inspector .run-inspector-steps__row[aria-current="true"] {
+  background: var(--surface-selected);
+  box-shadow: inset 3px 0 0 var(--gradient-start);
+}
+
+.run-inspector-steps__index {
+  align-items: center;
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 650;
+  height: 1.75rem;
+  justify-content: center;
+  width: 1.75rem;
+}
+
+.run-inspector-steps__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.run-inspector-steps__status {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.run-inspector-steps__text strong {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.run-inspector-steps__text small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-inspector-steps__running {
+  align-items: center;
+  color: var(--gradient-start);
+  display: flex;
+  font-size: 0.8125rem;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+/* Step panel ------------------------------------------------------------------ */
+
+.run-inspector-step {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+
+.run-inspector-step__head {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.run-inspector-step__title {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.run-inspector-step__title h2 {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 650;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-inspector-step__meta {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  gap: var(--space-1) var(--space-3);
+}
+
+.run-inspector-ref {
+  align-items: center;
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  max-width: 100%;
+  padding-left: var(--space-2);
+}
+
+.run-inspector-ref code {
+  color: var(--json-key);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tabs stay reachable while a long timeline scrolls. */
+.run-inspector .run-inspector-tabs {
+  display: flex;
+  width: 100%;
+}
+
+.run-inspector-tabs {
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  padding: 0 var(--space-2);
+  position: sticky;
+  scrollbar-width: none;
+  top: 3.5rem;
+  z-index: 4;
+}
+
+.run-inspector-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.run-inspector-tabs__count {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: var(--space-1);
+}
+
+.run-inspector-tabs__failed {
+  color: var(--danger);
+}
+
+.run-inspector-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+/* Activity: search, chips, timeline ------------------------------------------------ */
+
+.run-inspector-activity {
+  container: run-activity / inline-size;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.run-inspector-chips {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--space-3));
+  overflow-x: auto;
+  padding: 0 var(--space-3);
+  scrollbar-width: none;
+}
+
+.run-inspector-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.run-inspector-chip {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.run-inspector-chip b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  margin-left: var(--space-1);
+}
+
+.run-inspector-chip--failed[data-state="off"] {
+  color: var(--danger);
+}
+
+.run-inspector-activity__split {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.run-inspector-timeline {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+  position: relative;
+}
+
+/* The thread joining the moves, behind their numbered nodes. */
+.run-inspector-timeline::before {
+  background: var(--border-subtle);
+  bottom: var(--space-4);
+  content: "";
+  left: calc(var(--control-padding-x-md, 1rem) + 0.875rem - 1px);
+  position: absolute;
+  top: var(--space-4);
+  width: 2px;
+}
+
+.run-inspector-timeline__item {
+  min-width: 0;
+  position: relative;
+}
+
+.run-inspector .run-inspector-timeline__row {
+  align-items: center;
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  height: auto;
+  justify-content: stretch;
+  min-height: 3.5rem;
+  text-align: left;
+  white-space: normal;
+  width: 100%;
+}
+
+.run-inspector .run-inspector-timeline__row[aria-current="true"] {
+  background: var(--surface-selected);
+}
+
+.run-inspector-timeline__node {
+  align-items: center;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--surface-panel);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  height: 1.75rem;
+  justify-content: center;
+  position: relative;
+  width: 1.75rem;
+  z-index: 1;
+}
+
+.run-inspector-timeline__node--failed {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.run-inspector-timeline__node--open {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.run-inspector-timeline__node--edge {
+  background: var(--surface-selected);
+  color: var(--gradient-start);
+}
+
+.run-inspector-timeline__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.run-inspector-timeline__text strong {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.run-inspector-timeline__text code {
+  color: var(--json-key);
+  font-size: 0.6875rem;
+}
+
+/* One line in the list; the full value is in the tool call's detail. */
+.run-inspector-timeline__text small {
+  color: var(--text-muted);
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-inspector-timeline__end {
+  align-items: flex-end;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  gap: 2px;
+}
+
+/* On a phone the clock time gives way to the title; the call's detail always shows it. */
+.run-inspector-timeline__end time {
+  display: none;
+}
+
+@container run-activity (min-width: 30rem) {
+  .run-inspector-timeline__end time {
+    display: inline;
+  }
+}
+
+.run-inspector-activity__pane {
+  background: var(--surface-page);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: var(--space-3);
+  max-height: calc(100dvh - 9rem);
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+  position: sticky;
+  top: 7rem;
+}
+
+.run-inspector-pager {
+  align-items: center;
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.run-inspector-sheet .run-inspector-pager {
+  background: var(--surface-page);
+  border-top: 1px solid var(--border-subtle);
+  bottom: calc(-1 * var(--dialog-padding, 0px));
+  padding-block: var(--space-3);
+  position: sticky;
+}
+
+.run-inspector-pager span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tool call detail -------------------------------------------------------------- */
+
+.run-inspector-call {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.run-inspector-call__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.run-inspector-call__head h3 {
+  align-items: center;
+  color: var(--text-primary);
+  display: flex;
+  font-size: 0.9375rem;
+  font-weight: 650;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-inspector-call__sequence {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.run-inspector-call__facts {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  margin: 0;
+}
+
+.run-inspector-call__facts dt {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.run-inspector-call__facts dd {
+  align-items: center;
+  color: var(--text-primary);
+  column-gap: var(--space-1);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.run-inspector-call__facts code {
+  overflow-wrap: anywhere;
+}
+
+/* Sections, text, values ------------------------------------------------------------ */
+
+.run-inspector-section {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.run-inspector-section__bar {
+  align-items: center;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+}
+
+.run-inspector-section__bar h4 {
+  color: var(--text-muted);
+  flex: 1;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  margin: 0;
+  min-width: 0;
+  text-transform: uppercase;
+}
+
+.run-inspector-section__body {
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.run-inspector-text__content {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.run-inspector-text__content--mono {
+  color: var(--code-text);
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+/* Folded, not cut: the whole text stays in the page for find and copy. */
+.run-inspector-text__content--folded {
+  -webkit-mask-image: linear-gradient(#000 65%, transparent);
+  mask-image: linear-gradient(#000 65%, transparent);
+  max-height: 12rem;
+  overflow: hidden;
+}
+
+.run-inspector .run-inspector-text__toggle,
+.run-inspector-sheet .run-inspector-text__toggle {
+  height: auto;
+  min-height: 2.75rem;
+  padding-inline: 0;
+}
+
+.run-inspector-values {
+  display: grid;
+  margin: 0;
+}
+
+.run-inspector-values__row {
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+
+.run-inspector-values__row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.run-inspector-values__row dt {
+  color: var(--json-key);
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 0.75rem;
+}
+
+.run-inspector-values__row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.run-inspector-reply {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* Runs dialog --------------------------------------------------------------------- */
+
+.run-inspector-run-list {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+  margin: var(--space-3) 0;
+  padding: 0;
+}
+
+.run-inspector-run-list__row {
+  align-items: center;
+  border-radius: var(--radius-md);
+  color: inherit;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 3.5rem;
+  padding: var(--space-2) var(--space-3);
+  text-decoration: none;
+}
+
+.run-inspector-run-list__row:hover {
+  background: var(--surface-control-hover);
+}
+
+.run-inspector-run-list__row:focus-visible {
+  outline: 2px solid var(--gradient-start);
+  outline-offset: 2px;
+}
+
+.run-inspector-run-list__row[aria-current="page"] {
+  background: var(--surface-selected);
+}
+
+.run-inspector-run-list__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.run-inspector-run-list__text strong {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.run-inspector-run-list__text small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.run-inspector-run-list__text .run-inspector-run-list__error {
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Wider containers ------------------------------------------------------------------- */
+
+@container run-inspector (min-width: 40rem) {
+  .run-inspector__layout {
+    gap: var(--space-4);
+    padding: var(--space-4);
+  }
+
+  .run-inspector-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .run-inspector-step__head,
+  .run-inspector-panel {
+    padding: var(--space-4);
+  }
+}
+
+@container run-inspector (min-width: 64rem) {
+  .run-inspector__layout {
+    align-items: start;
+    grid-template-columns: 18rem minmax(0, 1fr);
+  }
+
+  .run-inspector-overview {
+    position: sticky;
+    top: 4.5rem;
+  }
+
+  .run-inspector-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 46rem = SIDE_BY_SIDE_PX in ActivityTimeline.tsx, which picks the side pane over the bottom sheet. */
+@container run-activity (min-width: 46rem) {
+  .run-inspector-activity__split {
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  }
+}

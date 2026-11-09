@@ -2,8 +2,9 @@
 SSE Event types and models for streaming responses.
 """
 
+from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Iterable, Optional
 
 from pydantic import BaseModel
 
@@ -68,6 +69,11 @@ class SSEEvent(BaseModel):
     # there's nothing to unwrap.
     display_tool_name: Optional[str] = None
     display_tool_args: Optional[dict] = None
+    # On a TOOL_CALL_RESULT: when the tool itself ran. The model asks for every
+    # tool of a turn before the first one runs, so the START event's arrival
+    # says when a call was requested, not when it began.
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
     # UI events
     form: Optional[dict] = None
@@ -134,25 +140,29 @@ RECORDED_EVENT_TYPES = frozenset(
     }
 )
 
-#: One tool result can exhaust an item budget on its own, so recorded content is
-#: capped. The marker keeps a truncated value from reading as the whole result.
+#: A copy kept inside a DynamoDB item is capped, because one tool result can
+#: exhaust the item budget on its own. The marker keeps a truncated value from
+#: reading as the whole result.
 MAX_RECORDED_EVENT_CONTENT_CHARS = 16_000
 RECORDED_CONTENT_TRUNCATION_MARKER = "\u2026 [truncated by run log]"
 
 
-def recorded_events(events: list["SSEEvent"]) -> list[dict]:
-    """Tool-call events only, with oversized content capped."""
+def tool_call_events(events: Iterable[SSEEvent]) -> list[dict[str, Any]]:
+    """Every tool call and result in a stream, whole and in the order they happened."""
     return [
-        _cap_recorded_content(event.model_dump(mode="json", exclude_none=True))
+        event.model_dump(mode="json", exclude_none=True)
         for event in events
         if event.event_type in RECORDED_EVENT_TYPES
     ]
 
 
-def _cap_recorded_content(event: dict) -> dict:
+def capped_events(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`tool_call_events` sized to sit inside a DynamoDB item, each oversized content cut and marked."""
+    return [_capped(event) for event in events]
+
+
+def _capped(event: dict[str, Any]) -> dict[str, Any]:
     content = event.get("content")
     if isinstance(content, str) and len(content) > MAX_RECORDED_EVENT_CONTENT_CHARS:
-        event["content"] = (
-            content[:MAX_RECORDED_EVENT_CONTENT_CHARS] + RECORDED_CONTENT_TRUNCATION_MARKER
-        )
+        return {**event, "content": content[:MAX_RECORDED_EVENT_CONTENT_CHARS] + RECORDED_CONTENT_TRUNCATION_MARKER}
     return event

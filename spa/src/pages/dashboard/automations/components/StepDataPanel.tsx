@@ -5,21 +5,19 @@
  * through the step are on screen together, and every leaf of the output can be
  * inserted into the parameter field the user last touched -- so referencing a
  * previous step never requires copying an id from another screen.
+ *
+ * Every tool call the step's agent made lives in the run inspector, one link away:
+ * a step card is too narrow to read a long agent run in.
  */
 
 import { useState } from "react";
-import { CornerDownLeft, Loader2 } from "lucide-react";
+import { CornerDownLeft, ListTree, Loader2 } from "lucide-react";
 
-import {
-  AccordionPanel,
-  Button,
-  JsonTreeViewer,
-  StatusBadge,
-} from "../../../../components/ui";
+import { Button, JsonTreeViewer, LinkButton } from "../../../../components/ui";
 import { useOptionalSmartValues } from "../../../../components/forms";
 import type { AutomationNode, AutomationRunNodeResult } from "../../../../types/automation";
-import { getLifecycleEvents, getRuntimeLogSteps, getToolCalls } from "../runDisplay";
 import { stepReference } from "../chain/smartValues";
+import { useChain } from "./chainContext";
 import { RunStatusBadge } from "./RunStatusBadge";
 import { formatDuration, formatRelativeTime } from "./runStatus";
 
@@ -34,6 +32,8 @@ export function StepDataPanel({
   result: AutomationRunNodeResult | null;
   running: boolean;
 }) {
+  const { inspectRunHref } = useChain();
+
   if (!result) {
     return (
       <div className="chain-data chain-data--empty">
@@ -52,9 +52,6 @@ export function StepDataPanel({
     );
   }
 
-  const events = getRuntimeLogSteps([result])[0]?.events ?? [];
-  const toolCalls = getToolCalls(events);
-  const lifecycle = getLifecycleEvents(events);
   const duration = formatDuration(result.started_at, result.completed_at);
   const base = `${stepReference(node)}.output`;
 
@@ -64,6 +61,17 @@ export function StepDataPanel({
         <RunStatusBadge status={result.status} />
         <span>{formatRelativeTime(result.started_at)}</span>
         {duration ? <span>· {duration}</span> : null}
+        {inspectRunHref && (
+          <LinkButton
+            to={inspectRunHref(result.run_id, result.result_id)}
+            variant="ghost"
+            size="sm"
+            className="chain-data__inspect"
+          >
+            <ListTree className="h-4 w-4" />
+            {result.tool_call_count > 0 ? `Inspect ${result.tool_call_count} tool calls` : "Inspect"}
+          </LinkButton>
+        )}
       </div>
 
       {result.error ? <div className="chain-data__error">{result.error}</div> : null}
@@ -79,55 +87,6 @@ export function StepDataPanel({
           <OutputTree value={result.output ?? {}} basePath={base} />
         </section>
       </div>
-
-      {lifecycle.length > 0 && (
-        <AccordionPanel
-          title={<span className="chain-data__accordion-title">Lifecycle</span>}
-          subtitle={`${lifecycle.length} event${lifecycle.length === 1 ? "" : "s"}`}
-        >
-          <ol className="automation-runtime-events__list">
-            {lifecycle.map((event, index) => (
-              <li key={`${event.event_type}-${index}`} className="automation-runtime-events__list-item">
-                <span>{index + 1}</span>
-                <p>{event.content || event.event_type}</p>
-              </li>
-            ))}
-          </ol>
-        </AccordionPanel>
-      )}
-
-      {toolCalls.length > 0 && (
-        <AccordionPanel
-          title={<span className="chain-data__accordion-title">Tool calls</span>}
-          subtitle={`${toolCalls.length} call${toolCalls.length === 1 ? "" : "s"}`}
-        >
-          <div className="automation-runtime-events__accordions">
-            {toolCalls.map((call, index) => (
-              <AccordionPanel
-                key={call.id}
-                defaultOpen={index === 0}
-                title={<span className="chain-data__accordion-title">{call.title}</span>}
-                subtitle={call.subtitle}
-                trailing={
-                  call.success === null ? (
-                    <StatusBadge status="info" label="started" />
-                  ) : (
-                    <StatusBadge
-                      status={call.success ? "success" : "failed"}
-                      label={call.success ? "success" : "failed"}
-                    />
-                  )
-                }
-              >
-                <div className="grid min-w-0 gap-4">
-                  {call.args ? <JsonTreeViewer label="Arguments" value={call.args} maxHeight="14rem" /> : null}
-                  <JsonTreeViewer label="Tool response" value={call.result} maxHeight="18rem" />
-                </div>
-              </AccordionPanel>
-            ))}
-          </div>
-        </AccordionPanel>
-      )}
     </div>
   );
 }

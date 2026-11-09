@@ -6,9 +6,9 @@
  * which is what forced users to leave the builder to see what happened.
  */
 
-import { ChevronDown, ChevronUp, History, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, History, ListTree, Loader2 } from "lucide-react";
 
-import { Button, Tabs, TabsContent, TabsList, TabsTrigger } from "../../../../components/ui";
+import { Button, LinkButton, Tabs, TabsContent, TabsList, TabsTrigger } from "../../../../components/ui";
 import type { AutomationRunResponse } from "../../../../types/automation";
 import type { AutomationRunsState } from "../hooks/useAutomationRuns";
 import { AutomationAnalyticsPanel } from "./AutomationAnalyticsPanel";
@@ -24,6 +24,7 @@ export function RunsDrawer({
   tab,
   onHeightChange,
   onTabChange,
+  inspectRunHref,
 }: {
   runs: AutomationRunsState;
   /** Selection is owned by the `run` query parameter, not by this component. */
@@ -32,6 +33,7 @@ export function RunsDrawer({
   tab: "runs" | "analytics";
   onHeightChange: (height: DrawerHeight) => void;
   onTabChange: (tab: "runs" | "analytics") => void;
+  inspectRunHref?: (runId: string) => string;
 }) {
   const expanded = height === "half";
 
@@ -130,6 +132,12 @@ export function RunsDrawer({
                 <p className="automation-drawer__hint">
                   Showing this run on the steps above. Expand any step to see what it received and
                   returned.{" "}
+                  {inspectRunHref && (
+                    <LinkButton to={inspectRunHref(runs.selectedRunId)} variant="ghost" size="sm">
+                      <ListTree className="h-4 w-4" />
+                      Inspect every move
+                    </LinkButton>
+                  )}
                   <Button variant="ghost" size="sm" onClick={() => onSelectRun(null)}>
                     Clear
                   </Button>
