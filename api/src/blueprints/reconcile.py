@@ -176,7 +176,8 @@ def _each(
     taken_away = {key(item) for item in before.get(name) or []} - wanted.keys() if before is not None else set()
     for item_key in sorted(taken_away & there.keys(), key=list(there).index):
         item = there[item_key]
-        if item_name(item) in ctx.removing:
+        # A link to a resource this blueprint deletes goes with that delete. Only links name resources.
+        if isinstance(item, str) and item in ctx.removing:
             continue
         outcome.removed.append(ItemChange(name, item_key, None, item, _phrase(rule.removes, item, ctx)))
 
@@ -186,12 +187,12 @@ def _identity(item: Any) -> str:
 
 
 def item_name(item: Any) -> str:
-    """How an item is written: a resource name, or a skill entry's id."""
+    """How an item is written: a resource name, a skill entry's id, or a memory block's name."""
     if isinstance(item, str):
         return item
     if isinstance(item, BaseModel):
-        return str(getattr(item, "id", ""))
-    return str(item.get("id", "")) if isinstance(item, Mapping) else str(item)
+        return str(getattr(item, "id", None) or getattr(item, "name", ""))
+    return str(item.get("id") or item.get("name", "")) if isinstance(item, Mapping) else str(item)
 
 
 def _phrase(text: str, item: Any, ctx: Context) -> str:

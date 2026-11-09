@@ -513,6 +513,10 @@ Exposes to `outputs`: `id`, `crawl_job_id`.
 | `skills[].available_to` | list of `visitor` \| `guest` \| `api` \| `a2a` | no (default owner only) | Who besides you may use the skill. `visitor` is a signed-in widget user, `guest` is a widget user who gave only an email. **Absent from the schema for skills whose manifest makes them owner-only.** |
 | `skills[].enabled` | boolean | no (default `true`) | Install the skill switched off when false. |
 | `session_timeout_minutes` | integer ≥ 0 | no (default 60) | Minutes of silence after which a conversation starts fresh. 0 means never. |
+| `memory_blocks` | list of MemoryBlock | no | Core memory blocks besides `human` and `persona`, in the owner's own memory with the agent, exactly as its Memory page adds them (`MemoryBlockDefinition` under `Agent#{agent_id}#User#{owner email}`). Memory stays per person: other people who chat keep only `human` and `persona`. Added, changed and taken away like skills (keyed by `name`); taking one away deletes what it holds, so it runs after the commit. Adding one also creates the owner's `human` and `persona` if they haven't chatted yet, since the chat creates those only for someone with no blocks. Added 2026-11-09. |
+| `memory_blocks[].name` | `^[a-z][a-z0-9_]{0,49}$`, not `human`/`persona`, unique | yes | The name the agent writes to. |
+| `memory_blocks[].description` | 1-200 chars | yes | What belongs in the block; the agent reads it to decide what to remember there. |
+| `memory_blocks[].word_limit` | 100-50000 | no (default 5000) | Words before the block is compacted. |
 
 The architecture is always `krishna-memgpt`, the only one that uses knowledge bases and skills, so the spec doesn't
 expose it. Exposes to `outputs`: `id`, `name`.

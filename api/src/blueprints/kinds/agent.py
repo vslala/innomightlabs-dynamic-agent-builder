@@ -30,11 +30,13 @@ from src.blueprints.kinds.base import (
 from src.blueprints.reconcile import Context, Outcome, reconcile
 from src.blueprints.references import Reference, skill_references
 from src.blueprints.skills_schema import skill_variants
-from src.blueprints.spec import AgentSpec, SkillEntry, lead_form_resource
+from src.blueprints.spec import AgentSpec, MemoryBlockSpec, SkillEntry, lead_form_resource
 from src.connectors.mcp.repository import get_mcp_connection_repository
 from src.connectors.mcp.service import get_mcp_connector_service
 from src.knowledge.models import KnowledgeBaseStatus
 from src.knowledge.repository import AgentKnowledgeBaseRepository
+from src.memory.models import MemoryBlockDefinition
+from src.memory.repository import MemoryRepository
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind, AgentSkill
 from src.skills.identity import installed_skill_id_for
@@ -142,12 +144,33 @@ def _skill_uses(name: str, entry: SkillEntry) -> frozenset[str]:
     return frozenset(ref.target for ref in skill_references(name, [entry]))
 
 
+def _memory_block(item: Any) -> MemoryBlockSpec:
+    """A memory block, from the blueprint or as `observe` wrote one."""
+    return item if isinstance(item, MemoryBlockSpec) else MemoryBlockSpec.model_validate(item)
+
+
+def _memory_block_spec(block: MemoryBlockDefinition) -> dict[str, Any]:
+    return {"name": block.block_name, "description": block.description, "word_limit": block.word_limit}
+
+
+def _memory_blocks(agent_id: str, owner: Owner) -> list[MemoryBlockDefinition]:
+    """The custom blocks in the owner's own memory with the agent, as its Memory page shows them. Memory is per user,
+    keyed by email in the dashboard and in their chats; `human` and `persona` aren't a blueprint's to change."""
+    return [block for block in MemoryRepository().get_block_definitions(agent_id, owner.email) if not block.is_default]
+
+
 def _reconcile_context(ctx: PlanContext) -> Context:
     ids = ctx.ids()
     return replace(
         reconcile_context(ctx),
-        keys={"skills": lambda item: _skill_key(item, ids)},
-        differs={"skills": lambda item, installed: _skill_differs(item, installed, ids)},
+        keys={
+            "skills": lambda item: _skill_key(item, ids),
+            "memory_blocks": lambda item: _memory_block(item).name,
+        },
+        differs={
+            "skills": lambda item, installed: _skill_differs(item, installed, ids),
+            "memory_blocks": lambda item, there: _memory_block(item) != _memory_block(there),
+        },
     )
 
 
@@ -386,6 +409,62 @@ class UninstallSkill(Command):
 
 
 @dataclass(kw_only=True)
+class SaveMemoryBlock(Command):
+    """Adds a memory block to the owner's memory with the agent, or changes one. What it holds is kept."""
+
+    block: MemoryBlockSpec
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        agent_id = ctx.applied[self.resource].id
+        current = next((b for b in _memory_blocks(agent_id, ctx.owner) if b.block_name == self.block.name), None)
+        return Undo("restore_memory_block", {
+            "agent_id": agent_id, "name": self.block.name, "block": _memory_block_spec(current) if current else None,
+        })
+
+    def run(self, ctx: ApplyContext) -> None:
+        _save_memory_block(ctx.applied[self.resource].id, self.block, ctx.owner)
+
+
+def _save_memory_block(agent_id: str, block: MemoryBlockSpec, owner: Owner) -> None:
+    repository = MemoryRepository()
+    # The chat creates `human` and `persona` only for someone with no blocks at all, so a block added before the
+    # owner's first chat would leave them without both
+    repository.initialize_default_blocks(agent_id, owner.email)
+    current = repository.get_block_definition(agent_id, owner.email, block.name)
+    repository.save_block_definition(MemoryBlockDefinition(
+        agent_id=agent_id,
+        user_id=owner.email,
+        block_name=block.name,
+        description=block.description,
+        word_limit=block.word_limit,
+        **({"created_at": current.created_at} if current else {}),
+    ))
+
+
+@undo_action("restore_memory_block")
+def _restore_memory_block(args: dict[str, Any], owner: Owner) -> None:
+    """Puts the block back as it was, or takes off one that wasn't there. A block added and undone never held
+    anything worth keeping: the apply was still running."""
+    if args["block"] is None:
+        MemoryRepository().delete_block_definition(args["agent_id"], owner.email, args["name"])
+    else:
+        _save_memory_block(args["agent_id"], MemoryBlockSpec.model_validate(args["block"]), owner)
+
+
+@dataclass(kw_only=True)
+class RemoveMemoryBlock(Command):
+    """What the block holds goes with it, so it can't be undone."""
+
+    agent_id: str
+    block_name: str
+
+    reversibility: ClassVar[Reversibility] = Reversibility.IRREVERSIBLE
+
+    def run(self, ctx: ApplyContext) -> None:
+        MemoryRepository().delete_block_definition(self.agent_id, ctx.owner.email, self.block_name)
+
+
+@dataclass(kw_only=True)
 class DeleteAgent(Command):
     agent_id: str
 
@@ -465,6 +544,9 @@ class AgentKind(ManagedKind[AgentSpec]):
         skills = [entry for skill in AgentSkillRepository().list_by_agent(record.agent_id) if (entry := _skill_entry(skill))]
         if skills:
             resource["skills"] = skills
+        memory_blocks = [_memory_block_spec(block) for block in _memory_blocks(record.agent_id, owner_of(record))]
+        if memory_blocks:
+            resource["memory_blocks"] = memory_blocks
         return resource
 
     def card_details(self, spec: AgentSpec) -> list[str]:
@@ -477,6 +559,8 @@ class AgentKind(ManagedKind[AgentSpec]):
             details.append(_count(len(spec.knowledge_bases), "Answers from {n} knowledge base"))
         if spec.mcp_connections:
             details.append(_count(len(spec.mcp_connections), "Uses tools from {n} connection"))
+        if spec.memory_blocks:
+            details.append("Remembers: " + ", ".join(block.name for block in spec.memory_blocks))
         return details
 
     def references(self, name: str, spec: AgentSpec) -> list[Reference]:
@@ -532,6 +616,13 @@ class AgentKind(ManagedKind[AgentSpec]):
         for item in outcome.items("removed", "skills"):
             commands.append(UninstallSkill(
                 resource=name, agent_id=existing.id if existing else "", installed_skill_id=item.key, removal=item.says
+            ))
+        for kind in ("added", "changed"):
+            for item in outcome.items(kind, "memory_blocks"):
+                commands.append(SaveMemoryBlock(resource=name, block=_memory_block(item.now), says=(item.says,)))
+        for item in outcome.items("removed", "memory_blocks"):
+            commands.append(RemoveMemoryBlock(
+                resource=name, agent_id=existing.id if existing else "", block_name=item.key, removal=item.says
             ))
         return commands
 
@@ -625,6 +716,8 @@ class AgentKind(ManagedKind[AgentSpec]):
             parts.append(f"using the tools of {', '.join(spec.mcp_connections)}")
         if spec.skills:
             parts.append(f"with skills {', '.join(entry.id for entry in spec.skills)}")
+        if spec.memory_blocks:
+            parts.append(f"remembering in {', '.join(block.name for block in spec.memory_blocks)}")
         return ", ".join(parts)
 
 

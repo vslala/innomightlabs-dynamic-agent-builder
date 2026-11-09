@@ -26,6 +26,10 @@ resources:
     skills:
       - id: scheduler
       - id: send_email
+    memory_blocks:
+      - name: follow_ups
+        description: The follow-ups this person agreed to, with when and what the next step is. Remove one once it's done.
+        word_limit: 1000
 
 outputs:
   agent_id:

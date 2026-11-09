@@ -334,7 +334,7 @@ the parent LLD, "Applying updates what exists"). What she can build is the limit
 | **Automations** (schedule, agent steps, skill actions) | ❌ | No kind |
 | **MCP connectors** (presets and custom), sharing | ❌ | No kind; auth needs secrets or OAuth; sharing needs a disclaimer |
 | **/v1 secret keys**, **A2A publishing** | ❌ | No kind; plaintext is shown once |
-| **Custom memory blocks** | ❌ | Not in `AgentSpec` |
+| **Custom memory blocks** | ✅ (2026-11-09) | `Agent.memory_blocks`, in the owner's own memory, as the Memory page adds them |
 | **KB from uploaded files** | ❌ | `CrawlSpec` only |
 | **Widget appearance** (theme, colour, greeting, launcher) | ❌ | Client-side `data-*` attributes on the snippet (`spa/embed/loader/index.ts:54-75`); the blueprint's snippet output has none |
 | **Provider not set up** | ❌ blocker | The plan says "set it up in Settings" and stops |
@@ -468,7 +468,7 @@ derives the same table.
 | Knowledge base from a site | `KnowledgeBase.crawl` (exists) | — |
 | Knowledge base from files | `KnowledgeBase.uploads` (new) | Upload side panel, **after apply** (the KB must exist) |
 | Agent: persona, provider, model, KBs, skills, timeout | `Agent` (exists) | **Provider setup** modal or popup when the provider isn't set up (was a blocker) |
-| Agent: custom memory blocks | `Agent.memory_blocks` (new) | — |
+| Agent: custom memory blocks | `Agent.memory_blocks` (built 2026-11-09) | — |
 | Agent: MCP connections | `Agent.mcp_connections` (new) | — |
 | Agent: A2A publishing | `Agent.a2a.enabled` (new) | Consent card ("anyone can discover this agent") |
 | MCP connector (preset or custom) | `McpConnection` (new) | OAuth popup, or a secret modal for API-key and stdio env values; consent card for sharing |
@@ -645,7 +645,7 @@ resources:
 | Field | Type | Applies through | Notes |
 | --- | --- | --- | --- |
 | `architecture` | `krishna-memgpt` (default) \| `krishna-mini` | `AgentService.create` | Read from the factory, minus `vishwakarma`. `krishna-mini` agents reject `skills`, `knowledge_bases`, `memory_blocks` and `mcp_connections` at validation, because it has no tools. Needed for `league_insights_report`'s `report_agent_id` |
-| `memory_blocks` | list of `{name, description, word_limit}` | the memory module's create logic (inline in `memory/router.py:128`, moved to a service) | `human` and `persona` are reserved (`memory/router.py:162`). Counts toward `memory_blocks`, which is shown but not enforced today |
+| `memory_blocks` | list of `{name, description, word_limit}` | **As built (2026-11-09):** `MemoryRepository.save_block_definition` / `delete_block_definition` in the owner's memory (keyed by their email, as the Memory page and their chats use), through `SaveMemoryBlock` (reversible) and `RemoveMemoryBlock` (irreversible) | Memory stays per user ([User-scoped memory blocks](../api/docs/LLD-memory-block-user-scoping.md)): widget, guest and API users keep only `human` and `persona`. Blocks agent-wide (for every user, or shared) were built and dropped to keep the change small. `human` and `persona` are reserved. Counts toward `memory_blocks`, which is shown but not enforced today |
 | `mcp_connections` | list of refs (`x-ref-kind: McpConnection`) or ids | MCP service link | |
 | `a2a` | `{enabled: bool}` | the toggle logic in `agents/router.py:256-279`, moved to `AgentService` | Needs an active widget key (`:271`), so the plan checks that one exists or is in the blueprint. Consent card |
 | skill `config` refs | e.g. `agent_invocation.config.target_agent_id: researcher` | resolved like `knowledge_bases` | Fields with `options_source: agents` or `krishna_mini_agents` accept a blueprint reference. The kind resolves it to an id before `install_skill`, and `validate_form_options` still checks ownership |

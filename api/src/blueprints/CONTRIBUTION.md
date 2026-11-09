@@ -136,6 +136,7 @@ erDiagram
     AGENT }o--o{ MCP_CONNECTION : "uses tools from (mcp_connections)"
     AGENT ||--o{ WIDGET_KEY : "chats through (agent)"
     AGENT ||--o{ AGENT_SKILL : "skills"
+    AGENT ||--o{ MEMORY_BLOCK : "memory_blocks"
     AGENT }o--o{ AGENT : "a skill's settings name another agent"
     AGENT }o--o{ LEAD_FORM : "collects: {{ lead_form:slug }} in instructions"
     AUTOMATION ||--o{ AUTOMATION_SKILL : "skills"
@@ -170,12 +171,16 @@ erDiagram
     AGENT_SKILL {
         string skill_id "from a skill manifest"
     }
+    MEMORY_BLOCK {
+        string name
+        int word_limit "in the owner's own memory"
+    }
     AUTOMATION_SKILL {
         string skill_id "from a skill manifest"
     }
 ```
 
-*Skill entries aren't kinds: they are generated from the skill manifests (`skills_schema.py`) and written under an agent
+*Memory blocks aren't kinds either: they're blocks in the owner's own memory with the agent (keyed by their email, as the Memory page adds them), so other people who chat don't get them. Skill entries aren't kinds: they are generated from the skill manifests (`skills_schema.py`) and written under an agent
 or automation. A blueprint names a link by the other resource's name in the document, or by id for one that already
 exists.*
 

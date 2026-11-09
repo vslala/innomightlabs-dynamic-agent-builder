@@ -144,6 +144,32 @@ class SkillEntry(Strict):
     enabled: bool = Field(True, description="Install the skill switched off when false.")
 
 
+#: Every agent already has these two, one per person; a blueprint can't add or remove them.
+DEFAULT_MEMORY_BLOCKS = ("human", "persona")
+
+
+class MemoryBlockSpec(Strict):
+    """A core memory block the agent keeps in its prompt every turn and edits as it learns."""
+
+    name: str = Field(
+        pattern=r"^[a-z][a-z0-9_]{0,49}$",
+        description="The block's name, lowercase with underscores, such as `product_facts`. The agent writes to it "
+        "by this name. `human` and `persona` are the blocks every agent already has.",
+    )
+    description: str = Field(
+        min_length=1,
+        max_length=200,
+        description="What belongs in the block. The agent reads this to decide what to remember there.",
+    )
+    word_limit: int = Field(5000, ge=100, le=50000, description="How many words the block holds before it's compacted.")
+
+    @model_validator(mode="after")
+    def _not_a_default(self) -> "MemoryBlockSpec":
+        if self.name in DEFAULT_MEMORY_BLOCKS:
+            raise ValueError(f"'{self.name}' is a block every agent already has; choose another name")
+        return self
+
+
 class AgentSpec(ResourceBase):
     """An AI agent people can chat with in the dashboard, a widget or the API."""
 
@@ -188,6 +214,19 @@ class AgentSpec(ResourceBase):
             removes="uninstall skill {label}",
         ),
     ] = Field(default_factory=list, description="Skills to install on the agent, such as `lead_capture`.")
+    memory_blocks: Annotated[
+        list[MemoryBlockSpec],
+        Each(
+            adds="add memory block {name}",
+            changes="update memory block {name}",
+            removes="remove memory block {name} and what it holds",
+        ),
+    ] = Field(
+        default_factory=list,
+        description="Core memory blocks besides `human` and `persona`, added to your own memory with the agent, as on "
+        "its Memory page. Memory is kept per person: what the agent remembers with you, nobody else sees, and the people "
+        "who chat with it through a widget or the API keep only `human` and `persona`.",
+    )
     mcp_connections: Annotated[
         list[ResourceName],
         Each(adds="give it the {title} tools", removes="take the {title} tools away"),
@@ -202,6 +241,13 @@ class AgentSpec(ResourceBase):
     ] = Field(
         None, ge=0, description="Minutes of silence after which a conversation starts fresh. 0 means never."
     )
+
+    @model_validator(mode="after")
+    def _one_memory_block_per_name(self) -> "AgentSpec":
+        names = [block.name for block in self.memory_blocks]
+        if repeated := sorted({name for name in names if names.count(name) > 1}):
+            raise ValueError(f"memory block '{repeated[0]}' is listed more than once")
+        return self
 
 
 class WidgetKeySpec(ResourceBase):
