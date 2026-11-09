@@ -16,6 +16,32 @@ export interface ChangeLogEntry {
 export const changeLogEntries: ChangeLogEntry[] = [
   {
     date: "2026-11-09",
+    title: "Ila can choose the provider and model for each agent she builds",
+    summary:
+      "Ila used to build every agent on the provider and model you picked when starting her session, and had to guess a model's id if you asked for another. She now knows which AI providers your account has set up in Settings, and can look up the models each one offers, so she can put each agent on the model you ask for, or one that fits the job. This is built and tested; checks in a live Ila session are still pending.",
+    items: [
+      {
+        title: "Ask for a specific model, or let Ila pick one that fits",
+        description:
+          "Tell Ila which model an agent should use, for example \"use Claude Haiku for the FAQ agent and a stronger model for the research agent\", or ask her which models you can choose from. She looks up the models your providers offer and writes the exact id into the agent's blueprint. Each agent's card in the plan's drawing shows its provider and model (\"Thinks with Bedrock · claude-haiku\"), and nothing is built until you approve. If you don't ask, agents keep using the provider and model you chose when you started the session. Built and tested; checks in a live Ila session are still pending.",
+        category: "new",
+      },
+      {
+        title: "Only the providers you've set up, with their current models",
+        description:
+          "Ila sees exactly the providers set up for your account in Settings → Provider Configuration (such as Bedrock, Anthropic, OpenAI with an API key, OpenAI through ChatGPT sign-in, Gemini or Ollama), and nothing else. When she needs the models, she fetches each provider's list at that moment, so a newly released or newly enabled model shows up without any change on your side. The list is the same one the Create agent form offers, so every model she can pick is one the build accepts, and she marks the models that can read images. If a provider can't list its models right then, Ila says so and can leave the agent on that provider's default model. To give her another provider, an account admin sets it up in Settings first.",
+        category: "new",
+      },
+      {
+        title: "No extra cost on ordinary turns",
+        description:
+          "Ila doesn't fetch model lists on every message. Each turn she only has the names of your configured providers, a few words of context. She fetches the models only when choosing one, and keeps the list in view for the next few turns, so follow-up questions such as \"which of these reads images?\" don't fetch it again.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-11-09",
     title: "See every tool call an automation's agent made, in order",
     summary:
       "Each automation run has its own phone-first inspector page: every step the run took and every tool call its agents made, in the order they made them, with the real tool, full arguments, full response, start time and duration. Nothing is cut short. This is built and tested; deployment and manual checks on real runs are still pending.",
