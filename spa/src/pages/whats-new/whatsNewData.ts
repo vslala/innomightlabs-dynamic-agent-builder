@@ -15,6 +15,122 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-11-09",
+    title: "See every tool call an automation's agent made, in order",
+    summary:
+      "Each automation run has its own phone-first inspector page: every step the run took and every tool call its agents made, in the order they made them, with the real tool, full arguments, full response, start time and duration. Nothing is cut short. This is built and tested; deployment and manual checks on real runs are still pending.",
+    items: [
+      {
+        title: "A dedicated page for each automation run",
+        description:
+          "Open a run from the Runs drawer in an automation's workspace, or follow \"Inspect N tool calls\" on a step card, to reach /dashboard/automations/<automation id>/runs/<run id>. The top of the page summarises the run: status, error, duration, how many steps passed, how many tool calls were made and what triggered it. Below that are the steps the run took; pick one to see its Activity, Output, Input and Raw tabs. The page is laid out for phones first: one column, sticky tabs, and a tool call opens in a bottom sheet with previous and next buttons. On wider screens the summary and steps become a left column and a call opens in a side pane. The run page refreshes while the run is still executing. The inspector is built and tested; deployment and manual checks on real runs are still pending.",
+        category: "new",
+      },
+      {
+        title: "An agent step's activity as a timeline",
+        description:
+          "The Activity tab reads like what the agent did: the prompt it was given, then each tool call numbered in order (title, tool name, a one-line summary of its arguments, its duration, and its status if it didn't succeed), then the agent's reply. Search the calls, or filter them by All, Failed, No result, or a single tool, to find the call that went wrong in a long run. Calls made through a connected MCP server show the actual MCP tool and its arguments, not a generic \"Call MCP tool\".",
+        category: "new",
+      },
+      {
+        title: "Full responses, and links to a single call",
+        description:
+          "Tool responses are kept whole. Before, each recorded response was cut at 16,000 characters. Long text folds behind \"Show all · N characters\", and the full value is always one tap away. The page address records the selected step, tab and call (?step=<result id>&tab=activity|output|input|raw&call=<tool call id>), so you can share a link that opens straight to one tool call.",
+        category: "improved",
+      },
+      {
+        title: "Tool results matched to the right call, with real timings",
+        description:
+          "When an agent called the same tool several times in one step, such as reading three pages, a result could be shown against another call's arguments, and calls were listed when their result arrived rather than when they were made. Each result is now matched to its own call by id and listed in the agent's order. Durations measure the tool's own run, so calls requested together no longer look slower than they were. Runs recorded before this change still open in the inspector, without timings.",
+        category: "fixed",
+      },
+      {
+        title: "Tool events are no longer part of a step's output",
+        description:
+          "A step's tool-call events are kept in their own log and shown in the inspector, so they are no longer in the step's output or the run's context. A smart value that read them, such as {{ steps.draft.output.events.0.content }}, no longer resolves; read the step's documented outputs instead. While an agent step is still running, its tool calls appear only once the step finishes.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-11-09",
+    title: "Ila can add and remove an agent's memory blocks",
+    summary:
+      "When Ila builds or updates an agent, she can give it custom core memory blocks besides human and persona, such as a block for your projects or follow-ups, and remove them later. Blocks go into your own memory with that agent, exactly as the agent's Memory page adds them, so memory stays per person. Like every change Ila makes, they appear in the plan and apply only after you approve. This is built and tested; checks in a live Ila session are still pending.",
+    items: [
+      {
+        title: "Ask Ila for memory blocks on an agent",
+        description:
+          "Tell Ila what an agent should keep track of, for example \"remember my open projects and their deadlines\". She adds a memory block to the agent's blueprint with a name (lowercase with underscores, such as projects), a description the agent reads to decide what belongs there, and a word limit (100 to 50,000, 5,000 by default). The agent keeps the block in its prompt every turn and edits it with its memory tools. The plan shows \"add memory block projects\", and changing a block's description or word limit shows \"update memory block projects\" and keeps what it already holds. The blocks appear on the agent's Memory page (Dashboard → Agents → the agent → Memory). Built and tested; checks in a live Ila session are still pending.",
+        category: "new",
+      },
+      {
+        title: "Remove a memory block through Ila",
+        description:
+          "Ask Ila to drop a block and she takes it out of the agent's blueprint. The plan lists \"remove memory block projects and what it holds\" separately, because deleting a block also deletes its content and can't be undone. It runs only after everything that can be undone has succeeded. Blocks you added yourself on the Memory page show up in Ila's view of the agent, and she removes one only when you ask, with the removal listed in the plan. The human and persona blocks every agent has can't be added or removed this way.",
+        category: "new",
+      },
+      {
+        title: "Memory stays per person",
+        description:
+          "A block Ila adds belongs to your memory with the agent: what the agent remembers there with you, nobody else sees. People who chat with the agent through a widget, as a guest or through the API keep only the human and persona blocks, so use an agent's instructions or a knowledge base for facts every visitor should get. If you haven't chatted with the agent yet, adding a block also sets up your human and persona blocks, so you never end up without them.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-11-04",
+    title: "Agents can work through much longer tasks",
+    summary:
+      "A single agent turn can now run far longer before it stops: up to 200 model calls instead of 37, and up to two hours of waiting on each long-running tool job instead of ten minutes. Long research, report building and multi-step automations finish in one turn instead of stopping partway.",
+    items: [
+      {
+        title: "Up to 200 model calls in one turn",
+        description:
+          "An agent's turn may call the model up to 200 times, up from 37, using tools between calls. If it still needs to go on after the last call, the agent makes one extra call with tools switched off to sum up what it has done, so you always get an answer rather than a turn that just stops. The budget counts model calls, not individual tools (one call can request several) and not conversation messages. Longer turns can use more provider tokens and cost more on your provider account.",
+        category: "improved",
+      },
+      {
+        title: "Long-running tools get up to two hours",
+        description:
+          "When a tool runs as a background job, the agent now waits up to 120 minutes for each job, up from 10, checking every two seconds. Waiting doesn't use up the turn's model calls. Chat turns keep running on the server, so you can close the page and come back to the conversation, which picks the reply up where it is. Tool and provider time limits and stuck-job detection are unchanged.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-11-03",
+    title: "Shared accounts use the owner's plan, and clearer limit messages",
+    summary:
+      "In a shared account, what members do now counts against the account owner's plan instead of each member's own, so a member on the free tier can build in an account the owner pays for. Reaching a limit now says which limit and why, Leads works on phones, and Ila's chat no longer gets stuck after you submit a form.",
+    items: [
+      {
+        title: "A shared account's usage is billed to its owner",
+        description:
+          "Agents, chat messages and crawled knowledge-base pages in a shared account are checked against and counted for the account owner: their plan, their usage and any unlimited access they have. Before, a member's own free plan could stop them creating even a first agent in an account the owner pays for. The agent limit counts every agent in every account the owner owns, whoever created it. A member's personal account is still billed to that member. Crawled pages are now counted reliably; before, page usage was recorded against the wrong id and wasn't counted.",
+        category: "improved",
+      },
+      {
+        title: "Limit refusals say what happened",
+        description:
+          "Reaching a plan limit used to surface as a generic server error. The API now answers 429 with the reason (which limit was reached), and creating an agent shows that reason, or explains a missing permission (\"Ask an account administrator for access\") or a network failure, instead of \"Failed to create agent\". The message is announced to screen readers.",
+        category: "fixed",
+      },
+      {
+        title: "Leads on phones",
+        description:
+          "Dashboard → Leads is laid out for small screens: the captures list fills the screen, opening a capture shows its details on their own with a \"Back to leads\" button, and going back returns you to the capture you opened. Answers, attachments and long file names wrap instead of overflowing, and keyboard focus moves to the capture's heading when it opens.",
+        category: "improved",
+      },
+      {
+        title: "Ila's chat no longer stalls after a form",
+        description:
+          "After you submitted a form in Ila's chat, such as a skill's settings, a sticky \"Captured … Processing...\" line stayed on screen and the message box stayed disabled until the page reloaded. That line is gone, and the message box stays usable while Ila works on your answer.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
     date: "2026-11-02",
     title: "Social publishing support for Facebook Pages, Instagram and Threads",
     summary:
