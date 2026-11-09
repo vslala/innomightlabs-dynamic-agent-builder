@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from src.accounts.owner import Owner
 from src.agents.image_generation.capabilities import ImageCapability
@@ -10,6 +10,10 @@ from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.form_models import Form, FormInput, SelectOption
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
+
+if TYPE_CHECKING:
+    from src.llm.models import ModelInfo, ProviderModelSource
+    from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
 
@@ -123,18 +127,18 @@ class KrishnaMiniAgentsOptionsResolver:
 
 class AgentModelProvidersOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
-        choices = _load_agent_model_choices(context)
+        choices = load_agent_model_choices(context)
         return [SelectOption(value=provider, label=provider) for provider in choices.providers]
 
 
 class AgentModelsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
-        return _load_agent_model_choices(context).models
+        return load_agent_model_choices(context).models
 
 
 class VisionModelsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
-        return _load_agent_model_choices(context).vision_models
+        return load_agent_model_choices(context).vision_models
 
 
 @dataclass(frozen=True)
@@ -143,31 +147,45 @@ class AgentModelChoices:
     models: list[SelectOption]
     #: The `models` that can read images
     vision_models: list[SelectOption]
+    #: Every model listed, with its provider, as the provider described it.
+    catalog: list[tuple[str, ModelInfo]] = field(default_factory=list)
+    #: Configured providers whose model listing failed this time.
+    unlisted: list[str] = field(default_factory=list)
 
 
-def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
-    from src.llm.models import PROVIDER_MODEL_SOURCES, ModelInfo
+def _configured_sources(context: FormOptionsContext) -> list[tuple[ProviderModelSource, ProviderSettings]]:
+    from src.llm.models import PROVIDER_MODEL_SOURCES
 
+    repo = context.provider_settings_repository or get_provider_settings_repository()
+    configured = {settings.provider_name: settings for settings in repo.find_all_in_account(context.owner.account_id)}
+    return [(source, configured[source.provider_name]) for source in PROVIDER_MODEL_SOURCES if source.provider_name in configured]
+
+
+def configured_providers(context: FormOptionsContext) -> list[str]:
+    """The providers the account has set up in Settings, in catalog order. Reads the settings only: no provider is
+    asked for its models, so it's cheap enough for every turn."""
+    return [source.provider_name for source, _ in _configured_sources(context)]
+
+
+def load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
+    """The providers set up in Settings and the models each one lists now: what the create-agent form offers and
+    `validate_form_options` accepts. Asks every provider, so it's read once per context."""
     cached = context.cache.get("agent_model_choices")
     if isinstance(cached, AgentModelChoices):
         return cached
-
-    repo = context.provider_settings_repository or get_provider_settings_repository()
 
     # A provider appears once the account has configured it. One whose model listing
     # fails is still offered, so a transient outage doesn't silently drop it from the picker.
     providers: list[str] = []
     catalog: list[tuple[str, ModelInfo]] = []
+    unlisted: list[str] = []
 
-    for source in PROVIDER_MODEL_SOURCES:
-        provider_settings = repo.find_by_provider(context.owner.account_id, source.provider_name)
-        if not provider_settings:
-            continue
-
+    for source, provider_settings in _configured_sources(context):
         providers.append(source.provider_name)
         try:
             catalog.extend((source.provider_name, model) for model in source.load_models(provider_settings))
         except Exception as e:
+            unlisted.append(source.provider_name)
             log.warning(
                 "Failed to load %s models for account %s: %s",
                 source.provider_name,
@@ -184,6 +202,8 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
         vision_models=[
             option for option, model in options if ImageCapability.UNDERSTANDING.value in model.capabilities
         ],
+        catalog=catalog,
+        unlisted=unlisted,
     )
     context.cache["agent_model_choices"] = choices
     return choices

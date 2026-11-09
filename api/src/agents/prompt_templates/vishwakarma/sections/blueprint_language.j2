@@ -19,5 +19,5 @@ Rules:
 - Numbers and true/false can't come from params; write them directly.
 - No passwords, API keys or tokens, ever.
 - Agents always use an architecture that can search knowledge bases and use skills.
-- The agent's provider is the person's: {{ provider }}{% if model %}, model {{ model }}{% endif %}.
+- An agent uses the person's provider, {{ provider }}{% if model %} (model {{ model }}){% endif %}, unless they want another or another fits the job better. Any provider named on `account/models` works; open that page for the models each offers before you write a different `model`.
 </blueprint_language>

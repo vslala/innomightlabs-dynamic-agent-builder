@@ -319,6 +319,22 @@ The `settings` tier is built end to end:
   - the card isn't kept on the message, so after a reload, planning again shows it again.
 - **Tests:** `api/tests/test_blueprints_mcp.py`, `spa/src/services/builder/connect.test.ts`.
 
+**Choosing a model (2026-11-09).** Ila knew only the session's provider and model, so every agent she built used
+them, and a model the person named was a guess the plan might reject. The Your account branch now has
+`account/models` (`api/src/blueprints/account_pages.py`):
+
+- **Its index line names the providers set up in Settings**, read with one query
+  (`form_options.configured_providers`, `ProviderSettingsRepository.find_all_in_account`) and no provider call.
+  The index is in every prompt, so she always knows which providers she can write.
+- **The page lists each provider's models only when she opens it**: one line per model, `` `model_name` ``: display
+  name, "(reads images)" when it does. It's read through `form_options.load_agent_model_choices`, the same listing
+  the create-agent form offers and `validate_provider_model` checks, so every id on the page is one the plan
+  accepts. A provider whose listing fails says so instead of disappearing.
+- **The prompt rule** (`vishwakarma/sections/blueprint_language.j2`) keeps the session's provider as the default and
+  sends her to the page before she writes a different `model`.
+- A page, not a tool: no tool schema in every turn, and an opened page stays in view for a few turns.
+- **Tests:** `api/tests/test_builder_model_pages.py`.
+
 ## Context and problem
 
 Ila's pipeline (validate, then plan, then approve, then apply) is sound, and it updates rather than duplicates (see

@@ -28,7 +28,8 @@ src/blueprints/
   export.py        write an existing agent out as a blueprint; new_document for a draft started from one resource
   catalog.py       JSON Schema, Markdown reference, compact catalog, params form, example loading
   book.py          Ila's book pages generated from kinds, skills and examples
-  account_pages.py the book's Your account branch: the owner's resources as pages, made when opened, from the kinds
+  account_pages.py the book's Your account branch: the owner's resources as pages, made when opened, from the kinds;
+                   and account/models, the providers set up in Settings and, when opened, the models each lists
   kits.py          Kit model, KitRepository, pin/declared/record_version, rollback and removal plans
   kits_router.py   /kits routes
   router.py        /blueprints routes (schema and reference are public)

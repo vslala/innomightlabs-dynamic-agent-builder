@@ -108,6 +108,8 @@ which ones are open. A `plan_id` is a hash of the draft and params, not an entit
 - **Pages for reading, tools for changing.** What the person already has is the book's Your account branch
   (`blueprints/account_pages.py`), read through each kind's `existing`/`read`/`observe` when Ila opens a page. Don't
   add a list tool for a new kind; give the kind those methods. Changing one is `add_to_draft`, then plan and apply.
+  The same goes for what an agent can be built with: `account/models` names the providers set up in Settings in its
+  index line and lists their models, from the providers, only when it's opened.
 - **Features only through their kinds.** `builder/` doesn't import a feature's repository or service (agents, leads,
   automations, API keys, skills); `tests/test_builder_account_pages.py` fails if it does. A change to how a feature
   stores things is then made once, in its kind.
