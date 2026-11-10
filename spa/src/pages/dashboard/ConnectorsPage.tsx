@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle, RefreshCw } from "lucide-react";
+import { CheckCircle, RefreshCw, Unplug } from "lucide-react";
 
 import { Button, ErrorState, LoadingState, Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
@@ -112,6 +112,25 @@ export function ConnectorsPage() {
     } catch (err) {
       console.error("Error starting connector OAuth:", err);
       setError(`Failed to start ${connector.display_name} connection.`);
+      setBusyKey(null);
+    }
+  };
+
+  const disconnectGoogle = async (item: CatalogItem) => {
+    const connector = item.google;
+    if (!connector) return;
+    if (!window.confirm(`Disconnect ${connector.display_name}? Agents and automations will stop using it until it is connected again.`)) return;
+    setBusyKey(item.key);
+    setError(null);
+    try {
+      await connectorApiService.disconnectConnector(connector.connector_id);
+      setDetails(null);
+      await loadConnectors();
+      setMCPNotice(`${connector.display_name} is disconnected.`);
+    } catch (err) {
+      console.error("Error disconnecting connector:", err);
+      setError(err instanceof Error ? err.message : `Failed to disconnect ${connector.display_name}.`);
+    } finally {
       setBusyKey(null);
     }
   };
@@ -272,6 +291,16 @@ export function ConnectorsPage() {
                   <Button variant="outline" onClick={() => install(detailsItem)} disabled={busyKey === detailsItem.key}>
                     <RefreshCw className="h-4 w-4" />
                     {busyKey === detailsItem.key ? "Opening..." : "Reconnect"}
+                  </Button>
+                )}
+                {detailsItem.google && (
+                  <Button
+                    variant="outline"
+                    onClick={() => void disconnectGoogle(detailsItem)}
+                    disabled={busyKey === detailsItem.key}
+                  >
+                    <Unplug className="h-4 w-4" />
+                    Disconnect
                   </Button>
                 )}
                 {detailsItem.provider && (

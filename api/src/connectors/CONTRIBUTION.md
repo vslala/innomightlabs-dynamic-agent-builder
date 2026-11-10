@@ -8,7 +8,7 @@
 src/connectors/
   models.py            ConnectorDefinition / ConnectorStatus (Google connectors)
   service.py           CONNECTORS registry + ConnectorService (connected = a ProviderSettings record exists)
-  router.py            /connectors (list) and /connectors/{id}/start (Google OAuth start)
+  router.py            /connectors (list), /connectors/{id}/start (Google OAuth start) and DELETE /connectors/{id} (disconnect)
   oauth_completion.py  POST /connectors/oauth/complete: the signed-in half of every connect flow
   social/              Social accounts (LinkedIn first): networks as plug-ins, connect flow, /connectors/social/* (see social/CONTRIBUTION.md)
   mcp/
@@ -49,6 +49,8 @@ src/connectors/
 2. Define `PROVIDER = MCPProvider(key=..., inputs=(FormInput, ...), target=..., oauth=...)`. `key` is the stable id stored on installs: never rename it. Password inputs are the secrets; `transport` must match the target type.
 3. Register it in `providers/resolver.py` (`PROVIDERS`). Nothing else changes: the install form, listing and resolution come from the preset.
 4. Add a case to `tests/test_mcp_providers.py`.
+
+Disconnecting a Google connector (`ConnectorService.disconnect`, admins only) revokes the refresh token at Google, best effort, then deletes the `ProviderSettings` record; skills that depend on it answer "not connected" afterwards. A revoke that fails never blocks the removal.
 
 New OAuth token-delivery style: add a class implementing `OAuthDelivery` in `delivery.py`. New Google connector: add to `CONNECTORS` in `service.py` and a flow in `auth/router.py`.
 

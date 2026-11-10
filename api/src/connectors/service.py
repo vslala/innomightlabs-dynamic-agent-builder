@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+import logging
 from typing import Optional
 
+import httpx
+
 from src.connectors.models import ConnectorDefinition, ConnectorStatus
+from src.crypto import decrypt
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import SkillConnectorStatus, SkillManifest
 
@@ -35,12 +40,50 @@ PROVIDER_TO_CONNECTOR_ID = {
     definition.provider_name: definition.connector_id for definition in CONNECTORS.values()
 }
 
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+log = logging.getLogger(__name__)
+
 
 class ConnectorService:
     """The account's connector status, backed by its ProviderSettings records."""
 
-    def __init__(self, provider_settings_repository: Optional[ProviderSettingsRepository] = None):
+    def __init__(
+        self,
+        provider_settings_repository: Optional[ProviderSettingsRepository] = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
         self.provider_settings_repository = provider_settings_repository or get_provider_settings_repository()
+        self._transport = transport
+
+    async def disconnect(self, account_id: str, connector_id: str) -> None:
+        """End the connection: revoke the grant at Google, then forget the credentials. Revoking is best effort, so a
+        token Google already rejects (or an outage) never leaves the connector impossible to remove. Raises ValueError
+        when there is nothing to disconnect."""
+        definition = self.get_definition(connector_id)
+        stored = (
+            self.provider_settings_repository.find_by_provider(account_id, definition.provider_name) if definition else None
+        )
+        if definition is None or stored is None:
+            raise ValueError("Connector not found")
+        await self._revoke_google_grant(definition, stored.encrypted_credentials)
+        if not self.provider_settings_repository.delete(account_id, definition.provider_name):
+            raise RuntimeError(f"Could not disconnect {definition.display_name}")
+        log.info("Disconnected %s for account %s", connector_id, account_id)
+
+    async def _revoke_google_grant(self, definition: ConnectorDefinition, encrypted_credentials: str) -> None:
+        try:
+            credentials = json.loads(decrypt(encrypted_credentials))
+            # The refresh token ends the whole grant; the access token alone would leave it alive
+            token = credentials.get("refresh_token") or credentials.get("access_token")
+            if not token:
+                return
+            async with httpx.AsyncClient(transport=self._transport, timeout=10.0) as client:
+                response = await client.post(GOOGLE_REVOKE_URL, data={"token": token})
+            if not response.is_success:
+                log.warning("Google did not revoke the %s grant (%s)", definition.connector_id, response.status_code)
+        except Exception as error:  # never include the error text: it could carry the token
+            log.warning("Revoking the %s grant failed: %s", definition.connector_id, type(error).__name__)
 
     def get_definition(self, connector_id: str) -> ConnectorDefinition | None:
         return CONNECTORS.get(connector_id)

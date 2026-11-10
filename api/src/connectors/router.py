@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
@@ -33,6 +33,19 @@ async def list_connectors(
 ) -> list[ConnectorStatus]:
     """The account's connectors and whether each is connected; any member may look."""
     return service.list_statuses(principal.account_id)
+
+
+@router.delete("/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def disconnect_connector(
+    connector_id: str,
+    service: Annotated[ConnectorService, Depends(get_connector_service)],
+    principal: Annotated[Principal, Depends(settings_manager)],
+) -> None:
+    """Disconnect a Google account from the whole account (admins only). Skills that use it say it isn't connected."""
+    try:
+        await service.disconnect(principal.account_id, connector_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/{connector_id}/start", response_model=SkillOAuthStartResponse)

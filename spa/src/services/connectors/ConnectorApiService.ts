@@ -33,6 +33,11 @@ class ConnectorApiService {
     return httpClient.post<ConnectorStartResponse>(path, payload);
   }
 
+  /** Disconnect a Google account (Gmail, Drive, Ads) from the whole account; the API revokes the grant first. */
+  async disconnectConnector(connectorId: string): Promise<void> {
+    await httpClient.delete<void>(`/connectors/${connectorId}`);
+  }
+
   async listMCPConnections(): Promise<MCPConnection[]> {
     return httpClient.get<MCPConnection[]>("/connectors/mcp");
   }
