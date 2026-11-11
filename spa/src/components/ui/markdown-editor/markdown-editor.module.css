@@ -1,0 +1,68 @@
+.editor {
+  background: var(--surface-control);
+  border: 1px solid var(--border-input, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.editor:focus-within {
+  border-color: var(--gradient-start);
+  box-shadow: 0 0 0 2px rgba(var(--gradient-start-rgb), 0.35);
+}
+
+.disabled {
+  opacity: 0.6;
+}
+
+/* Scrolls sideways on a phone rather than wrapping onto two rows. */
+.toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: var(--space-1);
+  scrollbar-width: none;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.tool {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.separator {
+  background: var(--border-subtle);
+  flex-shrink: 0;
+  height: 1.25rem;
+  margin: 0 var(--space-1);
+  width: 1px;
+}
+
+.hint {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  text-transform: uppercase;
+}
+
+.surface {
+  min-width: 0;
+}
+
+/* What shows while CodeMirror loads: the same frame and height, so nothing jumps. */
+.loading {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  padding: var(--space-3) var(--space-4);
+}

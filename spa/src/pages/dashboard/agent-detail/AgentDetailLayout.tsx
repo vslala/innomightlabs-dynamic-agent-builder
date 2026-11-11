@@ -7,6 +7,7 @@ import { Card, CardContent } from "../../../components/ui/card";
 import { agentApiService, type AgentResponse } from "../../../services/agents/AgentApiService";
 import { getAgentIcon } from "../../../lib/agentIcons";
 import { AgentSideNav } from "./AgentSideNav";
+import type { AgentDetailOutletContext } from "./types";
 import styles from "./AgentDetailLayout.module.css";
 
 export function AgentDetailLayout() {
@@ -98,7 +99,7 @@ export function AgentDetailLayout() {
             <h1 className={styles.title}>
               {agent.agent_name}
             </h1>
-            <p className={styles.subtitle}>{agent.agent_provider}</p>
+            <p className={styles.subtitle}>{[agent.agent_provider, agent.agent_model].filter(Boolean).join(" · ")}</p>
           </div>
         </div>
       </div>
@@ -106,7 +107,7 @@ export function AgentDetailLayout() {
       <div className={styles.workspace}>
         <AgentSideNav />
         <div className={styles.content}>
-          <Outlet context={{ agent }} />
+          <Outlet context={{ agent, onAgentUpdated: setAgent } satisfies AgentDetailOutletContext} />
         </div>
       </div>
     </div>

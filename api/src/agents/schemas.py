@@ -62,7 +62,7 @@ def _agent_instructions_field() -> FormInput:
     return FormInput(
         label="Instructions",
         name="agent_persona",
-        input_type=FormInputType.TEXT_AREA,
+        input_type=FormInputType.MARKDOWN,
         smart_suggestion=SmartSuggestionConfig(
             suggestion_type=SmartSuggestionType.AGENT_INSTRUCTIONS,
             button_label="Suggest instructions",

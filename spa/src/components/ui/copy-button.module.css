@@ -1,0 +1,8 @@
+.copy {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.done {
+  color: var(--success);
+}

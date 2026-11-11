@@ -95,11 +95,6 @@
   width: 100%;
 }
 
-.run-inspector-copy {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
 /* Overview: summary and steps ------------------------------------------------ */
 
 .run-inspector-overview {

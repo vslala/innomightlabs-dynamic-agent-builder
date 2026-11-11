@@ -7,6 +7,7 @@
 - Controls: `button`, `link-button`, `input`, `textarea`, `search-input`, `file-input`, `checkbox`, `radio`, `select`, `switch` (an on/off setting with a sliding knob), `toggle` (a pressable chip that holds its own label), `tabs`, and `label`.
 - Composition: `card`, `dialog`, `confirmation-dialog`, `dropdown-menu` (Radix; 44px touch items on phones, a checkbox item that stays open), `accordion-panel`, expandable/icon cards, `grid`, `scroll-area`, and `separator`.
 - Display and feedback: avatars, pills, status badges, stats, alerts, spinners, progress, empty states, list rows, Markdown/JSON viewers, read-only content, and step inspector.
+- Editing Markdown: `markdown-editor/` (`MarkdownEditor`). `index.tsx` lazy-loads `editor-view.tsx` (CodeMirror 6), so CodeMirror is a separate chunk fetched only when an editor opens. Formatting commands are pure text edits in `markdown-commands.ts` (tested); the document is never converted, so the saved text is what was typed. Tab is left to the browser so focus is never trapped. `copy-button.tsx` (`CopyButton`) copies a value with a brief check mark.
 
 ## Flow and extension
 

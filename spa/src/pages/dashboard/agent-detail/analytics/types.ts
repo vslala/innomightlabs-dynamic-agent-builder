@@ -127,9 +127,9 @@ export interface DashboardFiltersWidgetConfig {
   sourceFilter: SourceFilter;
 }
 
-export interface OverviewStatsWidgetConfig extends BaseWidgetConfig {}
+export type OverviewStatsWidgetConfig = BaseWidgetConfig;
 
-export interface MessageMixWidgetConfig extends BaseWidgetConfig {}
+export type MessageMixWidgetConfig = BaseWidgetConfig;
 
 export interface TimeseriesWidgetConfig extends BaseWidgetConfig {
   bucket: TimeseriesBucket;

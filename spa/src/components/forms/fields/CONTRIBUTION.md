@@ -4,7 +4,7 @@
 
 Individual settings-schema inputs live here; orchestration belongs to `../SchemaForm.tsx` and dispatch to `../FormField.tsx`. Read [the forms guide](../CONTRIBUTION.md).
 
-`TextField`, `TextAreaField`, `PasswordField`, `SelectField`, `SearchSelectField`, `ChoiceField`, `FileUploadField`, `KeyValueField`, and `DefaultField` cover the current input kinds. `SmartValueTextField` handles opt-in single/multiline token editing. `index.ts` exports the renderers. Specialized choice/upload/textarea/smart-value visuals have matching CSS modules; several simple fields have no stylesheet.
+`TextField`, `TextAreaField`, `MarkdownField`, `PasswordField`, `SelectField`, `SearchSelectField`, `ChoiceField`, `FileUploadField`, `KeyValueField`, and `DefaultField` cover the current input kinds. `SmartValueTextField` handles opt-in single/multiline token editing. `index.ts` exports the renderers. Specialized choice/upload/textarea/smart-value visuals have matching CSS modules; several simple fields have no stylesheet.
 
 ## Value flow and contracts
 
@@ -15,6 +15,7 @@ Renderers receive `field: FormInput`, `value: FormValue`, and `onChange`; `Smart
 - `SearchSelectField` filters loaded labels and values locally. It is a custom popup, not a server-backed search or a full Radix select; inspect its keyboard and dismissal behavior before extending it.
 - `FileUploadField` emits the browser FileList and shows read-only attachment chips. It reads `accept` and string-valued `multiple` attributes; it does not perform chat attachment text/Excel conversion. Upload serialization belongs to the submitting caller.
 - `KeyValueField` edits row state, trims keys, discards blank keys, and produces a record (duplicate keys follow `Object.fromEntries` behavior). Its local rows reset on field-name changes, not arbitrary value changes.
+- `MarkdownField` renders `markdown` inputs with the shared `MarkdownEditor` (CodeMirror 6, loaded on first use): live styling, a formatting toolbar, `{{ ... }}` shown as chips, and the text saved exactly as typed. Use it for prompt text the model reads verbatim (agent instructions); a WYSIWYG editor would rewrite the Markdown on save. It does not support smart-value insertion yet, so automation prompt fields with `smart_values` stay `text_area`.
 - `SmartValueTextField` detects an open `{{` query, inserts complete tokens at the selection, restores the caret, and registers the focused target with its optional provider. Arrow keys select suggestions, Enter/Tab inserts, Escape closes. Without a provider it renders an ordinary input/textarea.
 
 ## Adding a field

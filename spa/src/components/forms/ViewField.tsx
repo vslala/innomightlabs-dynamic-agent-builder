@@ -38,8 +38,8 @@ export function ViewField({ field, value }: ViewFieldProps) {
       );
     }
 
-    // Text area fields render with pre-wrap
-    if (field.input_type === "text_area") {
+    // Long text renders as Markdown
+    if (field.input_type === "text_area" || field.input_type === "markdown") {
       return (
         <div
           style={{

@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 class FormInputType(Enum):
     TEXT = "text"
     TEXT_AREA = "text_area"
+    #: Long text written as Markdown and kept exactly as typed, such as an agent's instructions
+    MARKDOWN = "markdown"
     PASSWORD = "password"
     SELECT = "select"
     SEARCH = "search"
@@ -93,7 +95,7 @@ class FormInput(BaseModel):
     lead forms. Required unless `attr.optional` is "true"."""
 
     input_type: FormInputType = Field(
-        description="How it's shown: text, text_area, password, select, search, choice, file_upload or key_value."
+        description="How it's shown: text, text_area, markdown, password, select, search, choice, file_upload or key_value."
     )
     name: str = Field(description="The field's id: what its answer is stored under.")
     label: str = Field(description="What the person sees above the field.")

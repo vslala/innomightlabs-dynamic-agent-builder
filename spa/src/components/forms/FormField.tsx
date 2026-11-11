@@ -14,6 +14,7 @@ import {
   DefaultField,
   FileUploadField,
   KeyValueField,
+  MarkdownField,
   PasswordField,
   SearchSelectField,
   SelectField,
@@ -21,6 +22,9 @@ import {
   TextAreaField,
   TextField,
 } from "./fields";
+
+/** The free-text fields a smart suggestion can fill in. */
+const TEXT_INPUT_TYPES = new Set<FormInput["input_type"]>(["text", "text_area", "markdown"]);
 
 interface FormFieldProps {
   field: FormInput;
@@ -45,6 +49,9 @@ export function FormField({ field, value, formData, onChange }: FormFieldProps) 
         ) : (
           <TextAreaField field={field} value={value} onChange={onChange} />
         );
+
+      case "markdown":
+        return <MarkdownField field={field} value={value} onChange={onChange} />;
 
       case "password":
         return <PasswordField field={field} value={value} onChange={onChange} />;
@@ -72,7 +79,7 @@ export function FormField({ field, value, formData, onChange }: FormFieldProps) 
   return (
     <FormFieldShell field={field}>
       {renderInput()}
-      {(field.input_type === "text" || field.input_type === "text_area") && field.smart_suggestion && (
+      {TEXT_INPUT_TYPES.has(field.input_type) && field.smart_suggestion && (
         <SmartSuggestionControl
           field={field}
           value={value}

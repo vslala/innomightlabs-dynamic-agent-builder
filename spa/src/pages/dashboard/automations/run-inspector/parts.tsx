@@ -1,5 +1,5 @@
 /**
- * Building blocks of the run inspector: a titled section, a copy button, text that folds when long, and a
+ * Building blocks of the run inspector: a titled section, text that folds when long, and a
  * key/value list of arguments or results.
  *
  * Nothing here trims content. Long text is folded behind "Show all" but stays in the page whole, so the browser's
@@ -7,7 +7,6 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { Check, Copy } from "lucide-react";
 
 import { Button } from "../../../../components/ui";
 import { asText } from "./toolCalls";
@@ -32,30 +31,6 @@ export function InspectorSection({
       </header>
       <div className="run-inspector-section__body">{children}</div>
     </section>
-  );
-}
-
-export function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  };
-
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      className="run-inspector-copy"
-      aria-label={copied ? `${label}: copied` : label}
-      title={label}
-      onClick={() => void copy()}
-    >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-    </Button>
   );
 }
 

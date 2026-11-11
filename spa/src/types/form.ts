@@ -5,6 +5,8 @@
 export type FormInputType =
   | "text"
   | "text_area"
+  /** Long text written as Markdown and saved exactly as typed (agent instructions). */
+  | "markdown"
   | "password"
   | "select"
   | "search"

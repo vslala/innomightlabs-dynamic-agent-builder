@@ -10,12 +10,13 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
+  CopyButton,
 } from "../../../../components/ui";
 import { stepReference } from "../chain/smartValues";
 import { RunStatusBadge } from "../components/RunStatusBadge";
 import { formatDuration } from "../components/runStatus";
 import { ActivityTimeline } from "./ActivityTimeline";
-import { CopyButton, ExpandableText, InspectorSection, ValueList } from "./parts";
+import { ExpandableText, InspectorSection, ValueList } from "./parts";
 import { hasActivity, stepKind, stepName, type InspectorTab, type RunStep } from "./runSteps";
 import { asText } from "./toolCalls";
 import { useStepToolCalls } from "./useStepToolCalls";

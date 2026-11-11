@@ -1,5 +1,6 @@
 export { TextField } from "./TextField";
 export { TextAreaField } from "./TextAreaField";
+export { MarkdownField } from "./MarkdownField";
 export { PasswordField } from "./PasswordField";
 export { SelectField } from "./SelectField";
 export { SearchSelectField } from "./SearchSelectField";

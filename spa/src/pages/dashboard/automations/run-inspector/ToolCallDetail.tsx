@@ -5,9 +5,9 @@
 
 import { useState, type ReactNode } from "react";
 
-import { Button, JsonTreeViewer, StatusBadge, type StatusBadgeProps } from "../../../../components/ui";
+import { Button, CopyButton, JsonTreeViewer, StatusBadge, type StatusBadgeProps } from "../../../../components/ui";
 import { formatClockTime, formatMs } from "../components/runStatus";
-import { CopyButton, ExpandableText, InspectorSection, ValueList } from "./parts";
+import { ExpandableText, InspectorSection, ValueList } from "./parts";
 import {
   actingArguments,
   asText,

@@ -2,6 +2,7 @@
 export * from "./button";
 export * from "./checkbox";
 export * from "./link-button";
+export * from "./copy-button";
 export * from "./card";
 export * from "./dialog";
 export * from "./dropdown-menu";
@@ -23,6 +24,7 @@ export * from "./separator";
 // Display components
 export * from "./avatar";
 export * from "./markdown-renderer";
+export * from "./markdown-editor";
 export * from "./mermaid-diagram";
 export * from "./json-viewer";
 export * from "./read-only-content";
