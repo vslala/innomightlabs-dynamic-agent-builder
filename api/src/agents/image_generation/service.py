@@ -16,6 +16,7 @@ from src.agents.image_generation.models import (
     ImageGenerationOptions,
 )
 from src.agents.image_generation.provider import ImageProviderFactory
+from src.agents.image_generation.settings import ImageGenerationSettingsRepository
 from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
@@ -25,6 +26,7 @@ from src.conversations.repository import ConversationRepository
 from src.llm.credentials import load_provider_credentials
 from src.messages.models import Message, MessageImage
 from src.messages.repositories import MessageRepository, get_message_repository
+from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.llm.events import SSEEvent, SSEEventType
 
@@ -35,6 +37,15 @@ log = logging.getLogger(__name__)
 class AgentConversationContext:
     agent: Agent
     conversation: Conversation
+
+
+@dataclass(frozen=True)
+class Artist:
+    """The provider and model that draw, and the account's settings for that provider."""
+
+    provider_name: str
+    model: str
+    provider_settings: ProviderSettings
 
 
 class AgentImageGenerationError(Exception):
@@ -65,6 +76,7 @@ class AgentImageGenerationService:
         provider_settings_repo: ProviderSettingsRepository | None = None,
         storage: ConversationMediaStorage | None = None,
         provider_factory: ImageProviderFactory | None = None,
+        image_settings_repo: ImageGenerationSettingsRepository | None = None,
     ):
         self.agent_repo = agent_repo or AgentRepository()
         self.conversation_repo = conversation_repo or ConversationRepository()
@@ -72,6 +84,7 @@ class AgentImageGenerationService:
         self.provider_settings_repo = provider_settings_repo or get_provider_settings_repository()
         self.storage = storage or ConversationMediaStorage()
         self.provider_factory = provider_factory or ImageProviderFactory()
+        self.image_settings_repo = image_settings_repo or ImageGenerationSettingsRepository()
 
     async def generate_for_dashboard(
         self,
@@ -139,13 +152,13 @@ class AgentImageGenerationService:
         user_message_id: str | None = None,
     ) -> GenerateImageResponse:
         context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
-        provider_settings = self._validate_and_load_provider_settings(context.agent)
-        credentials = await self._load_credentials(context.agent.agent_provider, provider_settings)
-        provider = self.provider_factory.get(context.agent.agent_provider)
+        artist = self._artist_for(context.agent)
+        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
+        provider = self.provider_factory.get(artist.provider_name)
         generated_images = await provider.generate(
             prompt=request.prompt,
             credentials=credentials,
-            model=context.agent.agent_model or "",
+            model=artist.model,
             options=ImageGenerationOptions(
                 size=request.size,
                 quality=request.quality,
@@ -207,7 +220,7 @@ class AgentImageGenerationService:
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        provider_settings = self._validate_and_load_provider_settings(agent)
+        artist = self._artist_for(agent)
 
         user_msg = Message(
             conversation_id=conversation.conversation_id,
@@ -217,12 +230,12 @@ class AgentImageGenerationService:
         )
         self.message_repo.save(user_msg)
 
-        credentials = await self._load_credentials(agent.agent_provider, provider_settings)
-        provider = self.provider_factory.get(agent.agent_provider)
+        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
+        provider = self.provider_factory.get(artist.provider_name)
         generated_images = await provider.generate(
             prompt=request.prompt,
             credentials=credentials,
-            model=agent.agent_model or "",
+            model=artist.model,
             options=ImageGenerationOptions(
                 size=request.size,
                 quality=request.quality,
@@ -249,7 +262,7 @@ class AgentImageGenerationService:
         request: GenerateImageRequest,
         dashboard_urls: bool,
     ) -> AsyncIterator[SSEEvent]:
-        provider_settings = self._validate_and_load_provider_settings(agent)
+        artist = self._artist_for(agent)
 
         user_msg = Message(
             conversation_id=conversation.conversation_id,
@@ -268,14 +281,14 @@ class AgentImageGenerationService:
             content="Starting image generation...",
         )
 
-        credentials = await self._load_credentials(agent.agent_provider, provider_settings)
-        provider = self.provider_factory.get(agent.agent_provider)
+        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
+        provider = self.provider_factory.get(artist.provider_name)
         generated_images: list[GeneratedImageBytes] = []
 
         async for provider_event in provider.stream_generate(
             prompt=request.prompt,
             credentials=credentials,
-            model=agent.agent_model or "",
+            model=artist.model,
             options=ImageGenerationOptions(
                 size=request.size,
                 quality=request.quality,
@@ -510,26 +523,29 @@ class AgentImageGenerationService:
 
         return AgentConversationContext(agent=agent, conversation=conversation)
 
-    def _validate_and_load_provider_settings(self, agent: Agent):
-        if not image_capability_registry.supports(
-            agent.agent_provider,
-            agent.agent_model,
-            ImageCapability.GENERATION,
-        ):
+    def _artist_for(self, agent: Agent) -> "Artist":
+        """Who draws for this agent: the account's Image Generation setting, else the agent's own provider and model
+        (how it worked before the setting, so existing agents carry on). Either must be a provider that can draw and
+        one the agent's account has set up."""
+        chosen = self.image_settings_repo.find_in_account(agent.account_id)
+        if chosen and chosen.is_configured:
+            provider_name, model = str(chosen.provider_name), str(chosen.model_name)
+        else:
+            provider_name, model = agent.agent_provider, agent.agent_model or ""
+        if not image_capability_registry.supports(provider_name, model, ImageCapability.GENERATION):
             raise ImageGenerationNotSupportedError(
-                "This agent's selected model does not support image generation."
+                f"{provider_name} can't draw images. An admin can choose a provider that can in Settings > "
+                "Image Generation."
+                if chosen and chosen.is_configured
+                else "This agent's model can't draw images. An admin can set up image generation in Settings > "
+                "Image Generation."
             )
 
         # The agent's account's provider, whoever asks
-        provider_settings = self.provider_settings_repo.find_by_provider(
-            agent.account_id,
-            agent.agent_provider,
-        )
+        provider_settings = self.provider_settings_repo.find_by_provider(agent.account_id, provider_name)
         if not provider_settings:
-            raise AgentImageGenerationError(
-                f"Provider '{agent.agent_provider}' is not configured."
-            )
-        return provider_settings
+            raise AgentImageGenerationError(f"Provider '{provider_name}' is not configured.")
+        return Artist(provider_name=provider_name, model=model, provider_settings=provider_settings)
 
     async def _load_credentials(self, provider_name: str, provider_settings) -> dict[Any, Any]:
         return cast(

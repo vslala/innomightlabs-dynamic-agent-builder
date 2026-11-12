@@ -27,6 +27,8 @@ class FormOptionSourceType:
     AGENT_MODELS = "agent_models"
     #: The models that read images, of the account's connected providers.
     VISION_MODELS = "vision_models"
+    #: Models that can draw: what the account's Image Generation setting chooses from.
+    IMAGE_GENERATION_MODELS = "image_generation_models"
 
 
 @dataclass
@@ -136,6 +138,11 @@ class AgentModelsOptionsResolver:
         return load_agent_model_choices(context).models
 
 
+class ImageGenerationModelsOptionsResolver:
+    def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
+        return load_agent_model_choices(context).image_generation_models
+
+
 class VisionModelsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
         return load_agent_model_choices(context).vision_models
@@ -147,6 +154,8 @@ class AgentModelChoices:
     models: list[SelectOption]
     #: The `models` that can read images
     vision_models: list[SelectOption]
+    #: The `models` that can draw: what the account's Image Generation setting offers.
+    image_generation_models: list[SelectOption] = field(default_factory=list)
     #: Every model listed, with its provider, as the provider described it.
     catalog: list[tuple[str, ModelInfo]] = field(default_factory=list)
     #: Configured providers whose model listing failed this time.
@@ -202,6 +211,9 @@ def load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
         vision_models=[
             option for option, model in options if ImageCapability.UNDERSTANDING.value in model.capabilities
         ],
+        image_generation_models=[
+            option for option, model in options if ImageCapability.GENERATION.value in model.capabilities
+        ],
         catalog=catalog,
         unlisted=unlisted,
     )
@@ -216,4 +228,5 @@ FORM_OPTIONS_RESOLVERS: dict[str, FormOptionsResolver] = {
     FormOptionSourceType.AGENT_MODEL_PROVIDERS: AgentModelProvidersOptionsResolver(),
     FormOptionSourceType.AGENT_MODELS: AgentModelsOptionsResolver(),
     FormOptionSourceType.VISION_MODELS: VisionModelsOptionsResolver(),
+    FormOptionSourceType.IMAGE_GENERATION_MODELS: ImageGenerationModelsOptionsResolver(),
 }

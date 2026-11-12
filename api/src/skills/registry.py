@@ -15,6 +15,7 @@ import src.form_models as form_models
 from src.form_validation import validate_submission
 from src.skills.disclosure import SUGGESTION_LIMIT, search_actions
 from src.skills.models import LoadedSkill, SkillActionManifest, SkillManifest
+from src.skills.requirements import unknown_requirements
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,8 @@ class SkillRegistry:
                     raise ValueError("manifest root must be an object")
 
                 manifest = SkillManifest.model_validate(data)
+                if unknown := unknown_requirements(manifest):
+                    raise ValueError(f"requires {unknown}, which the platform doesn't know (skills/requirements.py)")
                 if manifest.id in loaded or manifest.id in core:
                     raise ValueError(f"duplicate skill id '{manifest.id}'")
 

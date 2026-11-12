@@ -1,11 +1,12 @@
 id: image_generation
 namespace: core.creative
 name: Image Generation
-description: Generate images in the current conversation using the agent's image-capable model.
+description: Generate images in the current conversation with the account's image generation model.
 system_prompt: |
   Use this skill when the user asks you to generate, create, render, draw, or make an image.
   Ask a concise clarification only when the requested image is materially underspecified.
   After generation, summarize the image result and provide the returned image URL when available.
+requires: [image_generation]
 actions:
   - name: generate
     aliases: [create, create_image, generate_image]

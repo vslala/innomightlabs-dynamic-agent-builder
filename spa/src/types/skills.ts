@@ -11,6 +11,16 @@ export interface SkillConnectorStatus {
   connect_path: string | null;
 }
 
+/** Something the skill needs set up in the account before it can be installed (`requires` in its manifest). */
+export interface SkillRequirementStatus {
+  name: string;
+  /** Finishes "<skill> needs ...": what is missing. */
+  needs: string;
+  /** The dashboard page where it is set up. */
+  setup_path: string;
+  met: boolean;
+}
+
 export interface SkillCatalogItem {
   skill_id: string;
   namespace: string;
@@ -23,6 +33,7 @@ export interface SkillCatalogItem {
   oauth_connected: boolean | null;
   oauth_start_path: string | null;
   connectors: SkillConnectorStatus[];
+  requirements: SkillRequirementStatus[];
   available: boolean;
   repeatable: boolean;
   /** The skill uses the owner's own accounts or machine, so it can never be shared once installed. */

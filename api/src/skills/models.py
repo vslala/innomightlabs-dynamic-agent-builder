@@ -37,6 +37,15 @@ class SkillConnectorStatus(BaseModel):
     connect_path: Optional[str] = None
 
 
+class SkillRequirementStatus(BaseModel):
+    """One thing a skill needs set up in the account, and whether it is. See `requirements.py`."""
+
+    name: str
+    needs: str
+    setup_path: str
+    met: bool = False
+
+
 class SkillAutomationConfig(BaseModel):
     enabled: bool = True
 
@@ -142,6 +151,8 @@ class SkillManifest(BaseModel):
     requires_oauth: bool = False
     oauth_provider_name: Optional[str] = None
     connectors: list[SkillConnectorDependency] = Field(default_factory=list)
+    #: Account setup the skill needs before it can be installed, by name (`requirements.py`): `image_generation`.
+    requires: list[str] = Field(default_factory=list)
     automation: SkillAutomationConfig = Field(default_factory=SkillAutomationConfig)
     lifecycle: SkillLifecycleManifest = Field(default_factory=SkillLifecycleManifest)
     action_disclosure: ActionDisclosureMode = ActionDisclosureMode.EAGER
@@ -188,6 +199,8 @@ class SkillCatalogItemResponse(BaseModel):
     oauth_connected: Optional[bool] = None
     oauth_start_path: Optional[str] = None
     connectors: list[SkillConnectorStatus] = Field(default_factory=list)
+    #: What the skill needs set up in the account, and whether it is. An unmet one makes the skill unavailable.
+    requirements: list[SkillRequirementStatus] = Field(default_factory=list)
     available: bool = True
     repeatable: bool = False
     #: The skill uses the owner's own accounts or machine, so it can never be shared once installed.

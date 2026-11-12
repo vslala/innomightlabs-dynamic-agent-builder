@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Boxes, Check, Plus, Power, PowerOff, Settings2, Trash2, Wrench } from "lucide-react";
 
 import { SchemaForm } from "../../../components/forms";
@@ -25,30 +26,16 @@ import {
 import { connectorApiService } from "../../../services/connectors";
 import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
-import type { InstalledSkill, SkillActorKind, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
+import type { InstalledSkill, SkillActorKind, SkillCatalogItem } from "../../../types/skills";
 import { SHAREABLE_AUDIENCES } from "./audiences";
 import { installedSkillValues, splitInstallIdentity } from "./skillInstallIdentity";
+import { canInstallSkill, getMissingRequiredConnectors, getUnmetRequirements, hasConnectorMetadata } from "./skillInstallability";
 import { SkillSharingBadge } from "./SkillSharingBadge";
 import { useAgentDetailContext } from "./types";
 import "./AgentSkillsPage.css";
 import { AlwaysAllowSettings } from "./AlwaysAllowSettings";
 import { platform } from "../../../platform";
 
-
-function getMissingRequiredConnectors(skill: SkillCatalogItem): SkillConnectorStatus[] {
-  return (skill.connectors ?? []).filter((connector) => connector.required && !connector.connected);
-}
-
-function hasConnectorMetadata(skill: SkillCatalogItem): boolean {
-  return (skill.connectors ?? []).length > 0;
-}
-
-function canInstallSkill(skill: SkillCatalogItem): boolean {
-  if (hasConnectorMetadata(skill)) {
-    return getMissingRequiredConnectors(skill).length === 0;
-  }
-  return !skill.requires_oauth || skill.oauth_connected === true;
-}
 
 function skillConfigPayload(data: Record<string, FormValue>): Record<string, string | Record<string, string>> {
   const payload: Record<string, string | Record<string, string>> = {};
@@ -100,6 +87,7 @@ type SkillsTab = "discover" | "installed";
 
 export function AgentSkillsPage() {
   const { agent } = useAgentDetailContext();
+  const navigate = useNavigate();
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
   const [availableSkills, setAvailableSkills] = useState<SkillCatalogItem[]>([]);
   const [loadingSkills, setLoadingSkills] = useState(false);
@@ -738,6 +726,11 @@ export function AgentSkillsPage() {
                   <div>
                     <p style={{ fontWeight: 600, color: "var(--text-primary)" }}>{selectedSkill.name}</p>
                     <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>{selectedSkill.description}</p>
+                    {getUnmetRequirements(selectedSkill).map((requirement) => (
+                      <p key={requirement.name} style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.375rem" }}>
+                        Needs {requirement.needs} before install
+                      </p>
+                    ))}
                     {hasConnectorMetadata(selectedSkill) ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.375rem" }}>
                         {selectedSkill.connectors.map((connector) => (
@@ -761,7 +754,12 @@ export function AgentSkillsPage() {
                       {installSkillError}
                     </div>
                   )}
-                  {!canInstallSkill(selectedSkill) && (
+                  {getUnmetRequirements(selectedSkill).length > 0 && (
+                    <Button onClick={() => navigate(getUnmetRequirements(selectedSkill)[0].setup_path)}>
+                      Open settings
+                    </Button>
+                  )}
+                  {getUnmetRequirements(selectedSkill).length === 0 && !canInstallSkill(selectedSkill) && (
                     <Button onClick={handleConnectSkillOAuth} disabled={connectingSkillId === selectedSkill.skill_id}>
                       {connectingSkillId === selectedSkill.skill_id
                         ? "Connecting..."

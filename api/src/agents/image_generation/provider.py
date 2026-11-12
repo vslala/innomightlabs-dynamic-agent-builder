@@ -15,6 +15,7 @@ from src.agents.image_generation.models import (
     ImageGenerationOptions,
 )
 from src.config import settings
+from src.llm.providers.openai_api import OPENAI_API_BASE_URL
 
 log = logging.getLogger(__name__)
 
@@ -49,8 +50,20 @@ class ImageGenerationProvider(Protocol):
         ...
 
 
-class CodexOpenAIImageGenerationProvider:
-    """OpenAI Codex/ChatGPT OAuth image generation provider."""
+class ResponsesImageGenerationProvider:
+    """Draws with the Responses API's `image_generation` tool, which any of the provider's chat models can call.
+
+    The ChatGPT sign-in and an OpenAI API key speak the same stream; they differ in where it's sent and how the
+    request is authorised."""
+
+    #: Names the provider in errors
+    label = "OpenAI"
+    credential_field = "access_token"
+    #: Recorded with each image
+    provider_key = "openai"
+
+    def endpoint(self) -> str:
+        raise NotImplementedError
 
     async def generate(
         self,
@@ -71,7 +84,7 @@ class CodexOpenAIImageGenerationProvider:
                 results.append(event.image)
 
         if not results:
-            raise RuntimeError("OpenAI Codex image generation completed without image output")
+            raise RuntimeError(f"{self.label} image generation completed without image output")
 
         return results
 
@@ -83,9 +96,9 @@ class CodexOpenAIImageGenerationProvider:
         model: str,
         options: ImageGenerationOptions,
     ) -> AsyncIterator[ImageGenerationStreamEvent]:
-        access_token = credentials.get("access_token")
-        if not access_token:
-            raise ValueError("Missing required OpenAI OAuth access token")
+        token = credentials.get(self.credential_field)
+        if not token:
+            raise ValueError(f"Missing required {self.label} credential: '{self.credential_field}'")
 
         tool: dict[str, Any] = {
             "type": "image_generation",
@@ -113,16 +126,16 @@ class CodexOpenAIImageGenerationProvider:
         async with httpx.AsyncClient(timeout=180.0) as client:
             async with client.stream(
                 "POST",
-                settings.openai_oauth_responses_url,
+                self.endpoint(),
                 headers={
-                    "Authorization": f"Bearer {access_token}",
+                    "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json",
                 },
                 json=body,
             ) as response:
                 if not response.is_success:
                     error_text = (await response.aread()).decode("utf-8", errors="ignore")
-                    raise RuntimeError(f"OpenAI Codex image generation error: {error_text}")
+                    raise RuntimeError(f"{self.label} image generation error: {error_text}")
 
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
@@ -140,7 +153,7 @@ class CodexOpenAIImageGenerationProvider:
 
                     event_type = event.get("type")
                     if event_type in {"response.failed", "error"}:
-                        raise RuntimeError(f"OpenAI Codex image generation failed: {event}")
+                        raise RuntimeError(f"{self.label} image generation failed: {event}")
 
                     if event_type == "response.image_generation_call.in_progress":
                         yield ImageGenerationStreamEvent(kind="started", message="Image generation started")
@@ -183,7 +196,7 @@ class CodexOpenAIImageGenerationProvider:
                             quality=item.get("quality"),
                             background=item.get("background"),
                             provider_metadata={
-                                "provider": "openai_codex",
+                                "provider": self.provider_key,
                                 "item_id": item.get("id"),
                                 "action": item.get("action"),
                                 "size": item.get("size"),
@@ -203,12 +216,34 @@ class CodexOpenAIImageGenerationProvider:
                         break
 
 
+class CodexOpenAIImageGenerationProvider(ResponsesImageGenerationProvider):
+    """The ChatGPT sign-in: the Codex backend."""
+
+    label = "OpenAI Codex"
+    provider_key = "openai_codex"
+
+    def endpoint(self) -> str:
+        return settings.openai_oauth_responses_url
+
+
+class OpenAIAPIImageGenerationProvider(ResponsesImageGenerationProvider):
+    """An OpenAI API key."""
+
+    label = "OpenAI API"
+    credential_field = "api_key"
+    provider_key = "openai_api"
+
+    def endpoint(self) -> str:
+        return f"{OPENAI_API_BASE_URL}/responses"
+
+
 class ImageProviderFactory:
     """Resolve provider adapters by agent provider/backend."""
 
     def __init__(self):
         self._providers: dict[str, ImageGenerationProvider] = {
             "openai": CodexOpenAIImageGenerationProvider(),
+            "openaiapi": OpenAIAPIImageGenerationProvider(),
         }
 
     def get(self, provider_name: str) -> ImageGenerationProvider:

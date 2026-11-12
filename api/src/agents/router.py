@@ -10,7 +10,9 @@ import logging
 
 import src.form_models as form_models
 from src.config import settings
+from src.agents.image_generation.capabilities import ImageCapability
 from src.agents.image_generation.models import GenerateImageRequest, GenerateImageResponse
+from src.agents.image_generation.settings import ImageGenerationSettingsRepository
 from src.agents.image_generation.service import (
     AgentImageGenerationError,
     AgentImageGenerationService,
@@ -217,9 +219,13 @@ async def list_agents(
     for conversation in ConversationRepository().find_all_by_user(member_partition(principal.account_id, principal.user_id)):
         uses.setdefault(conversation.agent_id, []).append(conversation)
 
+    drawing = ImageGenerationSettingsRepository().find_in_account(principal.account_id)
     responses = []
     for agent, access in visible_agents(principal, repo):
         response = agent.to_response(access)
+        if drawing and drawing.is_configured and ImageCapability.GENERATION.value not in response.capabilities:
+            # The account's Image Generation setting draws for every agent in it, whatever model the agent thinks with
+            response.capabilities = [*response.capabilities, ImageCapability.GENERATION.value]
         conversations = uses.get(agent.agent_id, [])
         response.use_count = len(conversations)
         if conversations:  # most recently active first

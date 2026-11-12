@@ -236,6 +236,26 @@ Connectors make availability explicit for agent skills and automation actions. I
 
 Use connectors for external accounts/services. Use install `form` for skill-specific configuration values.
 
+### `requires`
+
+Optional list of names, default `[]`.
+
+Account setup the skill needs before it can be installed. Each name is a requirement the platform knows, in
+`src/skills/requirements.py`: a test of whether the account has it, what to tell the person if not, and the dashboard
+page where it is set up.
+
+```yaml
+requires: [image_generation]
+```
+
+An unmet requirement refuses the install (and a blueprint plan that installs the skill) with "<Skill> needs …", and the
+catalog lists the skill as unavailable with each requirement and whether it is met (`requirements`, `available`). A
+name the platform doesn't know keeps the manifest from loading, so a typo can't pass for a met requirement. A new kind
+of dependency is one more `SkillRequirement` in that file, not a new check in the install path.
+
+Use `requires` for settings the account owns (Settings pages). Use `connectors` for external accounts, and the install
+`form` for values specific to one install.
+
 ### `owner_only`
 
 Optional boolean, default `false`.

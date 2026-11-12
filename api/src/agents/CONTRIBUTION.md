@@ -111,10 +111,19 @@ spots it and the loop polls (`_await_async_job`, up to `ASYNC_TOOL_MAX_IN_TURN_W
 `check_tool_job` tool. Secrets are loaded when the job runs, never stored on it. Jobs are stale after 10 minutes.
 Keep strong references to job tasks (`_running_jobs`): asyncio holds tasks weakly.
 
-**Image generation.** `image_capability_registry` says which providers can generate (OpenAI: every model it offers, so a new model
-needs no change); `Agent.to_response` exposes it as `capabilities`. `ImageProviderFactory` picks the
-adapter, `AgentImageGenerationService` persists the turn's messages, `ConversationMediaStorage` stores bytes in the
-private bucket under `agents/{agent_id}/conversations/{conversation_id}/messages/{message_id}/`.
+**Image generation.** Like image reading (`src/vision/`), the drawing model is the account's own choice, apart from the
+agent's model: an admin sets it in Settings > Image Generation (`ImageGenerationSettings`, `/image-generation/settings`,
+`agents/image_generation/settings.py` and `router.py`), choosing from models tagged `image_generation`
+(`FormOptionSourceType.IMAGE_GENERATION_MODELS`). `AgentImageGenerationService._artist_for` resolves who draws: that
+setting, else the agent's own provider and model (how it worked before, so existing OpenAI agents carry on), and it must
+be a provider `image_capability_registry` says can draw (OpenAI and OpenAIAPI: every model they offer, so a new model
+needs no change). `list_agents` adds `image_generation` to `capabilities` when the account has the setting on. The
+Image Generation skill declares `requires: [image_generation]`, so it can only be installed once the setting is on
+(`src/skills/requirements.py`). `ImageProviderFactory` picks the adapter by provider; add a provider by adding its
+registry entry, its adapter and the tag in its model lister. Anthropic and Ollama have no image models, so they can
+only draw through the account's setting. `AgentImageGenerationService` persists the turn's messages,
+`ConversationMediaStorage` stores bytes in the private bucket under
+`agents/{agent_id}/conversations/{conversation_id}/messages/{message_id}/`.
 
 ## How to add a native tool
 

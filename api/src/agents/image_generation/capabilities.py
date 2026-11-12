@@ -66,7 +66,12 @@ def build_image_capability_registry() -> ImageCapabilityRegistry:
             provider="OpenAI",
             capabilities=frozenset({ImageCapability.GENERATION}),
             backend=settings.openai_image_generation_backend,
-        )
+        ),
+        ImageProviderCapability(
+            provider="OpenAIAPI",
+            capabilities=frozenset({ImageCapability.GENERATION}),
+            backend="api_key",
+        ),
     ])
 
 

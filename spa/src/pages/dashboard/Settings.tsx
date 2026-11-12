@@ -44,6 +44,7 @@ import { dreamApiService } from "../../services/dream";
 import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
+import { ImageGenerationSettingsCard } from "./ImageGenerationSettingsCard";
 import { ImageReadingSettingsCard } from "./ImageReadingSettingsCard";
 import { ProviderRow } from "./ProviderRow";
 import { providerTitle, removalPrompt } from "./providerLabels";
@@ -827,6 +828,8 @@ export function Settings() {
       </Card>
 
       <ImageReadingSettingsCard />
+
+      <ImageGenerationSettingsCard />
 
       {userInfo && <DeleteAccountCard email={userInfo.email} />}
 

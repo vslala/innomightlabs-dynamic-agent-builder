@@ -469,8 +469,13 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
 
 
 def test_skill_runtime_passes_user_message_id_to_actions(test_client, auth_headers, dynamodb_table, monkeypatch):
+    from src.agents.image_generation.settings import ImageGenerationSettings, ImageGenerationSettingsRepository
     from tests.mock_data import TEST_USER_EMAIL
 
+    # The skill can only be installed once the account has image generation set up
+    ImageGenerationSettingsRepository().save(ImageGenerationSettings(
+        account_id=account_for(TEST_USER_EMAIL), enabled=True, provider_name="OpenAIAPI", model_name="gpt-5.5",
+    ))
     agent = _create_agent_for_user(TEST_USER_EMAIL)
     install_resp = test_client.post(
         f"/agents/{agent.agent_id}/skills?skill_id=image_generation",

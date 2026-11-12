@@ -40,6 +40,7 @@ from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry, is_secret_input
 from src.skills.runtime_context import action_context, as_tool_result
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
+from src.skills.requirements import requirement_statuses, unmet_requirements
 from src.consent.models import SkillActionSubject, skill_key
 from src.consent.repository import ConsentRepository
 
@@ -83,6 +84,8 @@ class SkillService:
             manifest_for_status = loaded.manifest.model_copy(
                 update={"connectors": connector_dependencies}
             )
+            requirements = requirement_statuses(loaded.manifest, account_id)
+            requirements_unmet = any(not status.met for status in requirements)
             oauth_connected: bool | None = None
             oauth_provider = get_skill_oauth_provider(oauth_provider_name)
             if oauth_provider_name and account_id:
@@ -105,12 +108,13 @@ class SkillService:
                         manifest_for_status,
                         account_id,
                     ),
-                    available=not self.connector_service.missing_required_connectors(
-                        manifest_for_status,
-                        account_id,
-                    )
-                    if account_id
-                    else not manifest_for_status.connectors,
+                    requirements=requirements,
+                    available=not requirements_unmet
+                    and (
+                        not self.connector_service.missing_required_connectors(manifest_for_status, account_id)
+                        if account_id
+                        else not manifest_for_status.connectors
+                    ),
                     repeatable=loaded.manifest.repeatable,
                     owner_only=loaded.manifest.runs_only_for_owner,
                 )
@@ -193,6 +197,8 @@ class SkillService:
             raise ValueError(
                 f"{loaded.manifest.name} requires connected connector(s): {', '.join(missing_connectors)}"
             )
+        if enabled and (unmet := unmet_requirements(loaded.manifest, owner.account_id)):
+            raise ValueError(f"{loaded.manifest.name} needs {'; and '.join(status.needs for status in unmet)}")
 
         return loaded, self.validate_install_config(skill_id, owner, raw_config, pending_fields)
 

@@ -344,7 +344,10 @@ class ModelsService:
                 model_name=slug,
                 display_name=f"[OpenAI API] {slug}",
                 provider="openai_api",
-                capabilities=vision.understanding(vision.openai_api_reads_images(slug)),
+                capabilities=[
+                    *image_capability_registry.capabilities_for("OpenAIAPI", slug),
+                    *vision.understanding(vision.openai_api_reads_images(slug)),
+                ],
             )
             for slug in slugs
         ]
