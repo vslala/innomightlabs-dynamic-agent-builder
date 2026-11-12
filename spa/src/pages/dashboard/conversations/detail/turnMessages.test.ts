@@ -7,6 +7,7 @@ import { SSEEventType } from "../../../../types/message";
 import {
   appendOnce,
   consentDecisionContent,
+  formAwaitingAnswer,
   formSubmissionContent,
   generatedImageMessage,
   liveTokenUsageFrom,
@@ -67,6 +68,27 @@ describe("appendOnce", () => {
 
   it("adds a new message at the end", () => {
     expect(appendOnce([message], { message_id: "m2" } as Message).map((m) => m.message_id)).toEqual(["m1", "m2"]);
+  });
+});
+
+describe("formAwaitingAnswer", () => {
+  const approval = {
+    form: { form_name: "Approve plan abc123", submit_path: "", form_inputs: [] },
+    submit_label: "Submit",
+  };
+  const said = (role: Message["role"], form?: typeof approval) => ({ message_id: role, role, form }) as Message;
+
+  it("is the form the assistant's latest message asked", () => {
+    expect(formAwaitingAnswer([said("user"), said("assistant", approval)])).toBe(approval);
+  });
+
+  it("is spent once the person has replied", () => {
+    expect(formAwaitingAnswer([said("assistant", approval), said("user")])).toBeNull();
+  });
+
+  it("is nothing when the latest message asked no form, or there are no messages", () => {
+    expect(formAwaitingAnswer([said("assistant")])).toBeNull();
+    expect(formAwaitingAnswer([])).toBeNull();
   });
 });
 

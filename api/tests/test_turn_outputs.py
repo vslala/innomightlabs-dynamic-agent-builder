@@ -1,5 +1,7 @@
 """What gets saved as the assistant's reply when the model itself said nothing."""
 
+import json
+
 from src.agents.turn_outputs import TurnOutputs
 from src.llm.events import SSEEvent, SSEEventType
 
@@ -46,3 +48,23 @@ def test_the_record_says_why_the_model_gave_no_summary():
 
 def test_nothing_is_saved_when_nothing_ran_and_nothing_was_said():
     assert TurnOutputs().assistant_text == ""
+
+
+def test_a_form_shown_this_turn_is_kept_on_the_reply_through_storage(dynamodb_table):
+    """A plan's approval form is still there to answer when the chat is opened again."""
+    from src.messages.models import Message
+    from src.messages.repositories import get_message_repository
+
+    form = {"form_name": "Approve plan abc123", "form_inputs": [{"name": "decision", "attr": {"weight": 0.5}}]}
+    outputs = TurnOutputs(full_text="Here is the plan.")
+    list(outputs.absorb(SSEEvent(
+        event_type=SSEEventType.TOOL_CALL_RESULT, tool_name="plan_blueprint",
+        content=json.dumps({"type": "ui_form_render", "form": form, "submit_label": "Submit"}),
+    )))
+    repo = get_message_repository()
+    list(outputs.save_reply(repo, conversation_id="c1", actor_email="a@example.com", model_name="m"))
+
+    [saved] = repo.find_by_conversation_newest_first("c1", limit=5)[0]
+    assert isinstance(saved, Message) and saved.form is not None
+    assert saved.form.form == form and saved.form.submit_label == "Submit"
+    assert saved.to_response().form == saved.form

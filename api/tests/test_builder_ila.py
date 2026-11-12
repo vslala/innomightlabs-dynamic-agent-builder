@@ -155,6 +155,21 @@ async def test_apply_needs_the_person_to_approve_the_current_plan(session):
     assert AgentRepository().find_by_name(*owner_ids(TEST_USER_EMAIL), "Acme assistant") is None
 
 
+async def test_applying_before_the_form_is_chosen_shows_the_same_plans_form_again(session):
+    """Asked in words, or after the chat was left: the draft is kept, so it isn't planned from scratch."""
+    tools, state = BuilderTools(), turn_state(session)
+    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, state))["plan_id"]
+    say(session, "user", "I'm back, go ahead and build it")
+
+    again = json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
+
+    assert again["applied"] is False
+    assert again["type"] == "ui_form_render" and again["form"]["form_name"] == approval_label(plan_id)
+    assert again["plan_id"] == plan_id and "Apply this plan" in again["next"]
+    say(session, "user", approval(plan_id))
+    assert json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))["applied"] is True
+
+
 async def test_approved_plan_is_built_and_its_status_reported(session, account):
     tools, state = BuilderTools(), turn_state(session)
     plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, state))["plan_id"]

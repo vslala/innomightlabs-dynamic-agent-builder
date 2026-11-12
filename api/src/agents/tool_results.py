@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from src.config import settings
 from src.llm.events import SSEEvent, SSEEventType
 from src.consent.payloads import CONSENT_REQUEST
-from src.messages.models import MessageCanvasArtifact, MessageConsent
+from src.messages.models import MessageCanvasArtifact, MessageConsent, MessageForm
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,8 @@ class InterpretedToolResult:
     canvas: MessageCanvasArtifact | None = None
     #: A consent card the assistant message keeps, so it is still there after a reload.
     consent: MessageConsent | None = None
+    #: A form the assistant message keeps, so it can be answered after a reload.
+    form: MessageForm | None = None
     #: Used as the assistant's reply when the model itself produced no text.
     fallback_text: str | None = None
 
@@ -51,7 +53,8 @@ class UiFormRender:
     """A skill asking the widget to render a form.
 
     The widget renders forms only on UI_FORM_RENDER, so this has to become its
-    own event rather than staying inside the tool result.
+    own event rather than staying inside the tool result. The message keeps it
+    too: a plan's approval form must still be there when the person comes back.
     """
 
     def interpret(self, payload: dict[str, Any]) -> InterpretedToolResult | None:
@@ -64,6 +67,7 @@ class UiFormRender:
         form_id = form.get("form_id") if isinstance(form.get("form_id"), str) else None
 
         return InterpretedToolResult(
+            form=MessageForm(form=form, submit_label=parsed.submit_label, lead_form=parsed.lead_form) if form else None,
             event=SSEEvent(
                 event_type=SSEEventType.UI_FORM_RENDER,
                 content=label or "Form",

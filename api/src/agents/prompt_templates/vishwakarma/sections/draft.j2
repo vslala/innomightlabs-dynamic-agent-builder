@@ -11,7 +11,8 @@ The system is waiting for the person to fill in "{{ pending_input.label }}". Whe
 call plan_blueprint with no arguments.
 {% endif %}
 {% if plan_id %}
-It is planned with plan_id {{ plan_id }}, waiting for the person's approval.
+It is planned with plan_id {{ plan_id }}, waiting for the person's approval. If they ask to build it, call
+apply_blueprint with that plan_id.
 {% endif %}
 {% else %}
 No draft yet.

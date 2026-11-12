@@ -56,6 +56,7 @@ import { StreamingImagePreview, type StreamingImage } from "./conversations/deta
 import {
   appendOnce,
   consentDecisionContent,
+  formAwaitingAnswer,
   formSubmissionContent,
   generatedImageMessage,
   liveTokenUsageFrom,
@@ -104,6 +105,11 @@ export function ConversationDetail() {
   const [streamingContent, setStreamingContent] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string; leadForm?: string } | null>(null);
+  /** Shows again the form a reopened chat was left on, such as a plan's approval, so it can still be answered. */
+  const showFormAwaitingAnswer = (transcript: Message[]) => {
+    const waiting = formAwaitingAnswer(transcript);
+    if (waiting) setActiveForm({ form: waiting.form, submitLabel: waiting.submit_label, leadForm: waiting.lead_form });
+  };
 
   const [activeConnect, setActiveConnect] = useState<ConnectRequestPayload | null>(null);
   // Consent cards by id, as they stand now: messages say which they raised, this says what became of them
@@ -158,7 +164,9 @@ export function ConversationDetail() {
       setConversation(conversationData);
       setAgents(agentsData);
       // Messages come newest-first, reverse for display (oldest at top)
-      setMessages(messagesData.items.reverse());
+      const transcript = messagesData.items.reverse();
+      setMessages(transcript);
+      showFormAwaitingAnswer(transcript);
       setMessagesCursor(messagesData.next_cursor);
       setHasMoreMessages(messagesData.has_more);
       setInitialMessagesLoaded(true);
@@ -265,7 +273,9 @@ export function ConversationDetail() {
       }
       if (isSending) finishTurn();
       const latest = await conversationApiService.getMessages(conversation_id, MESSAGES_PAGE_SIZE);
-      setMessages((current) => mergeLatestPage(current, latest.items.reverse()));
+      const page = latest.items.reverse();
+      setMessages((current) => mergeLatestPage(current, page));
+      showFormAwaitingAnswer(page);
       void loadConsents(agent_id, conversation_id);
     } catch (err) {
       console.error("Failed to resync the conversation:", err);

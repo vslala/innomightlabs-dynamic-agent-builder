@@ -14,7 +14,7 @@ from src.agents.tool_results import interpret_tool_result
 from src.consent.models import TurnCheckpoint
 from src.consent.repository import ConsentRepository
 from src.llm.events import SSEEvent, SSEEventType
-from src.messages.models import Message, MessageCanvasArtifact, MessageConsent
+from src.messages.models import Message, MessageCanvasArtifact, MessageConsent, MessageForm
 from src.messages.repositories import MessageRepository
 
 #: Why the model gave no summary, in words the user (and the next turn) can act on.
@@ -41,6 +41,8 @@ class TurnOutputs:
     answered_without_text: bool = False
     #: Consent cards raised this turn, kept on the reply.
     consents: list[MessageConsent] = field(default_factory=list)
+    #: The last form shown this turn, kept on the reply (the chat shows one at a time).
+    form: MessageForm | None = None
     #: Set when the turn paused for the person's decision.
     paused: TurnPaused | None = None
 
@@ -57,6 +59,7 @@ class TurnOutputs:
                     self.canvases.append(interpreted.canvas)
                 if interpreted.consent:
                     self.consents.append(interpreted.consent)
+                self.form = interpreted.form or self.form
                 self.fallback_text = self.fallback_text or interpreted.fallback_text
                 if interpreted.event:
                     yield interpreted.event
@@ -109,6 +112,7 @@ class TurnOutputs:
             # Kept on the message so they survive a reload
             canvases=self.canvases,
             consents=self.consents,
+            form=self.form,
         )
         message_repo.save(reply)
         if self.paused and self.consents:

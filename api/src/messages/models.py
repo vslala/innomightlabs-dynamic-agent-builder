@@ -169,6 +169,17 @@ class MessageConsent(BaseModel):
     title: str
 
 
+class MessageForm(BaseModel):
+    """The form the message asked the person to fill in (a plan's approval, a skill's settings).
+
+    Kept so a chat reopened before it was answered can show it again; once anyone replies it is spent."""
+
+    form: dict[str, Any]
+    submit_label: str | None = None
+    #: The lead form it shows, which its file fields upload against.
+    lead_form: str | None = None
+
+
 class MessageReference(BaseModel):
     """Something the user attached that lives elsewhere (a document): the message holds the pointer, never the content.
 
@@ -193,6 +204,7 @@ class MessageResponse(BaseModel):
     images: list[MessageImageResponse] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifactResponse] = Field(default_factory=list)
     consents: list[MessageConsent] = Field(default_factory=list)
+    form: MessageForm | None = None
     created_at: datetime
 
 
@@ -210,6 +222,7 @@ class Message(BaseModel):
     images: list[MessageImage] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifact] = Field(default_factory=list)
     consents: list[MessageConsent] = Field(default_factory=list)
+    form: MessageForm | None = None
     kind: MessageKind = MessageKind.CHAT
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -249,6 +262,9 @@ class Message(BaseModel):
             item["canvases"] = [canvas.model_dump(mode="json") for canvas in self.canvases]
         if self.consents:
             item["consents"] = [consent.model_dump() for consent in self.consents]
+        if self.form:
+            # As JSON: a form schema can hold floats, which DynamoDB won't take as numbers.
+            item["form"] = self.form.model_dump_json(exclude_none=True)
         return item
 
     @classmethod
@@ -266,6 +282,7 @@ class Message(BaseModel):
             images=[MessageImage(**img) for img in item.get("images", [])],
             canvases=[MessageCanvasArtifact(**canvas) for canvas in item.get("canvases", [])],
             consents=[MessageConsent(**consent) for consent in item.get("consents", [])],
+            form=MessageForm.model_validate_json(item["form"]) if item.get("form") else None,
             # Rows written before the AUDIT# split have no `kind`.
             kind=MessageKind(item.get("kind", MessageKind.CHAT.value)),
             created_at=datetime.fromisoformat(item["created_at"]),
@@ -317,5 +334,6 @@ class Message(BaseModel):
                 for canvas in self.canvases
             ],
             consents=list(self.consents),
+            form=self.form,
             created_at=self.created_at,
         )

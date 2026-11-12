@@ -100,6 +100,9 @@ which ones are open. A `plan_id` is a hash of the draft and params, not an entit
   `if` in `tools.py`.
 - **Approval.** `apply` only runs for the `plan_id` the person approved in their latest message
   (`src/blueprints/approval.py`); deploys go through `blueprints.service.deploy_blueprint`, never `apply_blueprint` directly.
+  The approval form is kept on Ila's message (`Message.form`, like any chat form) and the chat shows it again while
+  it's the latest message, so a person who left can still approve. Calling `apply` without that approval plans the
+  session's draft again and returns its form, so Ila doesn't rewrite the blueprint when someone says "build it".
 - **Tools.** Each tool is a `BoundTool(ToolSpec(definition, ToolCategory.BUILDER), method)`; set `mutates_prompt_context=True`
   when the call changes what Ila's prompt shows (the draft, the open pages). Tool definitions are in
   `builder_tool_definitions()`, and the registry unpacks them positionally, so keep the order in step.

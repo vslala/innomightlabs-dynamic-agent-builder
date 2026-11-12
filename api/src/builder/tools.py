@@ -300,10 +300,15 @@ class BuilderTools:
         if not session.plan_id or plan_id != session.plan_id or not session.draft_yaml:
             return json.dumps({"applied": False, "reason": "That isn't the current plan. Plan the draft again."})
         if not approves(self._latest_user_message(state.conversation_id), plan_id):
-            return json.dumps({
-                "applied": False,
-                "reason": "The person hasn't approved this plan. Wait until they choose 'Apply this plan' in its form.",
-            })
+            # Asked in words ("go ahead"), or back later: the draft is still here, so the approval form is shown
+            # again for it rather than Ila writing the blueprint and planning it over.
+            again = json.loads(await self.plan("plan_blueprint", {}, state))
+            if again.get("plan_id"):
+                again["next"] = (
+                    "The person hasn't approved this plan in its form yet, so it's shown again under your message. "
+                    "Ask them, in a sentence, to choose 'Apply this plan' there; nothing is built until they do."
+                )
+            return json.dumps({"applied": False, **again})
 
         outcome = deploy_blueprint(
             session.draft_yaml, session.draft_params, state.owner,

@@ -123,7 +123,16 @@ export interface Message {
   canvases?: MessageCanvasArtifact[];
   /** Consent cards the message raised; each card's state is fetched with `listConsents`. */
   consents?: MessageConsent[];
+  /** The form the message asked the person to fill in; shown again while it's the latest message. */
+  form?: MessageForm;
   created_at: string;
+}
+
+export interface MessageForm {
+  form: FormSchema;
+  submit_label?: string;
+  /** The lead form it shows, which its file fields upload against */
+  lead_form?: string;
 }
 
 export interface MessageConsent {

@@ -1,7 +1,7 @@
 import type { FormAnswer } from "../../../../components/chat/ChatFormRenderer";
 import type { LiveTokenUsageUpdate } from "../../../../components/chat/TokenUsageIndicator";
 import type { ConsentDecision, ConsentRequest } from "../../../../types/consent";
-import type { GeneratedImageResponse, Message, SSEEvent } from "../../../../types/message";
+import type { GeneratedImageResponse, Message, MessageForm, SSEEvent } from "../../../../types/message";
 
 /** The day's token totals a TOKEN_USAGE_UPDATE carries, or null when it names no model. */
 export function liveTokenUsageFrom(event: SSEEvent): LiveTokenUsageUpdate | null {
@@ -75,6 +75,15 @@ export function mergeLatestPage(current: Message[], latest: Message[]): Message[
   const arrived = latest.filter((message) => !known.has(message.message_id));
   if (arrived.length === 0 && saved.length === current.length) return current;
   return [...saved, ...arrived];
+}
+
+/**
+ * The form still waiting for the person when a chat is opened: the one the latest message asked, if that message
+ * is the assistant's. A reply of any kind spends it (a plan's approval is checked against the latest message).
+ */
+export function formAwaitingAnswer(messages: Message[]): MessageForm | null {
+  const latest = messages[messages.length - 1];
+  return latest?.role === "assistant" && latest.form ? latest.form : null;
 }
 
 /**
