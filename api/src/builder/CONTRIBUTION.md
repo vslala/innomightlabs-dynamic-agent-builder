@@ -9,7 +9,7 @@ once the person approves. Ila is not a stored agent; she is built per turn on th
 
 ```text
 src/builder/
-  router.py        /builder routes: session form, sessions, send-message (SSE), active turn, events, stop, connect
+  router.py        /builder routes: session form, sessions, change model, send-message (SSE), active turn, events, stop, connect
   models.py        BuilderSession (the draft between turns), ILA_AGENT_ID, request/response shapes
   repository.py    BuilderSessionRepository
   ila.py           ila_agent(session) builds the Agent for a turn; ila_architecture(); GREETING
@@ -120,6 +120,9 @@ which ones are open. A `plan_id` is a hash of the draft and params, not an entit
 - **Long texts are shown as they change.** A plan that rewrites a long text (`is_long_text`, in `blueprints/kinds/base.py`,
   the same rule that gives it its own account page) opens the drawing on its before and after, line by line, so the
   person approves the words. It's computed from the plan, for every kind; don't add per-field diffs.
+- **Changing her model.** `PUT /builder/{id}/model` re-validates the provider and model like a new session and saves them
+  on the session; the next turn builds her on them (`ila_agent`). The draft, plan and build are untouched, and it's
+  refused (409) while a turn is running.
 - **Settings.** Blueprint limits live in `config/settings.py` (`BLUEPRINT_*`); nothing builder-specific is read from env here.
 
 ## How to add a tool for Ila

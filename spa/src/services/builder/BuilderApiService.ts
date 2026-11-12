@@ -24,6 +24,18 @@ class BuilderApiService {
     });
   }
 
+  async getSession(conversationId: string): Promise<BuilderSession> {
+    return httpClient.get<BuilderSession>(`/builder/${conversationId}`);
+  }
+
+  /** Switch the provider and model Ila thinks with, from her next turn. Refused while she is working. */
+  async changeModel(conversationId: string, agentProvider: string, agentModel?: string): Promise<BuilderSession> {
+    return httpClient.put<BuilderSession>(`/builder/${conversationId}/model`, {
+      agent_provider: agentProvider,
+      agent_model: agentModel || null,
+    });
+  }
+
   async listSessions(): Promise<BuilderSession[]> {
     return httpClient.get<BuilderSession[]>("/builder/sessions");
   }

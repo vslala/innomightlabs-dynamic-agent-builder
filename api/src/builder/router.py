@@ -5,6 +5,8 @@ Endpoints:
     GET  /builder/session-form                          Provider and model to build with (a SchemaForm)
     POST /builder/sessions                              Start a building conversation, greeted by Ila
     GET  /builder/sessions                              The person's building conversations
+    GET  /builder/{conversation_id}                     One building conversation, with the provider and model it runs on
+    PUT  /builder/{conversation_id}/model               Change the provider and model Ila thinks with, from her next turn
     POST /builder/{conversation_id}/send-message        A turn with Ila (SSE, like an agent's send-message)
     GET  /builder/{conversation_id}/turns/active        The running turn, to reattach
     GET  /builder/{conversation_id}/turns/{id}/events   Tail a turn's transcript
@@ -22,6 +24,7 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 import src.form_models as form_models
+from src.accounts.owner import Owner
 from src.iam.dependencies import get_owner, get_principal
 from src.agents.schemas import get_create_agent_form
 from src.agents.service import validate_provider_model
@@ -101,15 +104,7 @@ async def session_form(request: Request) -> form_models.Form:
 async def create_session(request: Request, body: CreateBuilderSessionRequest) -> BuilderSessionResponse:
     user_email: str = request.state.user_email
     owner = get_owner(request)
-    model = body.agent_model or None
-    try:
-        validate_provider_model(owner, body.agent_provider, model)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="Choose a provider and model your account has set up. An account admin sets providers up in "
-            "Settings > Provider Configuration.",
-        )
+    model = _validated_model(owner, body)
 
     conversation = ConversationRepository().save(Conversation(
         title="Building with Ila", agent_id=ILA_AGENT_ID, account_id=owner.account_id, created_by=owner.user_id,
@@ -133,6 +128,26 @@ async def create_session(request: Request, body: CreateBuilderSessionRequest) ->
 @router.get("/sessions", response_model=list[BuilderSessionResponse])
 async def list_sessions(request: Request) -> list[BuilderSessionResponse]:
     return [_response(session) for session in BuilderSessionRepository().list_in(get_owner(request).member_pk)]
+
+
+@router.get("/{conversation_id}", response_model=BuilderSessionResponse)
+async def get_session(target: Annotated[BuildTarget, Depends(resolve_build)]) -> BuilderSessionResponse:
+    return _response(target.session)
+
+
+@router.put("/{conversation_id}/model", response_model=BuilderSessionResponse)
+async def change_model(
+    request: Request,
+    body: CreateBuilderSessionRequest,
+    target: Annotated[BuildTarget, Depends(resolve_build)],
+) -> BuilderSessionResponse:
+    """Switch the provider and model mid-conversation. The draft, plan and build stay as they are; Ila's next turn
+    runs on the new model. Not while she's working, so one turn never changes model half-way."""
+    if ConversationTurnRepository().find_active(target.conversation.conversation_id):
+        raise HTTPException(status_code=409, detail="Ila is still working. Change her model once she has finished.")
+    session = target.session
+    session.provider, session.model = body.agent_provider, _validated_model(get_owner(request), body)
+    return _response(BuilderSessionRepository().save(session))
 
 
 @router.post("/{conversation_id}/send-message")
@@ -226,6 +241,20 @@ async def stream_turn_events(turn: Annotated[ConversationTurn, Depends(resolve_b
 @router.post("/{conversation_id}/turns/{turn_id}/stop", status_code=204)
 async def stop(turn: Annotated[ConversationTurn, Depends(resolve_build_turn)]) -> None:
     stop_turn(turn)
+
+
+def _validated_model(owner: Owner, body: CreateBuilderSessionRequest) -> str | None:
+    """The model to save: the provider and model must be ones the account has set up."""
+    model = body.agent_model or None
+    try:
+        validate_provider_model(owner, body.agent_provider, model)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a provider and model your account has set up. An account admin sets providers up in "
+            "Settings > Provider Configuration.",
+        )
+    return model
 
 
 def _response(session: BuilderSession) -> BuilderSessionResponse:

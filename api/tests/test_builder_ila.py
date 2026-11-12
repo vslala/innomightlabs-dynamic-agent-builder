@@ -10,6 +10,7 @@ from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete
 from src.agents.architectures import get_agent_architecture
 from src.agents.architectures import vishwakarma
 from src.agents.repository import AgentRepository
+from src.agents.turns import ConversationTurn, ConversationTurnRepository
 from src.agents.runtime_state import AgentTurnState
 from src.blueprints.approval import APPROVE, REVISE, approval_label
 from src.agents.models import Agent
@@ -302,6 +303,52 @@ def test_a_session_starts_with_adas_greeting(test_client, auth_headers, account)
     assert (greeting.role, greeting.content) == ("assistant", GREETING)
     listed = test_client.get("/builder/sessions", headers=auth_headers).json()
     assert [item["conversation_id"] for item in listed] == [conversation_id]
+
+
+def test_the_model_can_be_changed_mid_conversation_and_the_next_turn_uses_it(test_client, auth_headers, session):
+    changed = test_client.put(
+        f"/builder/{session.conversation_id}/model", headers=auth_headers,
+        json={"agent_provider": "Bedrock", "agent_model": "claude-haiku"},
+    )
+
+    assert changed.status_code == 200, changed.text
+    assert (changed.json()["provider"], changed.json()["model"]) == ("Bedrock", "claude-haiku")
+    shown = test_client.get(f"/builder/{session.conversation_id}", headers=auth_headers).json()
+    assert shown["model"] == "claude-haiku"
+    stored = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
+    assert ila_agent(stored).agent_model == "claude-haiku"
+
+
+def test_changing_the_model_keeps_the_draft_and_plan(test_client, auth_headers, session):
+    session.draft_yaml, session.plan_id = SITE_AGENT, "abc123"
+    BuilderSessionRepository().save(session)
+
+    test_client.put(f"/builder/{session.conversation_id}/model", headers=auth_headers,
+                    json={"agent_provider": "Bedrock", "agent_model": "claude-haiku"})
+
+    stored = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
+    assert (stored.draft_yaml, stored.plan_id) == (SITE_AGENT, "abc123")
+
+
+def test_the_model_must_be_one_the_account_has_and_isnt_changed_while_ila_works(
+    test_client, auth_headers, session
+):
+    refused = test_client.put(f"/builder/{session.conversation_id}/model", headers=auth_headers,
+                              json={"agent_provider": "OpenAI", "agent_model": "gpt-x"})
+    assert refused.status_code == 400 and "Provider Configuration" in refused.json()["detail"]
+
+    ConversationTurnRepository().create(
+        ConversationTurn(conversation_id=session.conversation_id, agent_id=ILA_AGENT_ID, created_by=TEST_USER_EMAIL)
+    )
+    busy = test_client.put(f"/builder/{session.conversation_id}/model", headers=auth_headers,
+                           json={"agent_provider": "Bedrock", "agent_model": "claude-haiku"})
+    assert busy.status_code == 409
+    assert BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).model != "claude-haiku"
+
+
+def test_another_persons_build_has_no_model_to_change(test_client, auth_headers, account):
+    response = test_client.put("/builder/not-a-build/model", headers=auth_headers, json={"agent_provider": "Bedrock"})
+    assert response.status_code == 404
 
 
 def test_send_message_runs_ila_through_the_injected_architecture(test_client, auth_headers, session, monkeypatch):

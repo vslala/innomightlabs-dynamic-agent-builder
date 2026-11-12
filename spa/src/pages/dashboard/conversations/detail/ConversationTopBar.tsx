@@ -1,4 +1,4 @@
-import { Bug, ChevronLeft, Maximize2, Minimize2, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Bug, ChevronLeft, Cpu, Maximize2, Minimize2, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { Button } from "../../../../components/ui/button";
 import {
   DropdownMenu,
@@ -20,6 +20,8 @@ interface ConversationTopBarProps {
   expanded?: boolean;
   onBack: () => void;
   onEdit: () => void;
+  /** Given only where the conversation's model can be changed, as in a conversation with Ila. */
+  onChangeModel?: () => void;
   onDelete: () => void;
   onDebugChange: (enabled: boolean) => void;
   onExpandedChange?: (expanded: boolean) => void;
@@ -35,6 +37,7 @@ export function ConversationTopBar({
   expanded,
   onBack,
   onEdit,
+  onChangeModel,
   onDelete,
   onDebugChange,
   onExpandedChange,
@@ -64,6 +67,12 @@ export function ConversationTopBar({
             <Pencil />
             Edit details
           </DropdownMenuItem>
+          {onChangeModel && (
+            <DropdownMenuItem onSelect={onChangeModel}>
+              <Cpu />
+              Change model
+            </DropdownMenuItem>
+          )}
           <DropdownMenuCheckboxItem checked={debugEnabled} onCheckedChange={onDebugChange}>
             <Bug />
             Show tool details

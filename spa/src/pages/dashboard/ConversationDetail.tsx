@@ -50,6 +50,7 @@ import {
 } from "../../types/message";
 import { ConversationTopBar } from "./conversations/detail/ConversationTopBar";
 import { ComposerAttachments } from "./conversations/detail/ComposerAttachments";
+import { ChangeIlaModelDialog } from "./conversations/detail/ChangeIlaModelDialog";
 import { EditConversationDialog, type ConversationEdits } from "./conversations/detail/EditConversationDialog";
 import { GenerateImageDialog } from "./conversations/detail/GenerateImageDialog";
 import { StreamingImagePreview, type StreamingImage } from "./conversations/detail/StreamingImagePreview";
@@ -94,6 +95,7 @@ export function ConversationDetail() {
   const compact = useMediaQuery(COMPACT_QUERY);
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isChangingModel, setIsChangingModel] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -1026,6 +1028,7 @@ export function ConversationDetail() {
         expanded={compact ? undefined : isExpanded}
         onBack={backToConversations}
         onEdit={() => setIsEditing(true)}
+        onChangeModel={isIlaConversation ? () => setIsChangingModel(true) : undefined}
         onDelete={() => setIsDeleteDialogOpen(true)}
         onDebugChange={setDebugEnabled}
         onExpandedChange={setIsExpanded}
@@ -1192,6 +1195,14 @@ export function ConversationDetail() {
         onOpenChange={setIsEditing}
         onSave={handleUpdate}
       />
+
+      {isIlaConversation && (
+        <ChangeIlaModelDialog
+          conversationId={conversation.conversation_id}
+          open={isChangingModel}
+          onOpenChange={setIsChangingModel}
+        />
+      )}
 
       <ConfirmationDialog
         open={isDeleteDialogOpen}
