@@ -14,7 +14,6 @@ import {
   AlertBanner,
   LoadingState,
   InlineEmptyState,
-  ListRow,
   Select,
   SelectContent,
   SelectItem,
@@ -46,6 +45,8 @@ import { defaultAgentService } from "../../services/settings/DefaultAgentService
 import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
 import { ImageReadingSettingsCard } from "./ImageReadingSettingsCard";
+import { ProviderRow } from "./ProviderRow";
+import { providerTitle, removalPrompt } from "./providerLabels";
 import styles from "./Settings.module.css";
 import { platform } from "../../platform";
 
@@ -65,14 +66,6 @@ const isKeyValueRecord = (value: FormValue): value is Record<string, string> => 
   && !Array.isArray(value)
 );
 
-// Provider ids are stored on agents, so the two ways into OpenAI get readable titles here.
-const PROVIDER_TITLES: Record<string, string> = {
-  OpenAI: "OpenAI (OAuth)",
-  OpenAIAPI: "OpenAI (API key)",
-};
-
-const providerTitle = (providerName: string): string => PROVIDER_TITLES[providerName] ?? providerName;
-
 /** Shown to members on the account's settings, which only its admins change. */
 const MANAGED_BY_ADMINS = "Your account's admins manage this. Your agents use it.";
 
@@ -85,7 +78,9 @@ export function Settings() {
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [openaiConnecting, setOpenaiConnecting] = useState(false);
-  const [openaiDisconnecting, setOpenaiDisconnecting] = useState(false);
+  // The provider whose saved credentials the person is being asked to delete, and whether that is under way.
+  const [providerToRemove, setProviderToRemove] = useState<string | null>(null);
+  const [removingProvider, setRemovingProvider] = useState(false);
   const [smartSuggestionSettings, setSmartSuggestionSettings] = useState<SmartSuggestionSettings | null>(null);
   const [smartSuggestionSchema, setSmartSuggestionSchema] = useState<FormSchema | null>(null);
   const [smartSuggestionLoading, setSmartSuggestionLoading] = useState(true);
@@ -203,20 +198,22 @@ export function Settings() {
     }
   };
 
-  const handleOpenAIDisconnect = async () => {
-    setOpenaiDisconnecting(true);
+  const handleRemoveProvider = async () => {
+    if (!providerToRemove) return;
+    setRemovingProvider(true);
     setError(null);
     try {
-      await providerSettingsService.deleteProviderSettings("OpenAI");
+      await providerSettingsService.deleteProviderSettings(providerToRemove);
       await loadProviders();
-      if (configuringProvider === "OpenAI") {
+      if (configuringProvider === providerToRemove) {
         setConfiguringProvider(null);
       }
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to disconnect OpenAI. Please try again."));
-      console.error("Error disconnecting OpenAI:", err);
+      setError(getErrorMessage(err, `Failed to remove ${providerTitle(providerToRemove)}. Please try again.`));
+      console.error("Error removing provider:", err);
     } finally {
-      setOpenaiDisconnecting(false);
+      setRemovingProvider(false);
+      setProviderToRemove(null);
     }
   };
 
@@ -717,44 +714,13 @@ export function Settings() {
                     </div>
                   ) : (
                     // Show provider row
-                    <ListRow
+                    <ProviderRow
                       key={provider.provider_name}
-                      icon={
-                        provider.is_configured ? (
-                          <CheckCircle className={styles.providerConfiguredIcon} />
-                        ) : (
-                          <AlertCircle className={styles.providerUnconfiguredIcon} />
-                        )
-                      }
-                      title={providerTitle(provider.provider_name)}
-                      subtitle={
-                        provider.provider_name === "OpenAI"
-                          ? (provider.is_configured ? "Connected via OAuth" : "Not connected")
-                          : (provider.is_configured ? "Configured" : "Not configured")
-                      }
-                      trailing={canManage &&
-                        <Inline gap="xs" wrap={false}>
-                          {provider.provider_name === "OpenAI" && provider.is_configured && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleOpenAIDisconnect}
-                              disabled={openaiDisconnecting}
-                            >
-                              {openaiDisconnecting ? "Disconnecting..." : "Disconnect"}
-                            </Button>
-                          )}
-                          <Button
-                            variant={provider.is_configured ? "outline" : "default"}
-                            size="sm"
-                            onClick={() => handleConfigureClick(provider.provider_name)}
-                          >
-                            {provider.provider_name === "OpenAI"
-                              ? (provider.is_configured ? "Reconnect" : "Connect")
-                              : (provider.is_configured ? "Update" : "Configure")}
-                          </Button>
-                        </Inline>
-                      }
+                      provider={provider}
+                      canManage={canManage}
+                      removing={removingProvider && providerToRemove === provider.provider_name}
+                      onConfigure={() => handleConfigureClick(provider.provider_name)}
+                      onRemove={() => setProviderToRemove(provider.provider_name)}
                     />
                   )
                 )}
@@ -863,6 +829,20 @@ export function Settings() {
       <ImageReadingSettingsCard />
 
       {userInfo && <DeleteAccountCard email={userInfo.email} />}
+
+      {/* Remove Provider Confirmation Dialog */}
+      <ConfirmationDialog
+        open={providerToRemove !== null}
+        onOpenChange={(open) => { if (!open && !removingProvider) setProviderToRemove(null); }}
+        title={providerToRemove ? removalPrompt(providerToRemove).title : ""}
+        description={providerToRemove ? removalPrompt(providerToRemove).description : ""}
+        confirmText={providerToRemove ? removalPrompt(providerToRemove).confirm : "Remove"}
+        cancelText="Keep it"
+        onConfirm={handleRemoveProvider}
+        variant="destructive"
+        loading={removingProvider}
+        loadingText={providerToRemove ? removalPrompt(providerToRemove).busy : "Removing..."}
+      />
 
       {/* Cancel Subscription Confirmation Dialog */}
       <ConfirmationDialog
