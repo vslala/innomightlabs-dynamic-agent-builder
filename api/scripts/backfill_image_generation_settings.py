@@ -48,8 +48,14 @@ from src.settings.repository import ProviderSettingsRepository  # noqa: E402
 DREW_WITH_OWN_MODEL = frozenset(p.name for p in PROVIDERS if p.images is not None)
 
 
-def agents(table: Any) -> Iterator[Agent]:
-    yield from (Agent.from_dynamo_item(item) for item in _scan(table, "Agent"))
+def agents(table: Any, skipped: Counter[str] | None = None) -> Iterator[Agent]:
+    for item in _scan(table, "Agent"):
+        # Agents saved before accounts existed have none; they belong to no account's setting.
+        if "account_id" not in item:
+            if skipped is not None:
+                skipped["agent from before accounts (no account_id)"] += 1
+            continue
+        yield Agent.from_dynamo_item(item)
 
 
 def saved_settings(table: Any) -> Iterator[ImageGenerationSettings]:
@@ -131,8 +137,13 @@ def main() -> None:
     args = parser.parse_args()
 
     table = get_dynamodb_resource().Table(settings.dynamodb_table)
+    # Where this will read and write: a shell that exports a local DYNAMODB_ENDPOINT overrides what `railway run`
+    # brings, and the first sign is a "table not found" or, worse, a write to the wrong table.
+    print(f"table {settings.dynamodb_table} at {settings.dynamodb_endpoint or 'AWS ' + settings.aws_region}")
     image_settings = ImageGenerationSettingsRepository()
-    to_write, skipped = settings_to_write(agents(table), saved_settings(table), ProviderSettingsRepository())
+    old_agents: Counter[str] = Counter()
+    to_write, skipped = settings_to_write(agents(table, old_agents), saved_settings(table), ProviderSettingsRepository())
+    skipped.update(old_agents)
 
     for setting in to_write:
         print(f"{'write' if args.apply else 'would write'}: account {setting.account_id} -> "

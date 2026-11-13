@@ -109,6 +109,21 @@ def test_settings_that_draw_and_accounts_without_the_provider_are_left_alone(dyn
     assert skipped == {"OpenAIAPI is no longer configured": 1}
 
 
+def test_an_agent_from_before_accounts_is_skipped_and_counted_not_a_crash(dynamodb_table):
+    """Production still holds agents saved before accounts existed: no `account_id`."""
+    provider_set_up("OpenAIAPI")
+    agent_on("OpenAIAPI", "gpt-5.5")
+    table = get_dynamodb_resource().Table(settings.dynamodb_table)
+    table.put_item(Item={"pk": "Agent#legacy", "sk": "Agent#legacy", "entity_type": "Agent", "agent_id": "legacy"})
+    script = load_script()
+    old_agents: dict = script.Counter()
+
+    kept = list(script.agents(table, old_agents))
+
+    assert [a.agent_provider for a in kept] == ["OpenAIAPI"]
+    assert dict(old_agents) == {"agent from before accounts (no account_id)": 1}
+
+
 def test_a_dry_run_writes_nothing_and_apply_writes_the_setting(dynamodb_table, monkeypatch, capsys):
     provider_set_up("OpenAIAPI")
     agent_on("OpenAIAPI", "gpt-5.5")

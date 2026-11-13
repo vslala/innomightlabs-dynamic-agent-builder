@@ -98,6 +98,15 @@ say "OpenAI". `tests/test_responses_wire.py` asserts that the OpenAI request bod
   Gemini both use it.
 - **P6, not yet run:** a real `gemini-*-image` call (the config fields and the `inline_data` part).
 
+**Backfill run (2026-11-13).** Applied to production: three accounts, all on the ChatGPT sign-in, each given
+`OpenAI / gpt-6.1-sol`; 18 agent records from before accounts existed were skipped. A second dry run found nothing
+left to write. Two things the production run showed that the tests had not:
+- Production holds agents with no `account_id` (saved before accounts existed). `Agent.from_dynamo_item` can't parse
+  them, so the script now skips and counts them.
+- A shell that exports `DYNAMODB_ENDPOINT` (the local DynamoDB) keeps it under `railway run`, which only overrides
+  the variables Railway defines. The first attempt went to the local database and found no table. The script now
+  prints its table and endpoint before doing anything.
+
 ## 1. Goal
 
 1. Add **Grok (xAI)** as a provider. An account adds an xAI key and can then:
@@ -812,10 +821,13 @@ Record the answers in an "Implementation notes" section at the top.
 Every phase is built on `main`, so they ship as one deploy. In order:
 
 1. **Probes P1–P6 (§8)**, each one curl with a real key. Fix anything they show before deploying.
-2. **Backfill, before the deploy.** The script runs from this checkout, so it already uses the new catalogs:
-   `railway run uv run python scripts/backfill_image_generation_settings.py` (dry run). Check the accounts it
-   would write, then run it with `--apply`. Doing it before the deploy means no account that drew through its
-   OpenAI agent stops drawing in between.
+2. **Backfill.** Run it from this checkout, so it uses the new catalogs, and with the shell's local endpoint unset
+   (it prints the table it is pointed at first):
+   `env -u DYNAMODB_ENDPOINT railway run -s "InnomightLabs API" uv run python scripts/backfill_image_generation_settings.py`
+   (dry run), then `--apply`. **Order matters for OpenAI API-key accounts:** the deployed code still treats a saved
+   setting as a chat model hosting the drawing tool, so a setting that names `gpt-image-*` breaks drawing until the
+   new code is deployed. Run the dry run first; if it would write an `OpenAIAPI` setting, apply after the deploy.
+   ChatGPT sign-in accounts are safe either way.
 3. **Deploy** the API (`scripts/deploy_prod_railway.sh`) and the SPA together. The SPA reads provider titles and the
    OAuth sign-in from `GET /settings/providers`, which only the new API sends.
 4. **Terraform** (Lambda env): `OPENAI_IMAGE_GENERATION_BACKEND` is gone from `lambda.tf`. Apply when convenient;
