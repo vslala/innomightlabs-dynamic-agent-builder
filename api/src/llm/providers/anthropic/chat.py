@@ -13,7 +13,7 @@ from src.llm.messages import (
     normalize_messages,
     split_system_messages,
 )
-from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.chat import LLMEvent, LLMProvider, StopReason, stop_reason_of
 from src.llm.tools import normalize_anthropic_tools
 import logging
 

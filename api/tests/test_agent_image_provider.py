@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from src.agents.image_generation.models import ImageGenerationOptions
-from src.agents.image_generation.provider import CodexOpenAIImageGenerationProvider
+from src.llm.images import ImageGenerationOptions
+from src.llm.providers import provider as provider_named
 
 
 PNG_1X1_B64 = (
@@ -59,10 +59,10 @@ class FakeAsyncClient:
 @pytest.mark.asyncio
 async def test_codex_provider_extracts_final_image_result(monkeypatch):
     monkeypatch.setattr(
-        "src.agents.image_generation.provider.httpx.AsyncClient",
+        "src.llm.wire.responses_images.httpx.AsyncClient",
         FakeAsyncClient,
     )
-    provider = CodexOpenAIImageGenerationProvider()
+    provider = provider_named("OpenAI").images
 
     images = await provider.generate(
         prompt="red pixel",

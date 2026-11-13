@@ -29,7 +29,7 @@ from src.agents.tool_runtime import ToolExecutionOutcome
 from src.agents.turn_runtime import AgentTurnRuntime, emit_turn_event, use_turn_runtime
 from src.common import MAX_TOOL_ITERATIONS
 from src.llm.events import SSEEvent, SSEEventType
-from src.llm.providers.base import LLMEvent
+from src.llm.chat import LLMEvent
 from src.token_usage.models import TokenUsageRecord
 from src.token_usage.service import TokenUsageService
 

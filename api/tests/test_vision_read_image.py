@@ -13,7 +13,7 @@ from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_runtime.contexts import NativeToolContext
 from src.agents.tool_runtime.specs import ToolCategory
 from src.llm.messages import ImageBlock, TextBlock
-from src.llm.providers.base import LLMEvent
+from src.llm.chat import LLMEvent
 from src.messages.models import Message
 from src.messages.repositories import DynamoDBMessageRepository
 from src.skills.models import ActorKind

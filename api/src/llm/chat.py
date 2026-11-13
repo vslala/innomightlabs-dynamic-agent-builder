@@ -1,9 +1,6 @@
-"""
-Base LLM Provider interface.
+"""The chat contract: what every provider's chat client implements, and the events it streams.
 
-All LLM providers must implement this interface to ensure consistent
-behavior across different AI model backends.
-"""
+It sits outside `providers/` so the shared wire formats (`wire/`) can use it without loading every provider."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

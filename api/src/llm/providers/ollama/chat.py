@@ -20,7 +20,7 @@ from src.config.settings import settings
 from src.llm.messages import ImageBlock, TextBlock, ToolResultBlock, ToolUseBlock, normalize_messages
 from src.llm.providers.ollama.connection import OllamaConnection
 from src.llm.tools import normalize_tool_definitions
-from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.chat import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
 

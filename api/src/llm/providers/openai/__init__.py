@@ -1,10 +1,13 @@
 """OpenAI through a ChatGPT sign-in: the Codex backend, reached with the admin's OAuth token."""
 
+from src.config import settings
 from src.form_models import Form, FormInput, FormInputType
 from src.llm.providers.provider import OAuthSignIn, Provider
+from src.llm.wire.responses import responses_refuses_model
+from src.llm.wire.responses_images import ResponsesToolImages
 
 from .catalog import OpenAICatalog
-from .chat import OpenAIProvider, responses_refuses_model
+from .chat import OpenAIProvider
 from .credentials import OpenAISignInCredentials
 
 OPENAI = Provider(
@@ -34,4 +37,10 @@ OPENAI = Provider(
     ),
     credentials=OpenAISignInCredentials(),
     refuses_model=responses_refuses_model,
+    images=ResponsesToolImages(
+        url=settings.openai_oauth_responses_url,
+        credential_field="access_token",
+        label="OpenAI Codex",
+        provider_key="openai_codex",
+    ),
 )

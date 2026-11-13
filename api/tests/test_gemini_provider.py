@@ -4,7 +4,7 @@ from google.genai import types
 
 from src.crypto import encrypt
 from src.llm.providers import provider as provider_named
-from src.llm.providers.base import LLMEvent
+from src.llm.chat import LLMEvent
 from src.llm.providers.gemini.catalog import GeminiCatalog
 from src.llm.providers.gemini.chat import GeminiProvider
 from src.settings.models import ProviderSettings
@@ -124,7 +124,7 @@ def test_gemini_provider_extracts_text_and_tool_use_events_from_chunk():
     assert events[1].thought_signature == b"gemini-signature"
 
 
-def test_gemini_provider_factory_supports_gemini():
+def test_gemini_chats_through_its_provider_definition():
     provider = provider_named("Gemini").chat
 
     assert isinstance(provider, GeminiProvider)

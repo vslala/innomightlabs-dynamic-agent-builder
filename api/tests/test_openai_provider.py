@@ -4,94 +4,19 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.auth.openai_oauth import OpenAICredentials
-from src.llm.providers.openai.chat import OpenAIProvider
+from src.llm.providers.openai.chat import CODEX_EXTRAS, OpenAIProvider, codex_headers
+from src.llm.wire.responses import responses_body
 
 
-def test_openai_codex_request_body_uses_responses_envelope():
-    provider = OpenAIProvider()
+def test_the_codex_body_carries_reasoning_between_turns():
+    body = responses_body("gpt-5.5", [{"role": "user", "content": "Hello"}], None, **CODEX_EXTRAS)
 
-    body = provider._request_body(
-        model_id="gpt-5.5",
-        instructions="You are helpful.",
-        request_messages=[{"role": "user", "content": "Hello"}],
-        tools=[
-            {
-                "type": "function",
-                "name": "search",
-                "description": "Search records",
-                "parameters": {"type": "object", "properties": {}},
-            }
-        ],
-    )
-
-    assert body["model"] == "gpt-5.5"
-    assert body["store"] is False
-    assert body["stream"] is True
-    assert body["tool_choice"] == "auto"
-    assert body["parallel_tool_calls"] is False
     assert body["include"] == ["reasoning.encrypted_content"]
     assert body["text"] == {"verbosity": "medium"}
-    assert body["tools"] == [
-        {
-            "type": "function",
-            "name": "search",
-            "description": "Search records",
-            "parameters": {"type": "object", "properties": {}},
-        }
-    ]
-    assert body["input"] == [
-        {
-            "role": "user",
-            "content": [{"type": "input_text", "text": "Hello"}],
-        }
-    ]
-
-
-def test_tool_calls_reach_codex_as_function_calls_not_text():
-    """Text-encoded calls taught the model to type its next call, which ended long tool runs with no answer."""
-    context = [
-        {"role": "user", "content": "Update PROJ-1"},
-        {
-            "role": "assistant",
-            "content": [
-                {"text": "Updating it now."},
-                {"toolUse": {"toolUseId": "call_1", "name": "call_mcp_tool", "input": {"tool_name": "editJiraIssue"}}},
-            ],
-        },
-        {"role": "user", "content": [{"toolResult": {"toolUseId": "call_1", "content": [{"text": '{"ok": true}'}]}}]},
-        {"role": "user", "content": [{"text": "Continue."}]},
-    ]
-
-    items = OpenAIProvider()._convert_messages(context)
-
-    assert items == [
-        {"role": "user", "content": [{"type": "input_text", "text": "Update PROJ-1"}]},
-        {"role": "assistant", "content": [{"type": "output_text", "text": "Updating it now."}]},
-        {
-            "type": "function_call",
-            "call_id": "call_1",
-            "name": "call_mcp_tool",
-            "arguments": '{"tool_name": "editJiraIssue"}',
-        },
-        {"type": "function_call_output", "call_id": "call_1", "output": '{"ok": true}'},
-        {"role": "user", "content": [{"type": "input_text", "text": "Continue."}]},
-    ]
-
-
-def test_a_large_tool_result_reaches_codex_whole():
-    result = "x" * 250_000
-    context = [
-        {"role": "assistant", "content": [{"toolUse": {"toolUseId": "call_1", "name": "search", "input": {}}}]},
-        {"role": "user", "content": [{"toolResult": {"toolUseId": "call_1", "content": [{"text": result}]}}]},
-    ]
-
-    items = OpenAIProvider()._convert_messages(context)
-
-    assert items[-1]["output"] == result
+    assert body["reasoning"] is None
 
 
 def test_openai_codex_request_headers_include_account_and_sse_metadata(monkeypatch):
-    provider = OpenAIProvider()
     credentials = OpenAICredentials(
         access_token="access-token",
         expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -99,7 +24,7 @@ def test_openai_codex_request_headers_include_account_and_sse_metadata(monkeypat
     )
     monkeypatch.setattr("src.llm.providers.openai.chat.settings.openai_oauth_originator", "codex_cli_rs")
 
-    headers = provider._request_headers(credentials)
+    headers = codex_headers(credentials)
 
     assert headers["Authorization"] == "Bearer access-token"
     assert headers["Accept"] == "text/event-stream"
@@ -107,32 +32,6 @@ def test_openai_codex_request_headers_include_account_and_sse_metadata(monkeypat
     assert headers["ChatGPT-Account-ID"] == "chatgpt-account-1"
     assert headers["session-id"]
     assert headers["thread-id"] == headers["session-id"]
-
-
-def test_openai_provider_extracts_usage_defensively():
-    # NOTE: field names here match the public Responses API shape
-    # (response.usage.{input_tokens,output_tokens}); this has
-    # not been confirmed against real traffic from the custom OAuth/Codex
-    # backend. This test documents the best-effort, defensive parsing.
-    event_with_usage = {
-        "type": "response.completed",
-        "response": {
-            "usage": {
-                "input_tokens": 12,
-                "output_tokens": 8,
-            }
-        },
-    }
-    assert OpenAIProvider._extract_usage(event_with_usage) == (12, 8)
-
-    # Malformed/missing shapes never raise -- they default to zeros.
-    assert OpenAIProvider._extract_usage({"type": "response.completed"}) == (0, 0)
-    assert OpenAIProvider._extract_usage(
-        {"type": "response.completed", "response": {"usage": "not-a-dict"}}
-    ) == (0, 0)
-    assert OpenAIProvider._extract_usage(
-        {"type": "response.completed", "response": None}
-    ) == (0, 0)
 
 
 class FakeOpenAIStreamResponse:
@@ -191,7 +90,7 @@ class FakeOpenAIAsyncClient:
 
 
 async def test_openai_provider_yields_usage_event_from_response_completed(monkeypatch):
-    monkeypatch.setattr("src.llm.providers.openai.chat.httpx.AsyncClient", FakeOpenAIAsyncClient)
+    monkeypatch.setattr("src.llm.wire.responses.httpx.AsyncClient", FakeOpenAIAsyncClient)
 
     provider = OpenAIProvider()
     credentials = {
@@ -227,7 +126,7 @@ def _stream_of(*events):
 
 
 async def _events(monkeypatch, *stream_events):
-    monkeypatch.setattr("src.llm.providers.openai.chat.httpx.AsyncClient", _stream_of(*stream_events))
+    monkeypatch.setattr("src.llm.wire.responses.httpx.AsyncClient", _stream_of(*stream_events))
     credentials = {
         "access_token": "token",
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
@@ -257,5 +156,5 @@ async def test_a_completed_codex_response_is_a_normal_end(monkeypatch):
 
 
 async def test_a_failed_codex_response_raises_instead_of_ending_silently(monkeypatch):
-    with pytest.raises(RuntimeError, match="OpenAI response failed"):
+    with pytest.raises(RuntimeError, match="OpenAI OAuth response failed"):
         await _events(monkeypatch, {"type": "response.failed", "response": {"error": {"code": "server_error"}}})

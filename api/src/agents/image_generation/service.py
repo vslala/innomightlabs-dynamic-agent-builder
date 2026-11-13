@@ -10,11 +10,9 @@ from src.agents.image_generation.capabilities import (
 )
 from src.agents.image_generation.models import (
     GeneratedImageResponse,
-    GeneratedImageBytes,
     GenerateImageRequest,
     GenerateImageResponse,
 )
-from src.agents.image_generation.provider import ImageProviderFactory
 from src.agents.image_generation.settings import ImageGenerationSettingsRepository
 from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.models import Agent
@@ -23,6 +21,8 @@ from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.credentials import load_provider_credentials
+from src.llm.images import GeneratedImageBytes, ImageGenerator
+from src.llm.providers import provider
 from src.messages.models import Message, MessageImage
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.models import ProviderSettings
@@ -45,6 +45,7 @@ class Artist:
     provider_name: str
     model: str
     provider_settings: ProviderSettings
+    images: ImageGenerator
 
 
 class AgentImageGenerationError(Exception):
@@ -74,7 +75,6 @@ class AgentImageGenerationService:
         message_repo: MessageRepository | None = None,
         provider_settings_repo: ProviderSettingsRepository | None = None,
         storage: ConversationMediaStorage | None = None,
-        provider_factory: ImageProviderFactory | None = None,
         image_settings_repo: ImageGenerationSettingsRepository | None = None,
     ):
         self.agent_repo = agent_repo or AgentRepository()
@@ -82,7 +82,6 @@ class AgentImageGenerationService:
         self.message_repo = message_repo or get_message_repository("dynamodb")
         self.provider_settings_repo = provider_settings_repo or get_provider_settings_repository()
         self.storage = storage or ConversationMediaStorage()
-        self.provider_factory = provider_factory or ImageProviderFactory()
         self.image_settings_repo = image_settings_repo or ImageGenerationSettingsRepository()
 
     async def generate_for_dashboard(
@@ -234,7 +233,7 @@ class AgentImageGenerationService:
 
     async def _draw(self, artist: "Artist", request: GenerateImageRequest) -> list[GeneratedImageBytes]:
         credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
-        return await self.provider_factory.get(artist.provider_name).generate(
+        return await artist.images.generate(
             prompt=request.prompt,
             credentials=credentials,
             model=artist.model,
@@ -247,7 +246,7 @@ class AgentImageGenerationService:
         """The drawing's progress as SSE events; the finished pictures are appended to `drawn`, since an async
         generator can't also return them."""
         credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
-        async for provider_event in self.provider_factory.get(artist.provider_name).stream_generate(
+        async for provider_event in artist.images.stream_generate(
             prompt=request.prompt,
             credentials=credentials,
             model=artist.model,
@@ -377,7 +376,8 @@ class AgentImageGenerationService:
             provider_name, model = str(chosen.provider_name), str(chosen.model_name)
         else:
             provider_name, model = agent.agent_provider, agent.agent_model or ""
-        if not image_capability_registry.supports(provider_name, model, ImageCapability.GENERATION):
+        images = provider(provider_name).images
+        if not images or not image_capability_registry.supports(provider_name, model, ImageCapability.GENERATION):
             raise ImageGenerationNotSupportedError(
                 f"{provider_name} can't draw images. An admin can choose a provider that can in Settings > "
                 "Image Generation."
@@ -390,7 +390,7 @@ class AgentImageGenerationService:
         provider_settings = self.provider_settings_repo.find_by_provider(agent.account_id, provider_name)
         if not provider_settings:
             raise AgentImageGenerationError(f"Provider '{provider_name}' is not configured.")
-        return Artist(provider_name=provider_name, model=model, provider_settings=provider_settings)
+        return Artist(provider_name=provider_name, model=model, provider_settings=provider_settings, images=images)
 
     async def _load_credentials(self, provider_name: str, provider_settings) -> dict[Any, Any]:
         return cast(

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from src.dream.planner import MAX_PARSE_ATTEMPTS, DreamPlanner
 from src.dream.sessions import DreamSession, DreamSessionChunk
-from src.llm.providers.base import LLMEvent, LLMProvider
+from src.llm.chat import LLMEvent, LLMProvider
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.messages.models import Message
 

@@ -9,7 +9,7 @@ from src.llm.providers.anthropic.chat import AnthropicProvider
 from src.llm.providers.bedrock.chat import BedrockProvider
 from src.llm.providers.gemini.chat import GeminiProvider
 from src.llm.providers.ollama.chat import OllamaProvider
-from src.llm.providers.openai.chat import OpenAIProvider
+from src.llm.wire.responses import responses_input
 
 PNG = b"\x89PNG\r\n\x1a\nfake-image-bytes"
 PNG_BASE64 = base64.b64encode(PNG).decode("ascii")
@@ -50,10 +50,10 @@ def test_bedrock_sends_raw_bytes_with_the_format_name() -> None:
     assert converted.messages[0]["content"][0] == {"image": {"format": "png", "source": {"bytes": PNG}}}
 
 
-def test_openai_sends_an_input_image_data_url() -> None:
-    items = OpenAIProvider()._convert_messages(_image_turn())
+def test_the_responses_api_gets_an_input_image_data_url() -> None:
+    _, items = responses_input(_image_turn())
 
-    content = items[1]["content"]
+    content = items[0]["content"]
     assert content[0] == {
         "type": "input_image",
         "image_url": f"data:image/png;base64,{PNG_BASE64}",

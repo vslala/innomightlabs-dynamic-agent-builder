@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from src.dream.models import DreamPlan
 from src.dream.sessions import DreamSessionChunk
-from src.llm.providers.base import LLMProvider
+from src.llm.chat import LLMProvider
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.smart_suggestions.strategies import _extract_json_object
 

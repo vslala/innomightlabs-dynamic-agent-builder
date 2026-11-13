@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from src.agents.image_generation.models import GeneratedImageBytes, GenerateImageRequest, ImageGenerationStreamEvent
+from src.agents.image_generation.models import GenerateImageRequest
 from src.agents.image_generation.service import AgentImageGenerationService, ImageGenerationNotSupportedError
 from src.agents.image_generation.settings import ImageGenerationSettings, ImageGenerationSettingsRepository
 from src.agents.models import Agent
@@ -16,9 +16,11 @@ from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt
 from src.llm.events import SSEEventType
+from src.llm.images import GeneratedImageBytes, ImageGenerationStreamEvent
 from src.messages.repositories import get_message_repository
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
+from tests.llm_doubles import use_provider
 from tests.mock_data import TEST_USER_EMAIL, account_for, agent_fields, conversation_fields
 
 ACCOUNT = account_for(TEST_USER_EMAIL)
@@ -55,24 +57,17 @@ class FakeDrawing:
                                     prompt=kwargs["prompt"])]
 
 
-class FakeDrawingFactory:
-    def __init__(self):
-        self.drawing = FakeDrawing()
-        self.asked_for: list[str] = []
-
-    def get(self, provider_name):
-        self.asked_for.append(provider_name)
-        return self.drawing
+@pytest.fixture
+def drawing(monkeypatch) -> FakeDrawing:
+    """OpenAIAPI draws through the fake; every other provider keeps its real drawer."""
+    fake = FakeDrawing()
+    use_provider(monkeypatch, "OpenAIAPI", images=fake)
+    return fake
 
 
 @pytest.fixture
-def factory() -> FakeDrawingFactory:
-    return FakeDrawingFactory()
-
-
-@pytest.fixture
-def service(dynamodb_table, factory) -> AgentImageGenerationService:
-    return AgentImageGenerationService(storage=FakeStorage(), provider_factory=factory)
+def service(dynamodb_table, drawing) -> AgentImageGenerationService:
+    return AgentImageGenerationService(storage=FakeStorage())
 
 
 def _provider_set_up(name: str) -> None:
@@ -113,15 +108,14 @@ async def _skill_draws(service: AgentImageGenerationService, agent: Agent, conve
 
 
 @pytest.mark.asyncio
-async def test_the_skill_draws_with_the_accounts_setting_not_the_agents_model(service, factory):
+async def test_the_skill_draws_with_the_accounts_setting_not_the_agents_model(service, drawing):
     _drawing_with("OpenAIAPI", "gpt-5.5")
     agent, conversation = _agent_and_conversation(provider="Anthropic")
 
     events = await _skill_draws(service, agent, conversation)
 
-    assert factory.asked_for == ["OpenAIAPI"]
-    assert factory.drawing.asked["model"] == "gpt-5.5"
-    assert factory.drawing.asked["credentials"] == {"api_key": "sk-test"}
+    assert drawing.asked["model"] == "gpt-5.5"
+    assert drawing.asked["credentials"] == {"api_key": "sk-test"}
     assert [event.event_type for event in events] == [
         SSEEventType.IMAGE_GENERATION_STARTED,
         SSEEventType.LIFECYCLE_NOTIFICATION,

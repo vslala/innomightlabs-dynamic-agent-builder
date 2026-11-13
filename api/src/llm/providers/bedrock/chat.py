@@ -21,7 +21,7 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.tools import normalize_tool_definitions
-from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.chat import LLMEvent, LLMProvider, StopReason, stop_reason_of
 from src.llm.providers.bedrock.catalog import BEDROCK_REGION, FALLBACK_MODELS, BedrockCatalog
 
 log = logging.getLogger(__name__)

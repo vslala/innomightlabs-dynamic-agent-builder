@@ -119,8 +119,9 @@ setting, else the agent's own provider and model (how it worked before, so exist
 be a provider `image_capability_registry` says can draw (OpenAI and OpenAIAPI: every model they offer, so a new model
 needs no change). `list_agents` adds `image_generation` to `capabilities` when the account has the setting on. The
 Image Generation skill declares `requires: [image_generation]`, so it can only be installed once the setting is on
-(`src/skills/requirements.py`). `ImageProviderFactory` picks the adapter by provider; add a provider by adding its
-registry entry, its adapter and the tag in its model lister. Anthropic and Ollama have no image models, so they can
+(`src/skills/requirements.py`). A provider draws through its `Provider.images` (`src/llm/providers/`; the Responses
+`image_generation` tool is `src/llm/wire/responses_images.py`); a new one needs its `images`, a registry entry and the
+tag in its catalog. Anthropic and Ollama have no image models, so they can
 only draw through the account's setting. `AgentImageGenerationService` persists the turn's messages,
 `ConversationMediaStorage` stores bytes in the private bucket under
 `agents/{agent_id}/conversations/{conversation_id}/messages/{message_id}/`.

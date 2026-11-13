@@ -10,7 +10,7 @@ from src.llm import model_fallback
 from src.llm.model_fallback import ModelFallbackProvider, pick_substitute
 from src.llm.models import ModelInfo
 from src.llm.providers import provider
-from src.llm.providers.base import LLMEvent, LLMProvider
+from src.llm.chat import LLMEvent, LLMProvider
 from src.settings.models import ProviderSettings
 from tests.llm_doubles import ListedModels
 

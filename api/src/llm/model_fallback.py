@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Optional
 
 from src.llm.models import ModelInfo
-from src.llm.providers.base import LLMEvent, LLMProvider
+from src.llm.chat import LLMEvent, LLMProvider
 from src.llm.providers.provider import Provider
 from src.settings.models import ProviderSettings
 

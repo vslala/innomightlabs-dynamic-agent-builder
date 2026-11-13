@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.agents.image_generation.models import ImageGenerationOptions
-from src.agents.image_generation.provider import ImageProviderFactory, OpenAIAPIImageGenerationProvider
+from src.llm.images import ImageGenerationOptions
+from src.llm.providers import provider
 from src.agents.image_generation.service import (
     AgentImageGenerationError,
     AgentImageGenerationService,
@@ -142,10 +142,9 @@ async def test_the_openai_api_adapter_draws_with_the_api_key_at_the_public_endpo
             sent.update(url=url, authorization=(headers or {}).get("Authorization"), model=(json or {}).get("model"))
             return FakeStreamResponse()
 
-    monkeypatch.setattr("src.agents.image_generation.provider.httpx.AsyncClient", RecordingClient)
-    assert isinstance(ImageProviderFactory().get("OpenAIAPI"), OpenAIAPIImageGenerationProvider)
+    monkeypatch.setattr("src.llm.wire.responses_images.httpx.AsyncClient", RecordingClient)
 
-    images = await ImageProviderFactory().get("OpenAIAPI").generate(
+    images = await provider("OpenAIAPI").images.generate(
         prompt="red pixel", credentials={"api_key": "sk-test"}, model="gpt-5.5",
         options=ImageGenerationOptions(output_format="png"),
     )
@@ -157,5 +156,5 @@ async def test_the_openai_api_adapter_draws_with_the_api_key_at_the_public_endpo
 @pytest.mark.asyncio
 async def test_the_openai_api_adapter_wants_an_api_key():
     with pytest.raises(ValueError, match="api_key"):
-        await ImageProviderFactory().get("OpenAIAPI").generate(
+        await provider("OpenAIAPI").images.generate(
             prompt="x", credentials={}, model="gpt-5.5", options=ImageGenerationOptions())

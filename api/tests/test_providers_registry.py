@@ -9,12 +9,9 @@ from src.llm.providers import PROVIDERS, find_provider, provider
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 PROVIDER_PACKAGES = SRC / "llm" / "providers"
-#: Still name providers until phases 2-3 of docs/LLD-llm-providers-and-image-models.md replace them with
-#: `Provider.images` and catalog capabilities. Remove each entry with its file.
-NOT_YET_MOVED = {
-    SRC / "agents" / "image_generation" / "capabilities.py",
-    SRC / "agents" / "image_generation" / "provider.py",
-}
+#: Still names providers until phase 3 of docs/LLD-llm-providers-and-image-models.md replaces it with capabilities the
+#: catalogs set. Remove the entry with the file.
+NOT_YET_MOVED = {SRC / "agents" / "image_generation" / "capabilities.py"}
 
 
 def test_names_and_titles_are_unique():

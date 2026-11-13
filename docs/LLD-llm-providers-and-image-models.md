@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (phases 0–1 built) |
+| Status | 🚧 In progress (phases 0–2 built) |
 | Owner | vslala |
 | Last reviewed | 2026-11-12 |
 | Depends on | [api/src/llm/CONTRIBUTION.md](../api/src/llm/CONTRIBUTION.md), [LLD-multimodal-image-generation-v1.md](../api/docs/LLD-multimodal-image-generation-v1.md), [LLD-image-input-and-read-image-tool.md](LLD-image-input-and-read-image-tool.md) |
@@ -33,6 +33,21 @@ service against moto; on the old code its skill tests fail with the production `
   phases 2–3 replace.
 - Tests stand in for a provider's parts with `tests/llm_doubles.py` (`use_provider`, `use_chat_everywhere`), which
   swaps the provider's entry in `PROVIDERS`.
+
+**Phase 2 (2026-11-13).** Built as designed, plus three steps the design had placed later or not at all:
+- **The chat contract moved to `src/llm/chat.py`** (from `providers/base.py`). `wire/` needs `LLMEvent`, and importing
+  anything under `providers/` runs the registry in its `__init__`, which imports `wire/` back. With the contract
+  beside `images.py`, `wire/` depends only on `chat.py`, `images.py`, `messages.py` and `tools.py`, and the
+  providers depend on `wire/`.
+- **The drawing value types moved to `src/llm/images.py`** (`ImageGenerationOptions`, `GeneratedImageBytes`,
+  `ImageGenerationStreamEvent`, the `ImageGenerator` protocol and the format helpers), one phase early. They had to
+  move before the `image_generation` tool parser could leave `agents/`.
+- **`Provider.images` replaced `ImageProviderFactory`** (planned for phase 1), and `agents/image_generation/provider.py`
+  is gone. `ResponsesToolImages(url, credential_field, label, provider_key)` is one value on `OPENAI` and one on
+  `OPENAI_API`. `ImageGenerator` keeps `generate` and `stream_generate` until phase 3 makes it `draw`.
+
+`stream_chat` now names the backend in a `response.failed` error ("OpenAI OAuth response failed"), where it used to
+say "OpenAI". `tests/test_responses_wire.py` asserts that the OpenAI request body is exactly the one sent before.
 
 ## 1. Goal
 

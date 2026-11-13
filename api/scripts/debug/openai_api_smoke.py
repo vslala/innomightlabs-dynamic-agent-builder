@@ -13,7 +13,7 @@ import os
 import sys
 
 from src.crypto import encrypt
-from src.llm.providers.base import LLMProvider
+from src.llm.chat import LLMProvider
 from src.llm.providers.openai_api import OPENAI_API
 from src.settings.models import ProviderSettings
 

@@ -16,7 +16,7 @@ from src.common import CAPACITY_WARNING_THRESHOLD, COMPACTION_TARGET
 from .repository import MemoryRepository
 
 if TYPE_CHECKING:
-    from src.llm.providers.base import LLMProvider
+    from src.llm.chat import LLMProvider
 
 log = logging.getLogger(__name__)
 

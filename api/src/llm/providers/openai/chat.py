@@ -1,174 +1,29 @@
-"""
-OpenAI LLM Provider.
+"""Chat through a ChatGPT sign-in: the Codex backend's Responses endpoint, with the admin's OAuth token."""
 
-Uses OAuth-backed Codex/ChatGPT responses endpoint.
-"""
+from __future__ import annotations
 
-import base64
-import json
-import logging
-from dataclasses import dataclass
+from collections.abc import AsyncIterator
+from typing import Any, Optional
 from uuid import uuid4
-from typing import Any, AsyncIterator, Optional, cast
-
-import httpx
 
 from src.auth.openai_oauth import OpenAICredentials, extract_account_id_from_access_token
-from src.config.settings import settings
-from src.llm.messages import (
-    ImageBlock,
-    ChatMessage,
-    TextBlock,
-    ToolResultBlock,
-    ToolUseBlock,
-    normalize_messages,
-    split_system_messages,
-)
-from src.llm.tools import normalize_tool_definitions
-from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
-
-log = logging.getLogger(__name__)
-
-# Reasons Codex gives in `response.incomplete`'s `incomplete_details`.
-OPENAI_INCOMPLETE_REASONS: dict[str, StopReason] = {
-    "max_output_tokens": "max_tokens",
-    "content_filter": "content_filter",
-}
+from src.config import settings
+from src.llm.chat import LLMEvent, LLMProvider
+from src.llm.wire.responses import responses_body, stream_chat
 
 DEFAULT_MODEL_NAME = "gpt-5.5"
-CODEX_INCLUDE_FIELDS = ["reasoning.encrypted_content"]
 
-
-@dataclass(frozen=True)
-class OpenAIRequestInput:
-    instructions: str
-    messages: list[ChatMessage]
+#: What the Codex backend expects beyond the common body: reasoning carried between turns as encrypted content, which
+#: needs `reasoning.encrypted_content` included, and its text verbosity.
+CODEX_EXTRAS: dict[str, Any] = {
+    "reasoning": None,
+    "include": ["reasoning.encrypted_content"],
+    "text": {"verbosity": "medium"},
+}
 
 
 class OpenAIProvider(LLMProvider):
-    """OpenAI provider using Responses API streaming."""
-
     default_model = DEFAULT_MODEL_NAME
-
-    #: Names the endpoint in logs and errors; the API-key subclass talks to a different one.
-    endpoint_label = "OpenAI OAuth"
-
-    def _extract_instructions_and_messages(self, messages: list[dict]) -> OpenAIRequestInput:
-        split = split_system_messages(normalize_messages(messages))
-        return OpenAIRequestInput(
-            instructions=split.system_prompt or "You are a helpful assistant.",
-            messages=split.conversation,
-        )
-
-    def _text_block_type_for_role(self, role: str) -> str:
-        # Codex backend expects assistant history as output blocks.
-        if role == "assistant":
-            return "output_text"
-        return "input_text"
-
-    def _normalize_tools(self, tools: list[dict]) -> list[dict]:
-        return [tool.to_openai() for tool in normalize_tool_definitions(tools)]
-
-    def _request_headers(self, credentials: OpenAICredentials) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {credentials.access_token}",
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        }
-        if settings.openai_oauth_originator:
-            headers["originator"] = settings.openai_oauth_originator
-        account_id = credentials.account_id or extract_account_id_from_access_token(credentials.access_token)
-        if account_id:
-            headers["ChatGPT-Account-ID"] = account_id
-        session_id = str(uuid4())
-        headers["session-id"] = session_id
-        headers["thread-id"] = session_id
-        return headers
-
-    def _request_body(
-        self,
-        model_id: str,
-        instructions: str,
-        request_messages: list[ChatMessage] | list[dict],
-        tools: list[dict] | None,
-    ) -> dict[str, Any]:
-        normalized_tools = self._normalize_tools(tools or [])
-        return {
-            "model": model_id,
-            "instructions": instructions,
-            "input": self._convert_messages(request_messages),
-            "tools": normalized_tools,
-            "tool_choice": "auto",
-            # The Codex OAuth backend can emit multiple tool calls in a single
-            # turn. This architecture has side-effecting tools such as memory
-            # writes, so execute tool calls sequentially across loop iterations.
-            "parallel_tool_calls": False,
-            "reasoning": None,
-            "store": False,
-            "stream": True,
-            "include": CODEX_INCLUDE_FIELDS,
-            "text": {"verbosity": "medium"},
-        }
-
-    def _convert_messages(self, messages: list[ChatMessage] | list[dict]) -> list[dict[str, Any]]:
-        """Text stays in chat messages; tool calls and their results become the Responses API's own items.
-
-        Sending them as text taught the model that a tool call is something it writes, so long tool runs
-        ended with the model typing a call instead of making one. See LLD-agent-loop-lost-final-answer.md.
-        """
-        # `all(isinstance(...))` over the elements does not narrow the
-        # container type for mypy, so the homogeneity this already checks at
-        # runtime has to be asserted with a cast.
-        normalized_messages = (
-            cast("list[ChatMessage]", messages)
-            if all(isinstance(message, ChatMessage) for message in messages)
-            else normalize_messages(cast("list[dict[Any, Any]]", messages))
-        )
-        items: list[dict[str, Any]] = []
-
-        for message in normalized_messages:
-            text_type = self._text_block_type_for_role(message.role)
-            texts: list[dict[str, Any]] = []
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    texts.append({"type": text_type, "text": block.text})
-                    continue
-                if isinstance(block, ImageBlock):
-                    texts.append(_input_image(block))
-                    continue
-                # Text said before a call belongs before it, so flush it into a message first.
-                items += _chat_message(message.role, texts)
-                texts = []
-                items.append(_tool_item(block))
-            items += _chat_message(message.role, texts)
-
-        return items
-
-    @staticmethod
-    def _extract_usage(event: dict[str, Any]) -> tuple[int, int]:
-        """Best-effort token usage extraction from a `response.completed` event.
-
-        NOTE: This backend is a custom OAuth/Codex Responses endpoint
-        (settings.openai_oauth_responses_url), not the public OpenAI API. The
-        field names below (response.usage.{input_tokens,output_tokens})
-        match the public Responses API shape, which is the best available
-        reference, but have NOT been confirmed against real traffic captured
-        from this backend. Every level is guarded with `.get(...)` and
-        defaults to 0 so a shape mismatch never breaks the stream -- confirm
-        against real captured payloads before relying on this data for
-        anything beyond best-effort telemetry.
-        """
-        try:
-            response_obj = event.get("response") or {}
-            usage = response_obj.get("usage") or {}
-            if not isinstance(usage, dict):
-                return 0, 0
-            prompt_tokens = int(usage.get("input_tokens", 0) or 0)
-            completion_tokens = int(usage.get("output_tokens", 0) or 0)
-            return prompt_tokens, completion_tokens
-        except Exception:
-            log.warning("Failed to parse OpenAI usage payload from response.completed event", exc_info=True)
-            return 0, 0
 
     async def stream_response(
         self,
@@ -177,193 +32,25 @@ class OpenAIProvider(LLMProvider):
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
-        typed_credentials = OpenAICredentials.model_validate(credentials)
-        async for event in self._stream_responses(
-            settings.openai_oauth_responses_url,
-            self._request_headers(typed_credentials),
-            messages,
-            tools,
-            model,
-        ):
+        body = responses_body(model or self.default_model, messages, tools, **CODEX_EXTRAS)
+        headers = codex_headers(OpenAICredentials.model_validate(credentials))
+        async for event in stream_chat(settings.openai_oauth_responses_url, headers, body, label="OpenAI OAuth"):
             yield event
 
-    async def _stream_responses(
-        self,
-        url: str,
-        headers: dict[str, str],
-        messages: list[dict],
-        tools: Optional[list[dict]],
-        model: Optional[str],
-    ) -> AsyncIterator[LLMEvent]:
-        """One streamed Responses API call. The Codex backend and the public API send the same events."""
-        model_id = model or DEFAULT_MODEL_NAME
-        request_input = self._extract_instructions_and_messages(messages)
-        body = self._request_body(
-            model_id,
-            request_input.instructions,
-            request_input.messages,
-            tools,
-        )
 
-        call_state: dict[str, dict[str, Any]] = {}
-        diagnostic_context = {
-            "model": model_id,
-            "message_count": len(messages),
-            "input_count": len(body.get("input", [])),
-            "tool_count": len(body.get("tools", [])),
-            "tool_names": [tool.get("name") for tool in body.get("tools", [])],
-        }
-
-        log.info(
-            "Calling %s responses endpoint with model %s, %d messages, %d tools",
-            self.endpoint_label,
-            model_id,
-            len(messages),
-            len(tools) if tools else 0,
-        )
-
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream(
-                "POST",
-                url,
-                headers=headers,
-                json=body,
-            ) as response:
-                upstream_request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
-                if not response.is_success:
-                    error_text = await response.aread()
-                    log.error(
-                        "%s responses HTTP error: status=%s request_id=%s context=%s",
-                        self.endpoint_label,
-                        response.status_code,
-                        upstream_request_id,
-                        diagnostic_context,
-                    )
-                    raise RuntimeError(
-                        f"{self.endpoint_label} responses error"
-                        f" ({response.status_code}, request_id={upstream_request_id}): "
-                        f"{error_text.decode('utf-8', errors='ignore')}"
-                    )
-
-                async for raw_line in response.aiter_lines():
-                    line = raw_line.strip()
-                    if not line.startswith("data:"):
-                        continue
-
-                    data = line[5:].strip()
-                    if not data or data == "[DONE]":
-                        continue
-
-                    try:
-                        event = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-
-                    event_type = event.get("type")
-                    if event_type == "response.output_text.delta":
-                        delta = event.get("delta", "")
-                        if delta:
-                            yield LLMEvent(type="text", content=delta)
-
-                    elif event_type == "response.output_item.added":
-                        item = event.get("item", {})
-                        if item.get("type") == "function_call":
-                            item_id = item.get("id", "")
-                            call_state[item_id] = {
-                                "tool_use_id": item.get("call_id", ""),
-                                "tool_name": item.get("name", ""),
-                                "arguments": "",
-                            }
-
-                    elif event_type == "response.function_call_arguments.delta":
-                        item_id = event.get("item_id", "")
-                        delta = event.get("delta", "")
-                        if item_id in call_state:
-                            call_state[item_id]["arguments"] += delta
-
-                    elif event_type == "response.function_call_arguments.done":
-                        item_id = event.get("item_id", "")
-                        state = call_state.get(item_id)
-                        if not state:
-                            continue
-
-                        try:
-                            tool_input = json.loads(state.get("arguments", "") or "{}")
-                        except json.JSONDecodeError:
-                            tool_input = {}
-
-                        yield LLMEvent(
-                            type="tool_use",
-                            tool_use_id=state.get("tool_use_id", ""),
-                            tool_name=state.get("tool_name", ""),
-                            tool_input=tool_input,
-                        )
-
-                    elif event_type in ("response.completed", "response.incomplete"):
-                        prompt_tokens, completion_tokens = self._extract_usage(event)
-                        yield LLMEvent(
-                            type="usage",
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=completion_tokens,
-                        )
-                        details = (event.get("response") or {}).get("incomplete_details") or {}
-                        yield LLMEvent(
-                            type="stop",
-                            content=stop_reason_of(details.get("reason"), OPENAI_INCOMPLETE_REASONS),
-                        )
-
-                    elif event_type == "response.failed":
-                        err = (event.get("response") or {}).get("error") or {}
-                        log.error(
-                            "OpenAI response failed: request_id=%s error=%s context=%s",
-                            upstream_request_id,
-                            err,
-                            diagnostic_context,
-                        )
-                        raise RuntimeError(f"OpenAI response failed (request_id={upstream_request_id}): {err}")
-
-                    elif event_type == "error":
-                        err = event.get("error") or {}
-                        request_id = (
-                            err.get("request_id")
-                            or err.get("requestId")
-                            or upstream_request_id
-                        )
-                        log.error(
-                            "OpenAI stream error event: request_id=%s error_type=%s error_code=%s context=%s",
-                            request_id,
-                            err.get("type"),
-                            err.get("code"),
-                            diagnostic_context,
-                        )
-                        raise RuntimeError(f"OpenAI stream error (request_id={request_id}): {err}")
-
-
-def _chat_message(role: str, texts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [{"role": role, "content": texts}] if texts else []
-
-
-def _input_image(block: ImageBlock) -> dict[str, Any]:
-    data = base64.b64encode(block.data).decode("ascii")
-    return {"type": "input_image", "image_url": f"data:{block.media_type};base64,{data}", "detail": "auto"}
-
-
-def _tool_item(block: ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
-    if isinstance(block, ToolUseBlock):
-        return {
-            "type": "function_call",
-            "call_id": block.id,
-            "name": block.name,
-            "arguments": json.dumps(block.input, ensure_ascii=True),
-        }
-    return {"type": "function_call_output", "call_id": block.tool_use_id, "output": block.content}
-
-
-def responses_refuses_model(exc: Exception) -> bool:
-    """`_stream_responses` raises RuntimeError("<label> responses error (<status>, ...): <body>"). The Codex backend
-    says "The '<model>' model is not supported when using Codex with a ChatGPT account"; the public API answers
-    `model_not_found` / "does not exist or you do not have access to it"."""
-    text = str(exc)
-    return "responses error (" in text and any(
-        marker in text for marker in ("model_not_found", "model is not supported", "does not exist")
-    )
+def codex_headers(credentials: OpenAICredentials) -> dict[str, str]:
+    """The headers the Codex CLI sends: the token, its ChatGPT account, and a fresh session per call."""
+    headers = {
+        "Authorization": f"Bearer {credentials.access_token}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    if settings.openai_oauth_originator:
+        headers["originator"] = settings.openai_oauth_originator
+    account_id = credentials.account_id or extract_account_id_from_access_token(credentials.access_token)
+    if account_id:
+        headers["ChatGPT-Account-ID"] = account_id
+    session_id = str(uuid4())
+    headers["session-id"] = session_id
+    headers["thread-id"] = session_id
+    return headers

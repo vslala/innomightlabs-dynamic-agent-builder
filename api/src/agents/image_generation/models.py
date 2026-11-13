@@ -1,9 +1,10 @@
 """Models for agent image generation."""
 
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from src.llm.images import ImageGenerationOptions
 
 
 class GenerateImageRequest(BaseModel):
@@ -14,7 +15,7 @@ class GenerateImageRequest(BaseModel):
     quality: str | None = Field(default=None, max_length=32)
     output_format: Literal["png", "jpeg", "webp"] = "png"
 
-    def options(self) -> "ImageGenerationOptions":
+    def options(self) -> ImageGenerationOptions:
         return ImageGenerationOptions(size=self.size, quality=self.quality, output_format=self.output_format)
 
 
@@ -41,43 +42,3 @@ class GenerateImageResponse(BaseModel):
     user_message_id: str
     assistant_message_id: str
     images: list[GeneratedImageResponse]
-
-
-@dataclass(frozen=True)
-class ImageGenerationOptions:
-    """Provider-neutral image generation options."""
-
-    size: str | None = None
-    quality: str | None = None
-    output_format: str = "png"
-
-
-@dataclass(frozen=True)
-class GeneratedImageBytes:
-    """Raw image result from a provider before storage."""
-
-    data: bytes
-    output_format: str
-    mime_type: str
-    prompt: str
-    revised_prompt: str | None = None
-    width: int | None = None
-    height: int | None = None
-    quality: str | None = None
-    background: str | None = None
-    provider_metadata: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class ImageGenerationStreamEvent:
-    """Provider stream event for image generation."""
-
-    kind: Literal["started", "generating", "partial", "image", "completed"]
-    image_b64: str | None = None
-    image: GeneratedImageBytes | None = None
-    output_format: str | None = None
-    mime_type: str | None = None
-    width: int | None = None
-    height: int | None = None
-    quality: str | None = None
-    message: str = ""

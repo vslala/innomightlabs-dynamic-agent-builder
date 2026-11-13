@@ -71,7 +71,7 @@ def _sse(*events: dict) -> list[str]:
 
 async def _events(monkeypatch, response: FakeStreamResponse, credentials=None, tools=None):
     seen: list[dict] = []
-    monkeypatch.setattr("src.llm.providers.openai.chat.httpx.AsyncClient", _fake_client(response, seen))
+    monkeypatch.setattr("src.llm.wire.responses.httpx.AsyncClient", _fake_client(response, seen))
     events = [
         event
         async for event in OpenAIAPIProvider().stream_response(

@@ -11,7 +11,6 @@ src/llm/
   providers/
     __init__.py      PROVIDERS (every provider, in Settings order), provider(name), find_provider(name)
     provider.py      Provider (one provider's parts), ModelCatalog, CredentialSource, StoredCredentials, OAuthSignIn
-    base.py          LLMProvider ABC (the chat contract), LLMEvent, StopReason, stop_reason_of
     <name>/          one package per provider:
       __init__.py      the Provider value: name, title, settings form, chat, catalog, refusal rule, ...
       chat.py          the LLMProvider that streams a response
@@ -19,9 +18,15 @@ src/llm/
     bedrock/         Claude via AWS (catalog also used by chat to map a model name to an id)
     anthropic/       Anthropic API key
     openai/          ChatGPT sign-in: Codex Responses API; credentials.py refreshes the OAuth token
-    openai_api/      OpenAI with an API key; its chat subclasses openai/chat.py, own endpoint and key
+    openai_api/      OpenAI with an API key: the same Responses wire, its own endpoint and key
     gemini/          Gemini API key
     ollama/          user-hosted Ollama (native /api/chat NDJSON); connection.py: endpoint validation and headers
+  wire/              wire formats more than one provider speaks, used by composition:
+    sse.py             sse_events: the JSON of each `data:` line
+    responses.py       the Responses API: input/tool conversion, responses_body, stream_chat, the refusal rule
+    responses_images.py  ResponsesToolImages: drawing with the Responses `image_generation` tool
+  chat.py            LLMProvider ABC (the chat contract), LLMEvent, StopReason, stop_reason_of
+  images.py          ImageGenerator (Provider.images) and what it takes and gives back
   models.py          ModelInfo
   model_fallback.py  ModelFallbackProvider: retries a vendor-refused stored model on a catalog substitute
   router.py          GET /llm/models/{provider}
@@ -87,12 +92,13 @@ carries `started_at`/`completed_at` for when the tool itself ran; the agentic lo
 
 1. `providers/<name>/chat.py`: subclass `LLMProvider`, implement `stream_response` using `normalize_messages`,
    `split_system_messages` and the matching `ToolDefinition.to_*` (add a converter in `tools.py` if the wire format is
-   new). Emit `usage` and exactly one `stop`, and set `default_model`. Model on `anthropic/chat.py` (simple) or
-   `openai_api/chat.py` (reuse by subclassing).
+   new). Emit `usage` and exactly one `stop`, and set `default_model`. Model on `anthropic/chat.py` (its own SDK) or
+   `openai_api/chat.py` (a known wire format from `wire/`).
 2. `providers/<name>/catalog.py`: a class with `list_models(provider_settings)` that falls back rather than raises.
    Read saved credentials with `stored_credentials(provider_settings)`.
 3. `providers/<name>/__init__.py`: the `Provider` value with its settings form, chat, catalog and a dated
-   `refuses_model` rule. Set `oauth` and `credentials` only for a provider signed into (see `openai/`).
+   `refuses_model` rule. Set `oauth` and `credentials` only for a provider signed into (see `openai/`), and `images`
+   for one that draws.
 4. List it in `PROVIDERS` (`providers/__init__.py`). Settings, the pickers and the SPA pick it up from there.
 5. Tests: a chat test beside `tests/test_anthropic_provider.py`, a catalog test like `tests/test_openai_models.py`.
    To stand in for a provider's parts elsewhere, use `tests/llm_doubles.py` (`use_provider`, `use_chat_everywhere`).
@@ -112,7 +118,8 @@ DynamoDB is involved (provider settings via `dynamodb_table`). Do not add live-n
 
 - Do keep providers stateless and credentials-in, events-out.
 - Do convert through `messages.py`/`tools.py`; one place per vendor format conversion.
-- Do subclass when a vendor speaks another's protocol (`OpenAIAPIProvider`); do not copy the stream parser.
+- Do reuse `wire/` when a vendor speaks a known format: build your URL, headers and body, then call it. Don't
+  subclass another provider's chat client, and don't copy a parser.
 - Do put anything that differs by provider on its `Provider`; don't branch on a provider's name anywhere.
 - Don't import from `src/agents` here; the dependency runs agents -> llm (the OpenAI catalogs still import the image
   capability registry for `capabilities` until it moves into the catalogs; do not add more).

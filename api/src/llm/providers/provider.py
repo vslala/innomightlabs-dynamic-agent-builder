@@ -15,9 +15,10 @@ from src.crypto import decrypt
 from src.form_models import Form
 from src.settings.models import ProviderSettings
 
-from .base import LLMProvider
+from src.llm.chat import LLMProvider
 
 if TYPE_CHECKING:
+    from src.llm.images import ImageGenerator
     from src.llm.models import ModelInfo
     from src.settings.repository import ProviderSettingsRepository
 
@@ -87,5 +88,7 @@ class Provider:
     credentials: CredentialSource = StoredCredentials()
     #: True when the vendor's error means "this model isn't available to you", so ModelFallbackProvider retries.
     refuses_model: Callable[[Exception], bool] = _never_refuses
+    #: How this provider draws, if it can (the account's Image Generation setting picks the model).
+    images: ImageGenerator | None = None
     #: Applies an agent's thinking mode to a call's credentials, for providers that have the knob.
     apply_thinking: Callable[[dict[str, Any], str | None], dict[str, Any]] | None = None
