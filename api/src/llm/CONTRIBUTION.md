@@ -20,7 +20,7 @@ src/llm/
     openai/          ChatGPT sign-in: Codex Responses API; credentials.py refreshes the OAuth token
     openai_api/      OpenAI with an API key: the same Responses wire, its own endpoint and key; images.py draws with
                      `gpt-image-*` on the images endpoint, streamed
-    gemini/          Gemini API key
+    gemini/          Gemini API key; images.py draws with `gemini-*-image` through `generateContent`
     ollama/          user-hosted Ollama (native /api/chat NDJSON); connection.py: endpoint validation and headers
     grok/            xAI with an API key: the Responses wire for chat; images.py draws on xAI's images endpoint
   wire/              wire formats more than one provider speaks, used by composition:
@@ -80,7 +80,8 @@ can hold a conversation, `IMAGE_UNDERSTANDING`, `IMAGE_GENERATION`. It reads the
 one (Anthropic `capabilities.image_input`, Bedrock `inputModalities`, Codex `input_modalities`, Ollama `/api/show`) and
 otherwise applies a dated rule beside its parsing (OpenAI API and Gemini publish none). xAI lists its chat and image
 models apart (`/v1/language-models`, `/v1/image-generation-models`), so Grok's image models are `IMAGE_GENERATION` only.
-The OpenAI API's `gpt-image-*` models are the same, by name, since `/v1/models` has no modality field. ChatGPT sign-in
+The OpenAI API's `gpt-image-*` models and Gemini's `*-image` / `nano-banana` models are the same, by name, since
+neither listing has a modality field. ChatGPT sign-in
 chat models are `CHAT` and `IMAGE_GENERATION`: they host the Responses drawing tool, the only way that backend draws. The agent picker offers `CHAT`
 models, Image Reading `CHAT` + `IMAGE_UNDERSTANDING`, Image Generation `IMAGE_GENERATION`, and a fallback substitute
 must be `CHAT`. A model that only draws stays in the catalog, tagged, rather than being filtered out. Only a provider

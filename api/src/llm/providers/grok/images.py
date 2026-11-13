@@ -6,12 +6,10 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-from src.llm.images import ImageGenerationOptions, ImageGenerationStreamEvent, generated_image
+from src.llm.images import ImageGenerationOptions, ImageGenerationStreamEvent, aspect_ratio_of, generated_image
 from src.llm.providers.grok.chat import GROK_API_BASE_URL
 from src.llm.wire.images_api import generate_images
 
-#: The image skill's OpenAI sizes in xAI's words; any other size lets xAI choose.
-ASPECT_RATIOS = {"1024x1024": "1:1", "1536x1024": "3:2", "1024x1536": "2:3"}
 #: xAI takes low, medium or auto, so OpenAI's "high" becomes xAI's best.
 QUALITIES = {"low": "low", "medium": "medium", "high": "medium"}
 
@@ -27,7 +25,8 @@ class GrokImages:
             "model": model,
             "prompt": prompt,
             "n": 1,
-            "aspect_ratio": ASPECT_RATIOS.get(options.size or "", "auto"),
+            # Any other size lets xAI choose
+            "aspect_ratio": aspect_ratio_of(options.size) or "auto",
             "quality": QUALITIES.get(options.quality or "", "auto"),
         }
 

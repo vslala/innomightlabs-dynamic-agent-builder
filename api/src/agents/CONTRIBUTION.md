@@ -115,8 +115,8 @@ Keep strong references to job tasks (`_running_jobs`): asyncio holds tasks weakl
 agent's model: an admin sets it in Settings > Image Generation (`ImageGenerationSettings`, `/image-generation/settings`,
 `agents/image_generation/settings.py` and `router.py`), choosing from models tagged `image_generation`
 (`FormOptionSourceType.IMAGE_GENERATION_MODELS`), which each provider's catalog tags (`ModelCapability.IMAGE_GENERATION`:
-every ChatGPT sign-in chat model, since it hosts the drawing tool; the OpenAI API key's `gpt-image-*` models; Grok's
-`grok-imagine-image*`). The save checks the model against that list, so
+every ChatGPT sign-in chat model, since it hosts the drawing tool; the OpenAI API key's `gpt-image-*` models; Gemini's
+`*-image` models; Grok's `grok-imagine-image*`). The save checks the model against that list, so
 `AgentImageGenerationService._artist_for` only reads the setting: no setting, no drawing, whatever the agent's model.
 It draws through the chosen provider's `Provider.images` (`src/llm/providers/`; the Responses `image_generation` tool is
 `src/llm/wire/responses_images.py`). Every agent response (`account_capabilities` in `router.py`) carries

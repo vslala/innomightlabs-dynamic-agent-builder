@@ -67,6 +67,15 @@ async def collect_images(events: AsyncIterator[ImageGenerationStreamEvent]) -> l
     return images
 
 
+#: The image skill speaks OpenAI's sizes; vendors that take an aspect ratio instead (xAI, Gemini) are given this.
+ASPECT_RATIOS = {"1024x1024": "1:1", "1536x1024": "3:2", "1024x1536": "2:3"}
+
+
+def aspect_ratio_of(size: str | None) -> str | None:
+    """The aspect ratio of one of the skill's sizes, or None for "auto" or a size it doesn't name."""
+    return ASPECT_RATIOS.get(size or "")
+
+
 @dataclass(frozen=True)
 class ImageDimensions:
     width: int | None

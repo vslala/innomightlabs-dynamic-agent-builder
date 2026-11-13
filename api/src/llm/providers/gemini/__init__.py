@@ -1,4 +1,4 @@
-"""Google Gemini, with an API key."""
+"""Google Gemini, with an API key: chat, and drawing with its image models."""
 
 from google.genai import errors as genai_errors
 
@@ -7,6 +7,7 @@ from src.llm.providers.provider import Provider
 
 from .catalog import GeminiCatalog
 from .chat import GeminiProvider
+from .images import GeminiImages
 
 GEMINI = Provider(
     name="Gemini",
@@ -19,4 +20,5 @@ GEMINI = Provider(
     chat=GeminiProvider(),
     catalog=GeminiCatalog(),
     refuses_model=lambda exc: isinstance(exc, genai_errors.ClientError) and exc.code == 404,
+    images=GeminiImages(),
 )

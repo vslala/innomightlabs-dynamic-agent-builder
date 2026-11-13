@@ -240,4 +240,4 @@ def test_gemini_models_fallback_when_live_list_fails(monkeypatch):
 
     models = GeminiCatalog().list_models(provider_settings)
 
-    assert [model.model_name for model in models] == ["gemini-2.5-flash", "gemini-2.5-pro"]
+    assert [model.model_name for model in models] == ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-image"]

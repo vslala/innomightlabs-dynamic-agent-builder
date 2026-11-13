@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (phases 0–4 and 5a built; probes P1–P5 and the backfill pending) |
+| Status | 🚧 In progress (all phases built; probes P1–P6, the backfill and the manual checks pending) |
 | Owner | vslala |
 | Last reviewed | 2026-11-12 |
 | Depends on | [api/src/llm/CONTRIBUTION.md](../api/src/llm/CONTRIBUTION.md), [LLD-multimodal-image-generation-v1.md](../api/docs/LLD-multimodal-image-generation-v1.md), [LLD-image-input-and-read-image-tool.md](LLD-image-input-and-read-image-tool.md) |
@@ -86,6 +86,17 @@ say "OpenAI". `tests/test_responses_wire.py` asserts that the OpenAI request bod
 - **P5, not yet run:** the stream's event names (`image_generation.partial_image`, `image_generation.completed`, each
   with `b64_json`) are from OpenAI's docs and haven't been seen live. The adapter ignores events it doesn't know, so
   a different name shows up as "completed without image output".
+
+**Phase 5b (2026-11-13).** Gemini draws with its image models:
+- **Catalog.** `providers/gemini/catalog.py` tags ids with `-image` or `nano-banana` (`IMAGE_MODEL_MARKERS`, dated)
+  as `IMAGE_GENERATION` only. They support the same `generateContent` as the chat models, so before this change they
+  were offered as chat models. `gemini-2.5-flash-image` joins the fallback list.
+- **Drawing.** `providers/gemini/images.py` (`GeminiImages`) calls `generate_content` with
+  `response_modalities=["TEXT", "IMAGE"]` and, for the skill's sizes, `image_config.aspect_ratio`, then reads the
+  picture from the response's `inline_data`.
+- **Shared.** The skill-size to aspect-ratio map (`ASPECT_RATIOS`, `aspect_ratio_of`) moved to `images.py`; Grok and
+  Gemini both use it.
+- **P6, not yet run:** a real `gemini-*-image` call (the config fields and the `inline_data` part).
 
 ## 1. Goal
 
@@ -792,20 +803,31 @@ Run the LLM suite in `api/src/llm/CONTRIBUTION.md`, then `uv run pytest tests -q
 | P3 | `/v1/language-models` and `/v1/image-generation-models`: is the list under `models` or `data`, and are `input_modalities` populated? | `_listing` reads whichever; missing modalities → `grok-4*` reads images |
 | P4 | `images/generations`: `quality` accepted with `grok-imagine-image-2.0`; output always JPEG; any `revised_prompt` | Drop `quality`; the format is sniffed anyway |
 | P5 | OpenAI `images/generations` with `stream: true`: are the events `image_generation.partial_image` / `image_generation.completed` with `b64_json`? | Rename them in `providers/openai_api/images.py` |
+| P6 | Gemini `generateContent` on `gemini-2.5-flash-image` with `response_modalities=["TEXT","IMAGE"]` and `image_config.aspect_ratio`: is the picture an `inline_data` part? | Read it where it is in `providers/gemini/images.py` |
 
 Record the answers in an "Implementation notes" section at the top.
 
 ## 9. Rollout
 
-1. Phase 0 ships on its own, now (it's a production bug).
-2. Phases 1–2 are refactors; deploy them when green.
-3. Phase 3: run `uv run python scripts/backfill_image_generation_settings.py` (dry run) against prod, check the
-   counts, run it with `--apply`, then deploy.
-4. Phase 4: run the probes, deploy, then a manual check. Add an xAI key; create an agent on `grok-4.7`; chat with a
-   tool call and an image; set Image Generation to `grok-imagine-image-2.0`; draw from that agent, from an OpenAI
-   agent and through the Image Generation skill.
+Every phase is built on `main`, so they ship as one deploy. In order:
 
-There's no Terraform and no table change: every item is keyed by provider name, and no name changes.
+1. **Probes P1–P6 (§8)**, each one curl with a real key. Fix anything they show before deploying.
+2. **Backfill, before the deploy.** The script runs from this checkout, so it already uses the new catalogs:
+   `railway run uv run python scripts/backfill_image_generation_settings.py` (dry run). Check the accounts it
+   would write, then run it with `--apply`. Doing it before the deploy means no account that drew through its
+   OpenAI agent stops drawing in between.
+3. **Deploy** the API (`scripts/deploy_prod_railway.sh`) and the SPA together. The SPA reads provider titles and the
+   OAuth sign-in from `GET /settings/providers`, which only the new API sends.
+4. **Terraform** (Lambda env): `OPENAI_IMAGE_GENERATION_BACKEND` is gone from `lambda.tf`. Apply when convenient;
+   nothing reads it.
+5. **Manual check.**
+   - Add an xAI key, create an agent on `grok-4.7`, and chat with a tool call and an image.
+   - Set Image Generation to `grok-imagine-image-2.0`, then to a `gpt-image-*` model (API key), then to a
+     `gemini-*-image` model. Each time, draw from a Grok agent, from an OpenAI agent and through the Image
+     Generation skill.
+   - Reconnect the ChatGPT sign-in from Settings to check the generic OAuth flow.
+
+There's no table change: every item is keyed by provider name, and no name changes.
 
 ## Related documentation
 
