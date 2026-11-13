@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Annotated
+from typing import Annotated
 
 import yaml  # type: ignore[import-untyped,unused-ignore]
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator

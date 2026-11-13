@@ -1,4 +1,5 @@
 import os
+import json as stdlib_json
 import logging
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -6,6 +7,7 @@ from decimal import Decimal
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
+from starlette.responses import JSONResponse as StarletteJSONResponse
 
 from src.auth import middleware
 from src.auth.router import router as auth_router
@@ -87,8 +89,6 @@ else:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Override JSONResponse to handle Decimal serialization from DynamoDB
-import json as stdlib_json
-from starlette.responses import JSONResponse as StarletteJSONResponse
 
 original_render = StarletteJSONResponse.render
 

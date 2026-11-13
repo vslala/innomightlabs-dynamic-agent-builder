@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 ROUTING_REGIONS = {"americas", "asia", "europe", "sea"}
 PLATFORM_REGIONS = {

@@ -6,7 +6,7 @@ Provides endpoints for users to manage custom memory blocks per agent.
 
 import logging
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer

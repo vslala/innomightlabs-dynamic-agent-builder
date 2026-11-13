@@ -6,7 +6,7 @@ which URLs are allowed or disallowed for crawling.
 """
 
 import httpx
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from typing import Optional
 import logging
@@ -127,7 +127,7 @@ class RobotsParser:
                     robots_url,
                     timeout=timeout,
                     follow_redirects=True,
-                    headers={"User-Agent": f"InnomightLabsCrawler/1.0 (+https://innomightlabs.com)"},
+                    headers={"User-Agent": "InnomightLabsCrawler/1.0 (+https://innomightlabs.com)"},
                 )
 
                 if response.status_code == 200:

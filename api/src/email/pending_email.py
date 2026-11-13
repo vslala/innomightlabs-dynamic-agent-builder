@@ -1,7 +1,7 @@
 """Pending email model and repository for failed email retry."""
 import logging
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Optional, List
 from enum import Enum
 

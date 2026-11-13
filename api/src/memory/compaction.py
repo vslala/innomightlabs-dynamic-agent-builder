@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from src.common import CAPACITY_WARNING_THRESHOLD, COMPACTION_TARGET
-from .models import CoreMemory
 from .repository import MemoryRepository
 
 if TYPE_CHECKING:

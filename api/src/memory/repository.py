@@ -222,7 +222,7 @@ class MemoryRepository:
         # Query for the actual archival item
         archival_response = self.table.query(
             KeyConditionExpression=Key("pk").eq(build_agent_user_pk(agent_id, user_id))
-            & Key("sk").begins_with(f"Archival#"),
+            & Key("sk").begins_with("Archival#"),
             FilterExpression=Attr("memory_id").eq(memory_id),
         )
         archival_items = archival_response.get("Items", [])
