@@ -30,7 +30,7 @@ import {
   type AgentAttachedCounts,
   type AgentResponse,
 } from "../../services/agents/AgentApiService";
-import { conversationApiService } from "../../services/conversations";
+import { useStartChat } from "./useStartChat";
 import { Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
 import { useFavoriteAgents } from "../../hooks/useFavoriteAgents";
 import { AgentCard } from "./AgentCard";
@@ -75,7 +75,6 @@ export function AgentsList() {
     null
   );
   const [isDeleting, setIsDeleting] = useState(false);
-  const [startingChatWith, setStartingChatWith] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<AgentSort>("recent");
   const [density, setDensity] = useState<"grid" | "list">("grid");
@@ -85,6 +84,9 @@ export function AgentsList() {
   const [shown, setShown] = useState(PAGE_SIZE);
   const { favorites, toggleFavorite } = useFavoriteAgents();
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+  const { startChat, startingWith: startingChatWith } = useStartChat((agent) =>
+    setToast({ message: `Couldn't start a chat with "${agent.agent_name}". Please try again.`, variant: "error" })
+  );
 
   useEffect(() => {
     if (!toast) return;
@@ -113,21 +115,6 @@ export function AgentsList() {
   useEffect(() => {
     agentApiService.getAttachedCounts().then(setAttached, (err) => console.error("Error loading attachments:", err));
   }, []);
-
-  const startChat = async (agent: AgentResponse) => {
-    setStartingChatWith(agent.agent_id);
-    try {
-      const conversation = await conversationApiService.createConversation({
-        title: `Chat with ${agent.agent_name}`,
-        agent_id: agent.agent_id,
-      });
-      navigate(`/dashboard/conversations/${conversation.conversation_id}`);
-    } catch (err) {
-      console.error("Error starting conversation:", err);
-      setToast({ message: `Couldn't start a chat with "${agent.agent_name}". Please try again.`, variant: "error" });
-      setStartingChatWith(null);
-    }
-  };
 
   const handleDelete = async () => {
     if (!selectedAgent) return;

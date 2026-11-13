@@ -7,7 +7,7 @@
 
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Pencil } from "lucide-react";
+import { MessageSquare, Pencil } from "lucide-react";
 
 import { SchemaForm } from "../../../components/forms";
 import { Button } from "../../../components/ui";
@@ -22,6 +22,7 @@ import { SetupCard } from "./overview/SetupCard";
 import { setupChecks, type SetupAction } from "./overview/setupChecks";
 import { ShareCard } from "./overview/ShareCard";
 import { useOverviewData, type Loaded } from "./overview/useOverviewData";
+import { useStartChat } from "../useStartChat";
 import { useAgentDetailContext } from "./types";
 import "./AgentOverviewPage.css";
 
@@ -31,6 +32,8 @@ export function AgentOverviewPage() {
   const data = useOverviewData(agent.agent_id);
   const [editing, setEditing] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [chatError, setChatError] = useState(false);
+  const { startChat, startingWith } = useStartChat(() => setChatError(true));
   const agentPath = `/dashboard/agents/${agent.agent_id}`;
 
   const skills = data.skills.state === "ready" ? data.skills.value : [];
@@ -73,10 +76,25 @@ export function AgentOverviewPage() {
       <div className="agent-overview">
         <section className="agent-overview-intro" aria-label="About this agent">
           <p>{agent.agent_description || "No description yet. Add one so people know what this agent is for."}</p>
-          <Button onClick={() => setEditing(true)}>
+          <Button
+            disabled={startingWith !== null}
+            onClick={() => {
+              setChatError(false);
+              void startChat(agent);
+            }}
+          >
+            <MessageSquare />
+            {startingWith ? "Starting…" : "Start chat"}
+          </Button>
+          <Button variant="outline" onClick={() => setEditing(true)}>
             <Pencil />
             Edit
           </Button>
+          {chatError ? (
+            <p className="agent-overview-error" role="alert">
+              Couldn't start a chat with {agent.agent_name}. Please try again.
+            </p>
+          ) : null}
         </section>
 
         <div className="agent-overview__main">
