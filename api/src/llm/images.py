@@ -49,15 +49,22 @@ class ImageGenerationStreamEvent:
 
 
 class ImageGenerator(Protocol):
-    """How one provider draws. Which of its models draw is its catalog's answer."""
+    """How one provider draws. Which of its models draw is its catalog's answer (`ModelCapability.IMAGE_GENERATION`)."""
 
-    async def generate(
+    def draw(
         self, *, prompt: str, credentials: dict[str, Any], model: str, options: ImageGenerationOptions
-    ) -> list[GeneratedImageBytes]: ...
+    ) -> AsyncIterator[ImageGenerationStreamEvent]:
+        """`started`, `generating`, any `partial` frames, one `image` per picture, `completed`. A vendor that can't
+        stream sends no `partial` events."""
+        ...
 
-    def stream_generate(
-        self, *, prompt: str, credentials: dict[str, Any], model: str, options: ImageGenerationOptions
-    ) -> AsyncIterator[ImageGenerationStreamEvent]: ...
+
+async def collect_images(events: AsyncIterator[ImageGenerationStreamEvent]) -> list[GeneratedImageBytes]:
+    """The pictures from a draw, for callers that don't stream (the widget, `/v1`)."""
+    images = [event.image async for event in events if event.kind == "image" and event.image]
+    if not images:
+        raise RuntimeError("Image generation completed without image output")
+    return images
 
 
 @dataclass(frozen=True)

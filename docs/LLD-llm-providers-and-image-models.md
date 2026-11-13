@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (phases 0–2 built) |
+| Status | 🚧 In progress (phases 0–3 built; run the backfill before deploying phase 3) |
 | Owner | vslala |
 | Last reviewed | 2026-11-12 |
 | Depends on | [api/src/llm/CONTRIBUTION.md](../api/src/llm/CONTRIBUTION.md), [LLD-multimodal-image-generation-v1.md](../api/docs/LLD-multimodal-image-generation-v1.md), [LLD-image-input-and-read-image-tool.md](LLD-image-input-and-read-image-tool.md) |
@@ -48,6 +48,17 @@ service against moto; on the old code its skill tests fail with the production `
 
 `stream_chat` now names the backend in a `response.failed` error ("OpenAI OAuth response failed"), where it used to
 say "OpenAI". `tests/test_responses_wire.py` asserts that the OpenAI request body is exactly the one sent before.
+
+**Phase 3 (2026-11-13).** Built as designed, with these specifics:
+- `chat_capabilities(reads_images=..., draws=...)` in `models.py` is how a catalog tags a chat model. Each catalog's
+  `reads_images` rule is public, so `tests/test_catalog_capabilities.py` tests it where it lives.
+- Ila's `account/models` page lists only `CHAT` models: it tells her what an agent can be given.
+- The drawing invariant is tested rather than enforced in code. Each provider's catalog is listed with the vendor
+  unreachable, and its fallback models draw only if the provider has `images`.
+- `OPENAI_IMAGE_GENERATION_BACKEND` only fed the deleted registry's `backend` field. It's removed from
+  `settings.py`, `scripts/deploy_prod_railway.sh`, `terraform/variables.tf` and `terraform/lambda.tf`.
+- `Agent.to_response(access, capabilities)` takes the account's capabilities from `account_capabilities()` in
+  `agents/router.py`. Create, read, update and list all use it.
 
 ## 1. Goal
 

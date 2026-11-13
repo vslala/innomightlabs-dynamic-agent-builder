@@ -21,8 +21,8 @@ SEES_IMAGES = {"enabled": True, "provider_name": "Bedrock", "model_name": "claud
 def bedrock_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     models = [
         ModelInfo(model_id="a", model_name="claude-3-haiku", display_name="Claude 3 Haiku", provider="bedrock",
-                  capabilities=["image_understanding"]),
-        ModelInfo(model_id="b", model_name="text-only", display_name="Text Only", provider="bedrock"),
+                  capabilities=["chat", "image_understanding"]),
+        ModelInfo(model_id="b", model_name="text-only", display_name="Text Only", provider="bedrock", capabilities=["chat"]),
     ]
     use_provider(monkeypatch, "Bedrock", catalog=ListedModels(models))
 

@@ -173,12 +173,6 @@ variable "conversation_media_presign_ttl_seconds" {
   default     = 900
 }
 
-variable "openai_image_generation_backend" {
-  description = "OpenAI image generation backend used by the API"
-  type        = string
-  default     = "codex_oauth"
-}
-
 variable "github_actions_repository" {
   description = "GitHub repository allowed to assume the artifact publisher role"
   type        = string

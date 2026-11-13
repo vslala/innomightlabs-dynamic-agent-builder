@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from src.accounts.owner import Owner
-from src.agents.image_generation.capabilities import ImageCapability
+from src.llm.models import ModelCapability
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.form_models import Form, FormInput, SelectOption
@@ -208,12 +208,12 @@ def load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
     ]
     choices = AgentModelChoices(
         providers=providers,
-        models=[option for option, _ in options],
+        models=[option for option, model in options if model.can(ModelCapability.CHAT)],
         vision_models=[
-            option for option, model in options if ImageCapability.UNDERSTANDING.value in model.capabilities
+            option for option, model in options if model.can(ModelCapability.CHAT, ModelCapability.IMAGE_UNDERSTANDING)
         ],
         image_generation_models=[
-            option for option, model in options if ImageCapability.GENERATION.value in model.capabilities
+            option for option, model in options if model.can(ModelCapability.IMAGE_GENERATION)
         ],
         catalog=catalog,
         unlisted=unlisted,

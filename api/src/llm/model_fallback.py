@@ -15,7 +15,7 @@ import time
 from collections.abc import AsyncIterator, Sequence
 from typing import Optional
 
-from src.llm.models import ModelInfo
+from src.llm.models import ModelCapability, ModelInfo
 from src.llm.chat import LLMEvent, LLMProvider
 from src.llm.providers.provider import Provider
 from src.settings.models import ProviderSettings
@@ -27,14 +27,14 @@ SUBSTITUTE_TTL_SECONDS = 3600
 
 
 def pick_substitute(
-    catalog: Sequence[ModelInfo], *, refused: Optional[str], capabilities: Sequence[str] = ()
+    catalog: Sequence[ModelInfo], *, refused: Optional[str], capabilities: Sequence[ModelCapability] = ()
 ) -> Optional[str]:
     """The first catalog model (catalogs come in the vendor's recommended order) other than the refused one
     that has every required capability."""
     for model in catalog:
         if refused in (model.model_name, model.model_id):
             continue
-        if all(capability in model.capabilities for capability in capabilities):
+        if model.can(*capabilities):
             return model.model_name
     return None
 
@@ -51,11 +51,12 @@ class ModelFallbackProvider(LLMProvider):
         provider: Provider,
         provider_settings: ProviderSettings,
         *,
-        capabilities: Sequence[str] = (),
+        capabilities: Sequence[ModelCapability] = (),
     ):
         self.provider = provider
         self.provider_settings = provider_settings
-        self.capabilities = tuple(capabilities)
+        # A substitute takes over a conversation, so it must chat, whatever else the caller needs
+        self.capabilities = (ModelCapability.CHAT, *capabilities)
 
     async def stream_response(
         self,

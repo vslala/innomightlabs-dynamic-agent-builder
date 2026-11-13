@@ -4,10 +4,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, cast
 
-from src.agents.image_generation.capabilities import (
-    ImageCapability,
-    image_capability_registry,
-)
 from src.agents.image_generation.models import (
     GeneratedImageResponse,
     GenerateImageRequest,
@@ -21,8 +17,8 @@ from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.credentials import load_provider_credentials
-from src.llm.images import GeneratedImageBytes, ImageGenerator
-from src.llm.providers import provider
+from src.llm.images import GeneratedImageBytes, ImageGenerator, collect_images
+from src.llm.providers import find_provider
 from src.messages.models import Message, MessageImage
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.models import ProviderSettings
@@ -233,11 +229,10 @@ class AgentImageGenerationService:
 
     async def _draw(self, artist: "Artist", request: GenerateImageRequest) -> list[GeneratedImageBytes]:
         credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
-        return await artist.images.generate(
-            prompt=request.prompt,
-            credentials=credentials,
-            model=artist.model,
-            options=request.options(),
+        return await collect_images(
+            artist.images.draw(
+                prompt=request.prompt, credentials=credentials, model=artist.model, options=request.options()
+            )
         )
 
     async def _draw_streaming(
@@ -246,7 +241,7 @@ class AgentImageGenerationService:
         """The drawing's progress as SSE events; the finished pictures are appended to `drawn`, since an async
         generator can't also return them."""
         credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
-        async for provider_event in artist.images.stream_generate(
+        async for provider_event in artist.images.draw(
             prompt=request.prompt,
             credentials=credentials,
             model=artist.model,
@@ -368,29 +363,25 @@ class AgentImageGenerationService:
         return AgentConversationContext(agent=agent, conversation=conversation)
 
     def _artist_for(self, agent: Agent) -> "Artist":
-        """Who draws for this agent: the account's Image Generation setting, else the agent's own provider and model
-        (how it worked before the setting, so existing agents carry on). Either must be a provider that can draw and
-        one the agent's account has set up."""
+        """Who draws for this agent: the account's Image Generation setting, whatever model the agent thinks with. Its
+        model was checked against the provider's catalog when the admin saved it."""
         chosen = self.image_settings_repo.find_in_account(agent.account_id)
-        if chosen and chosen.is_configured:
-            provider_name, model = str(chosen.provider_name), str(chosen.model_name)
-        else:
-            provider_name, model = agent.agent_provider, agent.agent_model or ""
-        images = provider(provider_name).images
-        if not images or not image_capability_registry.supports(provider_name, model, ImageCapability.GENERATION):
+        if not chosen or not chosen.is_configured:
+            raise ImageGenerationNotSupportedError(
+                "Image generation is off. An admin can turn it on in Settings > Image Generation."
+            )
+        provider_name, model = str(chosen.provider_name), str(chosen.model_name)
+        found = find_provider(provider_name)
+        if not found or not found.images:
             raise ImageGenerationNotSupportedError(
                 f"{provider_name} can't draw images. An admin can choose a provider that can in Settings > "
                 "Image Generation."
-                if chosen and chosen.is_configured
-                else "This agent's model can't draw images. An admin can set up image generation in Settings > "
-                "Image Generation."
             )
-
         # The agent's account's provider, whoever asks
         provider_settings = self.provider_settings_repo.find_by_provider(agent.account_id, provider_name)
         if not provider_settings:
             raise AgentImageGenerationError(f"Provider '{provider_name}' is not configured.")
-        return Artist(provider_name=provider_name, model=model, provider_settings=provider_settings, images=images)
+        return Artist(provider_name=provider_name, model=model, provider_settings=provider_settings, images=found.images)
 
     async def _load_credentials(self, provider_name: str, provider_settings) -> dict[Any, Any]:
         return cast(

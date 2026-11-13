@@ -12,13 +12,11 @@ import re
 
 import httpx
 
-from src.agents.image_generation.capabilities import image_capability_registry
 from src.config import settings
-from src.llm.models import ModelInfo
+from src.llm.models import ModelInfo, chat_capabilities
 from src.llm.providers.openai_api.chat import OPENAI_API_BASE_URL
 from src.llm.providers.provider import stored_credentials
 from src.settings.models import ProviderSettings
-from src.vision import capabilities as vision
 
 log = logging.getLogger(__name__)
 
@@ -68,10 +66,8 @@ class OpenAIAPICatalog:
                 model_name=slug,
                 display_name=f"[OpenAI API] {slug}",
                 provider="openai_api",
-                capabilities=[
-                    *image_capability_registry.capabilities_for("OpenAIAPI", slug),
-                    *vision.understanding(vision.openai_api_reads_images(slug)),
-                ],
+                # Every chat model hosts the Responses `image_generation` tool, so every one draws.
+                capabilities=chat_capabilities(reads_images=reads_images(slug), draws=True),
             )
             for slug in slugs
         ]
@@ -85,3 +81,8 @@ def is_chat_model(entry: object) -> bool:
         and model_id not in REFUSED_MODELS
         and not any(marker in model_id for marker in NON_CHAT_MARKERS)
     )
+
+
+def reads_images(model_id: str) -> bool:
+    """`/v1/models` has no modality field, so the vision families are matched by prefix (settings)."""
+    return model_id.startswith(tuple(settings.openai_api_vision_model_prefixes))

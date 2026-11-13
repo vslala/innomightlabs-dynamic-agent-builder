@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from src.llm.images import ImageGenerationOptions
+from src.llm.images import ImageGenerationOptions, collect_images
 from src.llm.providers import provider as provider_named
 
 
@@ -64,12 +64,12 @@ async def test_codex_provider_extracts_final_image_result(monkeypatch):
     )
     provider = provider_named("OpenAI").images
 
-    images = await provider.generate(
+    images = await collect_images(provider.draw(
         prompt="red pixel",
         credentials={"access_token": "token"},
         model="gpt-5.4",
         options=ImageGenerationOptions(output_format="png"),
-    )
+    ))
 
     assert len(images) == 1
     assert images[0].mime_type == "image/png"

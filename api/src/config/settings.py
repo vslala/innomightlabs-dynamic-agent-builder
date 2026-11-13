@@ -251,7 +251,6 @@ class Settings:
     #: Sent as `client_version` when reading the Codex model catalog, which hides
     #: models newer than the client asking. Track a recent Codex CLI release.
     openai_codex_client_version: str = DEFAULT_OPENAI_CODEX_CLIENT_VERSION
-    openai_image_generation_backend: str = "codex_oauth"
 
     # Pinecone Vector Store (required for knowledge base features)
     pinecone_api_key: str = ""
@@ -693,7 +692,6 @@ class Settings:
                 "https://chatgpt.com/backend-api/codex/responses",
             ),
             openai_codex_client_version=os.getenv("OPENAI_CODEX_CLIENT_VERSION", DEFAULT_OPENAI_CODEX_CLIENT_VERSION),
-            openai_image_generation_backend=os.getenv("OPENAI_IMAGE_GENERATION_BACKEND", "codex_oauth"),
             superuser_emails=parse_env_email_list("SUPERUSER_EMAILS", []),
             # Pinecone - no defaults, must be explicitly configured
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),

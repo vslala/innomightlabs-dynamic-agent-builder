@@ -114,15 +114,14 @@ Keep strong references to job tasks (`_running_jobs`): asyncio holds tasks weakl
 **Image generation.** Like image reading (`src/vision/`), the drawing model is the account's own choice, apart from the
 agent's model: an admin sets it in Settings > Image Generation (`ImageGenerationSettings`, `/image-generation/settings`,
 `agents/image_generation/settings.py` and `router.py`), choosing from models tagged `image_generation`
-(`FormOptionSourceType.IMAGE_GENERATION_MODELS`). `AgentImageGenerationService._artist_for` resolves who draws: that
-setting, else the agent's own provider and model (how it worked before, so existing OpenAI agents carry on), and it must
-be a provider `image_capability_registry` says can draw (OpenAI and OpenAIAPI: every model they offer, so a new model
-needs no change). `list_agents` adds `image_generation` to `capabilities` when the account has the setting on. The
-Image Generation skill declares `requires: [image_generation]`, so it can only be installed once the setting is on
-(`src/skills/requirements.py`). A provider draws through its `Provider.images` (`src/llm/providers/`; the Responses
-`image_generation` tool is `src/llm/wire/responses_images.py`); a new one needs its `images`, a registry entry and the
-tag in its catalog. Anthropic and Ollama have no image models, so they can
-only draw through the account's setting. `AgentImageGenerationService` persists the turn's messages,
+(`FormOptionSourceType.IMAGE_GENERATION_MODELS`), which each provider's catalog tags (`ModelCapability.IMAGE_GENERATION`:
+every OpenAI chat model, since it hosts the drawing tool). The save checks the model against that list, so
+`AgentImageGenerationService._artist_for` only reads the setting: no setting, no drawing, whatever the agent's model.
+It draws through the chosen provider's `Provider.images` (`src/llm/providers/`; the Responses `image_generation` tool is
+`src/llm/wire/responses_images.py`). Every agent response (`account_capabilities` in `router.py`) carries
+`image_generation` when the account has the setting on. The Image Generation skill declares
+`requires: [image_generation]`, so it can only be installed once the setting is on (`src/skills/requirements.py`). A
+new drawing provider needs only its `images` and the tag in its catalog. `AgentImageGenerationService` persists the turn's messages,
 `ConversationMediaStorage` stores bytes in the private bucket under
 `agents/{agent_id}/conversations/{conversation_id}/messages/{message_id}/`.
 

@@ -20,7 +20,7 @@ import yaml  # type: ignore[import-untyped,unused-ignore]
 
 from src.accounts.owner import Owner
 from src.agents.book import Chapter, Page
-from src.agents.image_generation.capabilities import ImageCapability
+from src.llm.models import ModelCapability, ModelInfo
 from src.blueprints.kinds import RESOURCE_KINDS, ResourceKind
 from src.blueprints.kinds.base import Found, is_long_text
 from src.form_options import FormOptionsContext, configured_providers, load_agent_model_choices
@@ -130,12 +130,15 @@ class AccountPages:
         ]
         for provider in choices.providers:
             body += ["", f"## {provider}"]
-            models = [model for listed_by, model in choices.catalog if listed_by == provider]
+            # The models an agent can hold a conversation with; models that only draw are the Image Generation setting's
+            models = [
+                model for listed_by, model in choices.catalog if listed_by == provider and model.can(ModelCapability.CHAT)
+            ]
             if provider in choices.unlisted:
                 body.append("Its models couldn't be listed just now. Leave `model` out, or open this page again later.")
             elif not models:
                 body.append("It lists no models. Leave `model` out to use its default.")
-            body += [f"- `{model.model_name}`: {model.display_name}{_reads_images(model.capabilities)}" for model in models]
+            body += [f"- `{model.model_name}`: {model.display_name}{_reads_images(model)}" for model in models]
         if not choices.providers:
             body += ["", "No provider is set up. An account admin adds one in Settings > Provider Configuration."]
         return Page(
@@ -200,5 +203,5 @@ class AccountPages:
         )
 
 
-def _reads_images(capabilities: list[str]) -> str:
-    return " (reads images)" if ImageCapability.UNDERSTANDING.value in capabilities else ""
+def _reads_images(model: ModelInfo) -> str:
+    return " (reads images)" if model.can(ModelCapability.IMAGE_UNDERSTANDING) else ""

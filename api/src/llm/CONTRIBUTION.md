@@ -27,7 +27,8 @@ src/llm/
     responses_images.py  ResponsesToolImages: drawing with the Responses `image_generation` tool
   chat.py            LLMProvider ABC (the chat contract), LLMEvent, StopReason, stop_reason_of
   images.py          ImageGenerator (Provider.images) and what it takes and gives back
-  models.py          ModelInfo
+  models.py          ModelInfo, ModelCapability (chat, image_understanding, image_generation, image_editing),
+                     chat_capabilities
   model_fallback.py  ModelFallbackProvider: retries a vendor-refused stored model on a catalog substitute
   router.py          GET /llm/models/{provider}
   credentials.py     load_provider_credentials: the provider's CredentialSource
@@ -70,6 +71,14 @@ listing raises, but an empty picker is a bad experience. The Codex catalog is ca
 `CATALOG_TTL_SECONDS`. Filtering rules for the OpenAI API list (`NON_CHAT_MARKERS` etc. in
 `providers/openai_api/catalog.py`) record what the live API refused and when it was checked; update the date when you
 re-check.
+
+**Capabilities come from the catalog.** Each catalog tags its models with `ModelCapability`: `CHAT` for a model that
+can hold a conversation, `IMAGE_UNDERSTANDING`, `IMAGE_GENERATION`. It reads the vendor's own field where there is
+one (Anthropic `capabilities.image_input`, Bedrock `inputModalities`, Codex `input_modalities`, Ollama `/api/show`) and
+otherwise applies a dated rule beside its parsing (OpenAI API and Gemini publish none). The agent picker offers `CHAT`
+models, Image Reading `CHAT` + `IMAGE_UNDERSTANDING`, Image Generation `IMAGE_GENERATION`, and a fallback substitute
+must be `CHAT`. A model that only draws stays in the catalog, tagged, rather than being filtered out. Only a provider
+with `images` may tag `IMAGE_GENERATION` (`tests/test_providers_registry.py` checks it).
 
 **Stored models go stale.** Vendors retire models and gate them per account, so wrap a provider that runs a stored
 model in `ModelFallbackProvider(provider(name), provider_settings)`. It tries the stored model, and on a vendor refusal
@@ -121,8 +130,7 @@ DynamoDB is involved (provider settings via `dynamodb_table`). Do not add live-n
 - Do reuse `wire/` when a vendor speaks a known format: build your URL, headers and body, then call it. Don't
   subclass another provider's chat client, and don't copy a parser.
 - Do put anything that differs by provider on its `Provider`; don't branch on a provider's name anywhere.
-- Don't import from `src/agents` here; the dependency runs agents -> llm (the OpenAI catalogs still import the image
-  capability registry for `capabilities` until it moves into the catalogs; do not add more).
+- Don't import from `src/agents` here; the dependency runs agents -> llm.
 - Don't fail a form render because a vendor's listing endpoint is down; fall back.
 - Don't log or return credentials; the `/llm/models` response is `ModelInfo` only.
 - Comments say why (what the vendor does and when it was verified), not what.

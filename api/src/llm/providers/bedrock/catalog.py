@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
 import boto3
 
-from src.llm.models import ModelInfo
+from src.llm.models import ModelInfo, chat_capabilities
 from src.llm.providers.provider import stored_credentials
 from src.settings.models import ProviderSettings
-from src.vision import capabilities as vision
 
 log = logging.getLogger(__name__)
 
@@ -48,21 +48,21 @@ FALLBACK_MODELS = (
         model_name="claude-3-7-sonnet",
         display_name="Claude 3.7 Sonnet",
         provider="bedrock",
-        capabilities=vision.understanding(True),
+        capabilities=chat_capabilities(reads_images=True),
     ),
     ModelInfo(
         model_id="anthropic.claude-3-sonnet-20230229-v1:0",
         model_name="claude-3-sonnet",
         display_name="Claude 3 Sonnet",
         provider="bedrock",
-        capabilities=vision.understanding(True),
+        capabilities=chat_capabilities(reads_images=True),
     ),
     ModelInfo(
         model_id="anthropic.claude-3-haiku-20240307-v1:0",
         model_name="claude-3-haiku",
         display_name="Claude 3 Haiku (Fast)",
         provider="bedrock",
-        capabilities=vision.understanding(True),
+        capabilities=chat_capabilities(reads_images=True),
     ),
 )
 
@@ -101,7 +101,7 @@ class BedrockCatalog:
                 model_name=family,
                 display_name=f"[Bedrock] {display_name}",
                 provider="bedrock",
-                capabilities=vision.understanding(vision.bedrock_reads_images(summary)),
+                capabilities=chat_capabilities(reads_images=reads_images(summary)),
             )
 
         log.info("Fetched %d Bedrock Claude models", len(models))
@@ -114,3 +114,8 @@ def claude_family(model_id: str) -> Optional[str]:
     if "claude" not in name.lower():
         return None
     return next((family for family in CLAUDE_FAMILIES if family in name), None)
+
+
+def reads_images(summary: Mapping[str, Any]) -> bool:
+    """`ListFoundationModels` names each model's `inputModalities` (TEXT, IMAGE, ...)."""
+    return "IMAGE" in (summary.get("inputModalities") or [])

@@ -4,7 +4,6 @@ from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from src.accounts.owner import member_partition
-from src.agents.image_generation.capabilities import image_capability_registry
 from src.iam.actions import ResourceRef
 
 # How the caller reaches an agent: they own it, it was shared with them, or they see it as an admin
@@ -153,8 +152,9 @@ class Agent(BaseModel):
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
         )
 
-    def to_response(self, access: AgentAccess = "owner") -> AgentResponse:
-        """Convert to response model (excludes sensitive fields). An admin sees metadata only."""
+    def to_response(self, access: AgentAccess = "owner", capabilities: list[str] | None = None) -> AgentResponse:
+        """Convert to response model (excludes sensitive fields). An admin sees metadata only. `capabilities` are
+        the account's (drawing is set per account, not per agent), which the router knows."""
         response = AgentResponse(
             agent_id=self.agent_id,
             agent_name=self.agent_name,
@@ -163,10 +163,7 @@ class Agent(BaseModel):
             agent_model=self.agent_model,
             agent_persona=self.agent_persona,
             agent_description=self.agent_description,
-            capabilities=image_capability_registry.capabilities_for(
-                self.agent_provider,
-                self.agent_model,
-            ),
+            capabilities=capabilities or [],
             session_timeout_minutes=self.session_timeout_minutes,
             is_agent2agent_enabled=self.is_agent2agent_enabled,
             agent_ollama_thinking=self.agent_ollama_thinking or "default",

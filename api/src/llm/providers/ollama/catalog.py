@@ -8,10 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
-from src.llm.models import ModelInfo
+from src.llm.models import ModelInfo, chat_capabilities
 from src.llm.providers.ollama.connection import DISCOVERY_TIMEOUT_SECONDS, OllamaConnection
 from src.settings.models import ProviderSettings
-from src.vision import capabilities as vision
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class OllamaCatalog:
                 model_name=tag,
                 display_name=f"[Ollama] {tag}",
                 provider="ollama",
-                capabilities=vision.understanding(reading[tag]),
+                capabilities=chat_capabilities(reads_images=reading[tag]),
             )
             for tag in tags
         ]

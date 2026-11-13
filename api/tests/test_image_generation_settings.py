@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.llm.images import ImageGenerationOptions
+from src.llm.images import ImageGenerationOptions, collect_images
 from src.llm.providers import provider
 from src.agents.image_generation.service import (
     AgentImageGenerationError,
@@ -31,7 +31,7 @@ def drawing_models(dynamodb_table, monkeypatch):
     """OpenAIAPI lists one model that can draw and one that can't."""
     models = [
         ModelInfo(model_id="gpt-5.5", model_name="gpt-5.5", display_name="GPT-5.5", provider="openai_api",
-                  capabilities=["image_generation"]),
+                  capabilities=["chat", "image_generation"]),
         ModelInfo(model_id="embed", model_name="embed", display_name="Embed", provider="openai_api"),
     ]
     use_provider(monkeypatch, "OpenAIAPI", catalog=ListedModels(models))
@@ -109,12 +109,13 @@ def test_the_accounts_setting_draws_for_an_agent_that_cant(drawing_models):
     assert (artist.provider_name, artist.model) == ("OpenAIAPI", "gpt-5.5")
 
 
-def test_without_the_setting_an_agent_whose_own_provider_can_draw_still_does(dynamodb_table):
+def test_without_the_setting_no_agent_draws_not_even_one_whose_own_model_could(dynamodb_table):
+    """Only the account's setting decides; scripts/backfill_image_generation_settings.py gave one to the accounts that
+    drew through their OpenAI agents' own models before it existed."""
     provider_set_up("OpenAI")
 
-    artist = AgentImageGenerationService()._artist_for(agent_on("OpenAI", "gpt-5.4"))
-
-    assert (artist.provider_name, artist.model) == ("OpenAI", "gpt-5.4")
+    with pytest.raises(ImageGenerationNotSupportedError, match="Image generation is off"):
+        AgentImageGenerationService()._artist_for(agent_on("OpenAI", "gpt-5.4"))
 
 
 def test_an_agent_that_cant_draw_is_told_where_to_set_it_up(dynamodb_table):
@@ -144,10 +145,10 @@ async def test_the_openai_api_adapter_draws_with_the_api_key_at_the_public_endpo
 
     monkeypatch.setattr("src.llm.wire.responses_images.httpx.AsyncClient", RecordingClient)
 
-    images = await provider("OpenAIAPI").images.generate(
+    images = await collect_images(provider("OpenAIAPI").images.draw(
         prompt="red pixel", credentials={"api_key": "sk-test"}, model="gpt-5.5",
         options=ImageGenerationOptions(output_format="png"),
-    )
+    ))
 
     assert sent == {"url": "https://api.openai.com/v1/responses", "authorization": "Bearer sk-test", "model": "gpt-5.5"}
     assert len(images) == 1 and images[0].provider_metadata["provider"] == "openai_api"
@@ -156,5 +157,35 @@ async def test_the_openai_api_adapter_draws_with_the_api_key_at_the_public_endpo
 @pytest.mark.asyncio
 async def test_the_openai_api_adapter_wants_an_api_key():
     with pytest.raises(ValueError, match="api_key"):
-        await provider("OpenAIAPI").images.generate(
-            prompt="x", credentials={}, model="gpt-5.5", options=ImageGenerationOptions())
+        await collect_images(provider("OpenAIAPI").images.draw(
+            prompt="x", credentials={}, model="gpt-5.5", options=ImageGenerationOptions()))
+
+
+def test_one_agent_read_on_its_own_says_it_draws_too(test_client, auth_headers, drawing_models):
+    agent = agent_on("Bedrock")
+    capabilities = lambda: test_client.get(f"/agents/{agent.agent_id}", headers=auth_headers).json()["capabilities"]  # noqa: E731
+    assert capabilities() == []
+
+    test_client.put("/image-generation/settings", headers=auth_headers,
+                    json={"enabled": True, "provider_name": "OpenAIAPI", "model_name": "gpt-5.5"})
+
+    assert capabilities() == ["image_generation"]
+
+
+def test_a_model_that_only_draws_is_offered_for_drawing_but_not_as_an_agents_model(
+    test_client, auth_headers, without_bedrock, monkeypatch
+):
+    use_provider(monkeypatch, "OpenAIAPI", catalog=ListedModels([
+        ModelInfo(model_id="gpt-5.5", model_name="gpt-5.5", display_name="GPT-5.5", provider="openai_api",
+                  capabilities=["chat"]),
+        ModelInfo(model_id="gpt-image-2", model_name="gpt-image-2", display_name="GPT Image 2", provider="openai_api",
+                  capabilities=["image_generation"]),
+    ]))
+    provider_set_up("OpenAIAPI")
+
+    def offered(path: str, field: str) -> list[str]:
+        form = test_client.get(path, headers=auth_headers).json()
+        return [option["value"] for option in next(f for f in form["form_inputs"] if f["name"] == field)["options"]]
+
+    assert offered("/image-generation/settings/schema", "model_name") == ["gpt-image-2"]
+    assert offered("/agents/supported-models", "agent_model") == ["gpt-5.5"]

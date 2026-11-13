@@ -19,12 +19,12 @@ from src.config import settings
 from src.llm.credentials import load_provider_credentials
 from src.llm.messages import ImageBlock, TextBlock
 from src.llm.model_fallback import ModelFallbackProvider
+from src.llm.models import ModelCapability
 from src.llm.providers import provider
 from src.messages.models import ImageAnalysis
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.token_usage.service import TokenUsageService
-from src.vision import capabilities as vision
 from src.vision.errors import ImageInputError
 from src.vision.models import ImageRef, VisionSettings
 from src.vision.policy import UNAVAILABLE_MESSAGES, ImageInputUnavailable
@@ -163,7 +163,7 @@ class ImageReader:
         prompt_tokens = completion_tokens = 0
         # A substitute for a refused model must read images too.
         reader = ModelFallbackProvider(
-            provider(provider_name), provider_settings, capabilities=vision.understanding(True)
+            provider(provider_name), provider_settings, capabilities=[ModelCapability.IMAGE_UNDERSTANDING]
         )
         async for event in reader.stream_response(
             messages, credentials, tools=None, model=vision_settings.model_name

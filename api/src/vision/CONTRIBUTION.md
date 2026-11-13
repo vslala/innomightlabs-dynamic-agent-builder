@@ -13,7 +13,6 @@ src/vision/
   uploads.py       ImageUploadService: store (pending), attach (bind to a message), open_bytes
   limits.py        Upload rate limits for the widget (visitor + key) and /v1 (key)
   http.py          Shared route helpers: read an upload, serve an image, dashboard URL
-  capabilities.py  Which models read images, one function per provider; used by the model listers
   context.py       <attached_image> tags for the conversation, recall lines, index_images
   analysis.py      ImageReader: the vision call, concurrency, caching the description
   router.py/schemas.py   /vision/settings (+ form schema)
@@ -33,8 +32,11 @@ src/vision/
 
 ## How to add a provider's vision support
 
-1. Render `ImageBlock` in the provider's message converter (`src/llm/providers/<name>.py`) and add it to `tests/test_vision_provider_blocks.py`.
-2. Add a `<name>_reads_images` function in `capabilities.py` (use the provider's catalog when it has a modality field, otherwise a documented rule) and call it from the provider's lister in `src/llm/models.py`.
-3. Add cases to `tests/test_vision_capabilities.py`.
+1. Render `ImageBlock` in the provider's message converter (`src/llm/providers/<name>/chat.py`, or the shared
+   `src/llm/wire/` format it speaks) and add it to `tests/test_vision_provider_blocks.py`.
+2. In the provider's catalog (`src/llm/providers/<name>/catalog.py`), give its `reads_images` rule (the vendor's
+   modality field when it has one, otherwise a documented rule) and tag models with
+   `chat_capabilities(reads_images=...)`. Which models read images is the catalog's answer; nothing here lists them.
+3. Add cases to `tests/test_catalog_capabilities.py`.
 
 Tests: `uv run pytest tests/test_vision_*.py -q` (uploads, policy, tool, turn, routes for the dashboard, widget and `/v1`, settings).

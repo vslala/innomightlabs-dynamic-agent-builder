@@ -27,11 +27,14 @@ class Listing:
         self.models = {
             "Bedrock": [
                 ModelInfo(model_id="b1", model_name="claude-sonnet", display_name="Claude Sonnet", provider="bedrock",
-                          capabilities=["image_understanding"]),
-                ModelInfo(model_id="b2", model_name="nova-micro", display_name="Nova Micro", provider="bedrock"),
+                          capabilities=["chat", "image_understanding"]),
+                ModelInfo(model_id="b2", model_name="nova-micro", display_name="Nova Micro", provider="bedrock",
+                          capabilities=["chat"]),
             ],
-            "Anthropic": [ModelInfo(model_id="a1", model_name="claude-haiku", display_name="Claude Haiku", provider="anthropic")],
-            "OpenAI": [ModelInfo(model_id="o1", model_name="gpt-5.5", display_name="GPT-5.5", provider="openai")],
+            "Anthropic": [ModelInfo(model_id="a1", model_name="claude-haiku", display_name="Claude Haiku", provider="anthropic",
+                                    capabilities=["chat"])],
+            "OpenAI": [ModelInfo(model_id="o1", model_name="gpt-5.5", display_name="GPT-5.5", provider="openai",
+                                 capabilities=["chat", "image_generation"])],
         }
 
     def catalog(self, provider: str) -> ListedModels:

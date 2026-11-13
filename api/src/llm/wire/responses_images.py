@@ -34,19 +34,7 @@ class ResponsesToolImages:
     #: Recorded with each image
     provider_key: str
 
-    async def generate(
-        self, *, prompt: str, credentials: dict[str, Any], model: str, options: ImageGenerationOptions
-    ) -> list[GeneratedImageBytes]:
-        images = [
-            event.image
-            async for event in self.stream_generate(prompt=prompt, credentials=credentials, model=model, options=options)
-            if event.kind == "image" and event.image
-        ]
-        if not images:
-            raise RuntimeError(f"{self.label} image generation completed without image output")
-        return images
-
-    async def stream_generate(
+    async def draw(
         self, *, prompt: str, credentials: dict[str, Any], model: str, options: ImageGenerationOptions
     ) -> AsyncIterator[ImageGenerationStreamEvent]:
         token = credentials.get(self.credential_field)

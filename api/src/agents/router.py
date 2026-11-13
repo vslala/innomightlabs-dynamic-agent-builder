@@ -10,7 +10,6 @@ import logging
 
 import src.form_models as form_models
 from src.config import settings
-from src.agents.image_generation.capabilities import ImageCapability
 from src.agents.image_generation.models import GenerateImageRequest, GenerateImageResponse
 from src.agents.image_generation.settings import ImageGenerationSettingsRepository
 from src.agents.image_generation.service import (
@@ -48,6 +47,7 @@ from src.iam.actions import ResourceRef
 from src.iam.dependencies import get_owner, get_principal
 from src.iam.principal import Principal
 from src.llm.events import SSEEvent, SSEEventType
+from src.llm.models import ModelCapability
 from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
 from src.messages.references import ReferenceRequest, attach_references
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
@@ -145,6 +145,13 @@ def _agent2agent_sharing_response(
     )
 
 
+def account_capabilities(account_id: str) -> list[str]:
+    """What every agent in the account can do whatever model it thinks with: draw, once an admin turns Image
+    Generation on."""
+    drawing = ImageGenerationSettingsRepository().find_in_account(account_id)
+    return [ModelCapability.IMAGE_GENERATION] if drawing and drawing.is_configured else []
+
+
 @router.get("/supported-models", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_create_agent_schema(
     owner: Annotated[Owner, Depends(get_owner)],
@@ -188,10 +195,11 @@ async def create_agent(
     existing_agent = repo.find_by_name(owner.account_id, owner.user_id, create_request.agent_name)
     if existing_agent:
         log.info(f"Agent '{create_request.agent_name}' already exists for {owner.user_id}, returning existing")
-        return existing_agent.to_response()
+        return existing_agent.to_response(capabilities=account_capabilities(existing_agent.account_id))
 
     _require_provider_model(owner, create_request.agent_provider, create_request.agent_model)
-    return AgentService(repo).create(create_request, owner).to_response()
+    created = AgentService(repo).create(create_request, owner)
+    return created.to_response(capabilities=account_capabilities(created.account_id))
 
 
 def _require_provider_model(owner: Owner, provider: str, model: str | None) -> None:
@@ -219,13 +227,10 @@ async def list_agents(
     for conversation in ConversationRepository().find_all_by_user(member_partition(principal.account_id, principal.user_id)):
         uses.setdefault(conversation.agent_id, []).append(conversation)
 
-    drawing = ImageGenerationSettingsRepository().find_in_account(principal.account_id)
+    capabilities = account_capabilities(principal.account_id)
     responses = []
     for agent, access in visible_agents(principal, repo):
-        response = agent.to_response(access)
-        if drawing and drawing.is_configured and ImageCapability.GENERATION.value not in response.capabilities:
-            # The account's Image Generation setting draws for every agent in it, whatever model the agent thinks with
-            response.capabilities = [*response.capabilities, ImageCapability.GENERATION.value]
+        response = agent.to_response(access, capabilities)
         conversations = uses.get(agent.agent_id, [])
         response.use_count = len(conversations)
         if conversations:  # most recently active first
@@ -287,7 +292,7 @@ async def get_agent(
     """
     agent = require_agent(principal, agent_id, "agents:Describe", repo)
     access = access_to(principal, agent)
-    return agent.to_response(access or "admin")
+    return agent.to_response(access or "admin", account_capabilities(agent.account_id))
 
 
 @router.get("/{agent_id}/image-input", response_model=ImageInputAvailability)
@@ -396,7 +401,7 @@ async def update_agent(
 
     if not filtered_data:
         # No valid fields to update, return current agent (idempotent)
-        return agent.to_response()
+        return agent.to_response(capabilities=account_capabilities(agent.account_id))
 
     # Only a changed pair is checked: an older agent keeps working while its provider stops listing its model.
     provider = filtered_data.get("agent_provider", agent.agent_provider)
@@ -420,7 +425,7 @@ async def update_agent(
         dream_service.delete_schedule(saved_agent.agent_id, owner.email, owner)
     log.info(f"Updated agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) by {principal.user_id}")
 
-    return saved_agent.to_response()
+    return saved_agent.to_response(capabilities=account_capabilities(saved_agent.account_id))
 
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)

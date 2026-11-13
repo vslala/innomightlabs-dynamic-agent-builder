@@ -21,7 +21,9 @@ CODEX_REFUSAL = RuntimeError(
 
 
 def _model(name: str, capabilities: tuple[str, ...] = ()) -> ModelInfo:
-    return ModelInfo(model_id=name, model_name=name, display_name=name, provider="openai", capabilities=list(capabilities))
+    return ModelInfo(
+        model_id=name, model_name=name, display_name=name, provider="openai", capabilities=["chat", *capabilities]
+    )
 
 
 class ScriptedProvider(LLMProvider):
@@ -160,3 +162,15 @@ def test_pick_substitute_skips_the_refused_model_by_name_or_id():
     assert pick_substitute(catalog, refused="vendor/x-1") == "y"
     assert pick_substitute(catalog, refused="x") == "y"
     assert pick_substitute([_model("x")], refused="x") is None
+
+
+async def test_a_model_that_only_draws_never_stands_in_for_a_chat_model(fallback):
+    inner = ScriptedProvider(refuse={"gpt-5.5": CODEX_REFUSAL})
+    drawing_only = ModelInfo(
+        model_id="gpt-image-2", model_name="gpt-image-2", display_name="GPT Image 2", provider="openai",
+        capabilities=["image_generation"],
+    )
+
+    chat = fallback(inner, catalog=ListedModels([drawing_only, _model("gpt-5.4-mini")]))
+
+    assert await _texts(chat, "gpt-5.5") == ["answer from gpt-5.4-mini"]

@@ -43,18 +43,13 @@ class FakeDrawing:
     def __init__(self):
         self.asked: dict = {}
 
-    async def stream_generate(self, **kwargs):
+    async def draw(self, **kwargs):
         self.asked.update(kwargs)
         yield ImageGenerationStreamEvent(kind="generating")
         yield ImageGenerationStreamEvent(kind="image", image=GeneratedImageBytes(
             data=b"fake-image", output_format="png", mime_type="image/png", prompt=kwargs["prompt"],
             width=256, height=256,
         ))
-
-    async def generate(self, **kwargs):
-        self.asked.update(kwargs)
-        return [GeneratedImageBytes(data=b"fake-image", output_format="png", mime_type="image/png",
-                                    prompt=kwargs["prompt"])]
 
 
 @pytest.fixture

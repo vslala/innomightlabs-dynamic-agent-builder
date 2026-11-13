@@ -649,6 +649,10 @@ block on user messages only:
 
 ### 3.13 Which models can read images (`vision/capabilities.py`)
 
+> **Moved (2026-11-13).** Each rule below now lives in its provider's catalog (`src/llm/providers/<name>/catalog.py`,
+> `reads_images`), which tags models with `ModelCapability.IMAGE_UNDERSTANDING`; `vision/capabilities.py` is gone.
+> See [LLD-llm-providers-and-image-models.md](LLD-llm-providers-and-image-models.md), §4.4.
+
 There is one strategy per provider, plus one selection function, like `rate_limits/strategies.py`. Each lister
 in `ModelsService` (`llm/models.py`) already holds the provider's raw model entry. It asks the strategy and adds
 `ImageCapability.UNDERSTANDING` to `ModelInfo.capabilities` (`:43-49`), joining any generation capability

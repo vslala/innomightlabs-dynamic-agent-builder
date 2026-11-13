@@ -6,12 +6,14 @@ import logging
 
 from google import genai
 
-from src.llm.models import ModelInfo
+from src.llm.models import ModelInfo, chat_capabilities
 from src.llm.providers.provider import stored_credentials
 from src.settings.models import ProviderSettings
-from src.vision import capabilities as vision
 
 log = logging.getLogger(__name__)
+
+#: Gemini model ids that are not chat models, whatever their prefix.
+NON_CHAT_MARKERS = ("embedding", "imagen", "tts", "aqa")
 
 #: Offered first, in this order; the rest follow alphabetically.
 PREFERRED_MODELS = ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash")
@@ -22,14 +24,14 @@ FALLBACK_MODELS = (
         model_name="gemini-2.5-flash",
         display_name="[Gemini] Gemini 2.5 Flash",
         provider="gemini",
-        capabilities=vision.understanding(True),
+        capabilities=chat_capabilities(reads_images=True),
     ),
     ModelInfo(
         model_id="gemini-2.5-pro",
         model_name="gemini-2.5-pro",
         display_name="[Gemini] Gemini 2.5 Pro",
         provider="gemini",
-        capabilities=vision.understanding(True),
+        capabilities=chat_capabilities(reads_images=True),
     ),
 )
 
@@ -61,7 +63,7 @@ def _model_info(model: object) -> ModelInfo:
         model_name=model_id,
         display_name=f"[Gemini] {getattr(model, 'display_name', None) or model_id}",
         provider="gemini",
-        capabilities=vision.understanding(vision.gemini_reads_images(model_id)),
+        capabilities=chat_capabilities(reads_images=reads_images(model_id)),
     )
 
 
@@ -72,3 +74,8 @@ def _model_id(model: object) -> str:
 def _preference(model: ModelInfo) -> tuple[int, str]:
     rank = PREFERRED_MODELS.index(model.model_name) if model.model_name in PREFERRED_MODELS else len(PREFERRED_MODELS)
     return rank, model.model_name
+
+
+def reads_images(model_id: str) -> bool:
+    """Google documents every Gemini model version as multimodal; the listing has no modality field."""
+    return model_id.startswith("gemini-") and not any(marker in model_id for marker in NON_CHAT_MARKERS)

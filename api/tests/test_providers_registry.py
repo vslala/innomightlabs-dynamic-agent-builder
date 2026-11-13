@@ -1,17 +1,18 @@
 """The LLM providers: one definition each, found by name, and named nowhere else."""
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
 
+from src.crypto import encrypt
+from src.llm.models import ModelCapability
 from src.llm.providers import PROVIDERS, find_provider, provider
+from src.settings.models import ProviderSettings
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 PROVIDER_PACKAGES = SRC / "llm" / "providers"
-#: Still names providers until phase 3 of docs/LLD-llm-providers-and-image-models.md replaces it with capabilities the
-#: catalogs set. Remove the entry with the file.
-NOT_YET_MOVED = {SRC / "agents" / "image_generation" / "capabilities.py"}
 
 
 def test_names_and_titles_are_unique():
@@ -41,7 +42,7 @@ def test_no_code_outside_the_provider_packages_names_a_provider():
     found = [
         f"{path.relative_to(SRC.parent)}:{node.lineno} {node.value!r}"
         for path in sorted(SRC.rglob("*.py"))
-        if PROVIDER_PACKAGES not in path.parents and path not in NOT_YET_MOVED
+        if PROVIDER_PACKAGES not in path.parents
         for node in ast.walk(ast.parse(path.read_text()))
         if isinstance(node, ast.Constant) and node.value in names
     ]
@@ -55,3 +56,31 @@ def test_the_settings_page_is_told_each_providers_title_and_how_it_connects(test
     assert listed["OpenAIAPI"]["title"] == "OpenAI (API key)" and listed["OpenAIAPI"]["oauth"] is None
     assert listed["OpenAI"]["oauth"]["start_path"] == "/auth/openai/start"
     assert listed["OpenAI"]["form"]["submit_path"] == "/auth/openai/complete"
+
+
+def _listed_without_a_vendor(name: str):
+    """The provider's catalog when its vendor can't be reached (credentials no vendor accepts, no network): its
+    fallback list."""
+    broken = ProviderSettings(
+        account_id="acct", provider_name=name, encrypted_credentials=encrypt(json.dumps({"api_key": "x"}))
+    )
+    try:
+        return provider(name).catalog.list_models(broken)
+    except Exception:
+        return []  # A catalog with no fallback raises; form_options shows the provider as unlisted.
+
+
+@pytest.mark.parametrize("each", PROVIDERS, ids=lambda p: p.name)
+def test_only_a_provider_that_draws_offers_models_that_draw(each, monkeypatch):
+    def unreachable(*args, **kwargs):
+        raise ConnectionError("no network in tests")
+
+    for client in ("httpx.get", "httpx.post", "boto3.client", "anthropic.Anthropic", "google.genai.Client"):
+        monkeypatch.setattr(client, unreachable)
+
+    draws = [m.model_name for m in _listed_without_a_vendor(each.name) if m.can(ModelCapability.IMAGE_GENERATION)]
+
+    if each.images is None:
+        assert draws == []
+    else:
+        assert draws, f"{each.name} draws, so its fallback models should offer drawing"

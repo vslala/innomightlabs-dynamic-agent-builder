@@ -1,3 +1,5 @@
+"""What each provider's catalog says its models can do, from the vendor's own fields or a dated rule."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -5,16 +7,18 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from src.config import settings
+from src.llm.models import ModelCapability, chat_capabilities
+from src.llm.providers.anthropic.catalog import reads_images as anthropic_reads_images
+from src.llm.providers.bedrock.catalog import reads_images as bedrock_reads_images
+from src.llm.providers.gemini.catalog import reads_images as gemini_reads_images
 from src.llm.providers.ollama import catalog as ollama_catalog
 from src.llm.providers.ollama.connection import OllamaConnection
-from src.vision.capabilities import (
-    anthropic_reads_images,
-    bedrock_reads_images,
-    codex_reads_images,
-    gemini_reads_images,
-    openai_api_reads_images,
-    understanding,
-)
+from src.llm.providers.openai.catalog import openai_model
+from src.llm.providers.openai.catalog import reads_images as codex_reads_images
+from src.llm.providers.openai_api.catalog import OpenAIAPICatalog
+from src.llm.providers.openai_api.catalog import reads_images as openai_api_reads_images
+from src.settings.models import ProviderSettings
 
 
 def test_anthropic_trusts_the_reported_capability() -> None:
@@ -52,9 +56,27 @@ def test_gemini_chat_models_read_images(model_id: str, expected: bool) -> None:
     assert gemini_reads_images(model_id) is expected
 
 
-def test_understanding_is_the_capability_string_or_nothing() -> None:
-    assert understanding(True) == ["image_understanding"]
-    assert understanding(False) == []
+def test_a_chat_model_says_it_chats_and_what_else_it_does() -> None:
+    assert chat_capabilities(reads_images=False) == [ModelCapability.CHAT]
+    assert chat_capabilities(reads_images=True, draws=True) == [
+        ModelCapability.CHAT,
+        ModelCapability.IMAGE_UNDERSTANDING,
+        ModelCapability.IMAGE_GENERATION,
+    ]
+
+
+@pytest.mark.parametrize("slug", ["gpt-5.4", "gpt-6-astra", "a-model-released-next-year"])
+def test_every_chatgpt_model_draws_because_it_hosts_the_image_tool(slug: str) -> None:
+    assert openai_model(slug).can(ModelCapability.CHAT, ModelCapability.IMAGE_GENERATION)
+
+
+def test_every_openai_api_chat_model_draws_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_models", ["gpt-5.5"])
+    broken = ProviderSettings(account_id="acct", provider_name="OpenAIAPI", encrypted_credentials="not-encrypted")
+
+    [model] = OpenAIAPICatalog().list_models(broken)  # the listing fails, so the configured models are offered
+
+    assert model.can(ModelCapability.CHAT, ModelCapability.IMAGE_GENERATION)
 
 
 def test_ollama_asks_each_model_once_and_reads_vision(monkeypatch: pytest.MonkeyPatch) -> None:

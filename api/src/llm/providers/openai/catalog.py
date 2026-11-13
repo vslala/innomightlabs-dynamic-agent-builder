@@ -9,14 +9,12 @@ from typing import Any, Mapping
 
 import httpx
 
-from src.agents.image_generation.capabilities import image_capability_registry
 from src.auth.openai_oauth import credentials_from_provider_settings, extract_account_id_from_access_token
 from src.config import settings
-from src.llm.models import ModelInfo
+from src.llm.models import ModelInfo, chat_capabilities
 from src.llm.providers.openai.credentials import load_openai_credentials_blocking
 from src.settings.models import ProviderSettings
 from src.settings.repository import get_provider_settings_repository
-from src.vision import capabilities as vision
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +68,7 @@ class OpenAICatalog:
             raise ValueError("Codex model catalog returned an unexpected payload shape")
 
         models = [
-            openai_model(str(entry["slug"]), entry.get("display_name"), vision.codex_reads_images(entry))
+            openai_model(str(entry["slug"]), entry.get("display_name"), reads_images(entry))
             for entry in sorted(
                 (entry for entry in entries if _is_listed(entry)),
                 key=lambda entry: entry.get("priority") if isinstance(entry.get("priority"), int) else 1_000,
@@ -81,16 +79,14 @@ class OpenAICatalog:
         return models
 
 
-def openai_model(slug: str, display_name: Any = None, reads_images: bool = True) -> ModelInfo:
+def openai_model(slug: str, display_name: Any = None, reads: bool = True) -> ModelInfo:
     return ModelInfo(
         model_id=slug,
         model_name=slug,
         display_name=f"[OpenAI] {display_name if isinstance(display_name, str) and display_name else slug}",
         provider="openai",
-        capabilities=[
-            *image_capability_registry.capabilities_for("OpenAI", slug),
-            *vision.understanding(reads_images),
-        ],
+        # Every chat model hosts the Responses `image_generation` tool, so every one draws.
+        capabilities=chat_capabilities(reads_images=reads, draws=True),
     )
 
 
@@ -103,3 +99,8 @@ def _is_listed(entry: object) -> bool:
         and entry.get("visibility") == "list"
         and entry.get("supported_in_api") is not False
     )
+
+
+def reads_images(entry: Mapping[str, Any]) -> bool:
+    """The catalog's `input_modalities`; Codex itself treats a missing field as text and image."""
+    return "image" in (entry.get("input_modalities") or ["text", "image"])

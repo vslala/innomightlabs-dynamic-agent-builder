@@ -283,6 +283,11 @@ The OpenAI/Codex provider adapter should:
 
 ## Capability Model
 
+> **Superseded (2026-11-13).** The registry below has been replaced: each provider's catalog tags its models with
+> `ModelCapability.IMAGE_GENERATION`, a provider draws through its `Provider.images`, and only the account's Image
+> Generation setting decides who draws. `OPENAI_IMAGE_GENERATION_BACKEND` is gone. See
+> [LLD-llm-providers-and-image-models.md](../../docs/LLD-llm-providers-and-image-models.md), §4.4–4.6.
+
 Add an agent image-generation registry:
 
 `api/src/agents/image_generation/capabilities.py`
