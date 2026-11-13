@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
@@ -17,6 +17,7 @@ import httpx
 from src.llm.messages import ImageBlock, TextBlock, ToolResultBlock, ToolUseBlock, normalize_messages, split_system_messages
 from src.llm.chat import LLMEvent, StopReason, stop_reason_of
 from src.llm.tools import normalize_tool_definitions
+from src.llm.wire.responses_calls import FunctionCallAssembler
 from src.llm.wire.sse import sse_events
 
 log = logging.getLogger(__name__)
@@ -94,7 +95,6 @@ def bearer_headers(credentials: dict[str, Any]) -> dict[str, str]:
 
 async def stream_chat(url: str, headers: dict[str, str], body: dict[str, Any], *, label: str) -> AsyncIterator[LLMEvent]:
     """One streamed call: text, tool calls, usage and exactly one stop. `label` names the backend in logs and errors."""
-    call_state: dict[str, dict[str, Any]] = {}
     diagnostic_context = {
         "model": body.get("model"),
         "input_count": len(body.get("input", [])),
@@ -120,63 +120,65 @@ async def stream_chat(url: str, headers: dict[str, str], body: dict[str, Any], *
                     f"{error_text.decode('utf-8', errors='ignore')}"
                 )
 
+            stream = ResponseStream(label, request_id=upstream_request_id, context=diagnostic_context)
             async for event in sse_events(response):
-                event_type = event.get("type")
-                if event_type == "response.output_text.delta":
-                    delta = event.get("delta", "")
-                    if delta:
-                        yield LLMEvent(type="text", content=delta)
+                for llm_event in stream.read(event):
+                    yield llm_event
 
-                elif event_type == "response.output_item.added":
-                    item = event.get("item", {})
-                    if item.get("type") == "function_call":
-                        call_state[item.get("id", "")] = {
-                            "tool_use_id": item.get("call_id", ""),
-                            "tool_name": item.get("name", ""),
-                            "arguments": "",
-                        }
 
-                elif event_type == "response.function_call_arguments.delta":
-                    state = call_state.get(event.get("item_id", ""))
-                    if state:
-                        state["arguments"] += event.get("delta", "")
+class ResponseStream:
+    """One response's stream events, as `LLMEvent`s. Each event type has one handler; the rest are ignored."""
 
-                elif event_type == "response.function_call_arguments.done":
-                    state = call_state.get(event.get("item_id", ""))
-                    if not state:
-                        continue
-                    try:
-                        tool_input = json.loads(state["arguments"] or "{}")
-                    except json.JSONDecodeError:
-                        tool_input = {}
-                    yield LLMEvent(
-                        type="tool_use",
-                        tool_use_id=state["tool_use_id"],
-                        tool_name=state["tool_name"],
-                        tool_input=tool_input,
-                    )
+    def __init__(self, label: str, *, request_id: str | None = None, context: dict[str, Any] | None = None) -> None:
+        self.label = label
+        self.request_id = request_id
+        self.context = context or {}
+        self.calls = FunctionCallAssembler(label)
+        self.handlers: dict[str, Callable[[dict[str, Any]], list[LLMEvent]]] = {
+            "response.output_text.delta": self._text,
+            "response.output_item.added": self.calls.added,
+            "response.function_call_arguments.delta": self.calls.arguments_delta,
+            "response.function_call_arguments.done": self.calls.arguments_done,
+            "response.output_item.done": self.calls.item_done,
+            "response.completed": self._finished,
+            "response.incomplete": self._finished,
+            "response.failed": self._failed,
+            "error": self._error,
+        }
 
-                elif event_type in ("response.completed", "response.incomplete"):
-                    yield usage_event(event)
-                    details = (event.get("response") or {}).get("incomplete_details") or {}
-                    yield LLMEvent(type="stop", content=stop_reason_of(details.get("reason"), INCOMPLETE_REASONS))
+    def read(self, event: dict[str, Any]) -> list[LLMEvent]:
+        handler = self.handlers.get(str(event.get("type")))
+        return handler(event) if handler else []
 
-                elif event_type == "response.failed":
-                    err = (event.get("response") or {}).get("error") or {}
-                    log.error(
-                        "%s response failed: request_id=%s error=%s context=%s",
-                        label, upstream_request_id, err, diagnostic_context,
-                    )
-                    raise RuntimeError(f"{label} response failed (request_id={upstream_request_id}): {err}")
+    def _text(self, event: dict[str, Any]) -> list[LLMEvent]:
+        delta = event.get("delta", "")
+        return [LLMEvent(type="text", content=delta)] if delta else []
 
-                elif event_type == "error":
-                    err = event.get("error") or {}
-                    request_id = err.get("request_id") or err.get("requestId") or upstream_request_id
-                    log.error(
-                        "%s stream error event: request_id=%s error_type=%s error_code=%s context=%s",
-                        label, request_id, err.get("type"), err.get("code"), diagnostic_context,
-                    )
-                    raise RuntimeError(f"{label} stream error (request_id={request_id}): {err}")
+    def _finished(self, event: dict[str, Any]) -> list[LLMEvent]:
+        """Any calls not yet closed, the usage, then the one stop."""
+        response = event.get("response") or {}
+        details = response.get("incomplete_details") or {}
+        return [
+            *self.calls.remaining(response.get("output")),
+            usage_event(event),
+            LLMEvent(type="stop", content=stop_reason_of(details.get("reason"), INCOMPLETE_REASONS)),
+        ]
+
+    def _failed(self, event: dict[str, Any]) -> list[LLMEvent]:
+        err = (event.get("response") or {}).get("error") or {}
+        log.error(
+            "%s response failed: request_id=%s error=%s context=%s", self.label, self.request_id, err, self.context
+        )
+        raise RuntimeError(f"{self.label} response failed (request_id={self.request_id}): {err}")
+
+    def _error(self, event: dict[str, Any]) -> list[LLMEvent]:
+        err = event.get("error") or {}
+        request_id = err.get("request_id") or err.get("requestId") or self.request_id
+        log.error(
+            "%s stream error event: request_id=%s error_type=%s error_code=%s context=%s",
+            self.label, request_id, err.get("type"), err.get("code"), self.context,
+        )
+        raise RuntimeError(f"{self.label} stream error (request_id={request_id}): {err}")
 
 
 def usage_event(event: dict[str, Any]) -> LLMEvent:

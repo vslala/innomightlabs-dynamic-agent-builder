@@ -156,30 +156,15 @@ class OllamaProvider(LLMProvider):
             if not tool_name:
                 continue
 
+            # Ollama sends the arguments as an object; some builds send a JSON string.
             events.append(
-                LLMEvent(
-                    type="tool_use",
-                    tool_use_id=str(raw_call.get("id") or "")
-                    or f"{SYNTHETIC_TOOL_CALL_ID_PREFIX}-{id_offset + position}-{tool_name}",
-                    tool_name=tool_name,
-                    tool_input=OllamaProvider._tool_arguments(function.get("arguments")),
+                LLMEvent.tool_call(
+                    str(raw_call.get("id") or "") or f"{SYNTHETIC_TOOL_CALL_ID_PREFIX}-{id_offset + position}-{tool_name}",
+                    tool_name,
+                    function.get("arguments"),
                 )
             )
         return events
-
-    @staticmethod
-    def _tool_arguments(arguments: Any) -> dict[str, Any]:
-        """Ollama sends arguments as an object; some builds send a JSON string."""
-        if isinstance(arguments, dict):
-            return arguments
-        if isinstance(arguments, str):
-            try:
-                parsed = json.loads(arguments)
-            except json.JSONDecodeError:
-                log.warning("Ollama tool arguments were not valid JSON; treating as empty")
-                return {}
-            return parsed if isinstance(parsed, dict) else {}
-        return {}
 
     @staticmethod
     def _raise_http_error(status_code: int, body: str, base_url: str, model_id: str) -> NoReturn:

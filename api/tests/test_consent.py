@@ -291,6 +291,7 @@ class _ToolCall:
     def __init__(self, tool_use_id: str, name: str):
         self.type, self.content, self.tool_name, self.tool_use_id = "tool_use", "", name, tool_use_id
         self.tool_input: dict[str, Any] = {}
+        self.tool_input_error = ""
         self.thought_signature = b"sig-" + tool_use_id.encode()
 
 

@@ -20,6 +20,7 @@ from src.agents.agentic_loop import (
 from src.agents.runtime_state import AgentTurnState
 from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
+from src.llm.chat import LLMEvent
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
 from tests.mock_data import account_for
@@ -42,6 +43,7 @@ class FakeProviderEvent:
     completion_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    tool_input_error: str = ""
 
 
 class FakeProvider:
@@ -538,6 +540,37 @@ async def test_every_call_names_the_conversation_so_the_vendor_can_serve_its_pre
         "Agent turn conversation=conversation-1 calls=2 "
         "prompt_tokens=17 cache_read_tokens=6 cache_write_tokens=4 completion_tokens=8"
     ) in caplog.text
+
+
+async def test_a_call_whose_arguments_couldnt_be_read_is_not_run_and_the_model_is_told_why():
+    class UnreadableThenAnswer:
+        def __init__(self):
+            self.contexts = []
+
+        async def stream_response(self, context, credentials, tools, model, cache_key=None):
+            self.contexts.append(copy.deepcopy(context))
+            if len(self.contexts) == 1:
+                yield LLMEvent.tool_call("call-1", "load_skill", '{"skill_id": "soc')
+            else:
+                yield LLMEvent(type="text", content="done")
+            yield LLMEvent(type="stop", content="end_turn")
+
+    provider, router = UnreadableThenAnswer(), FakeToolRouter()
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=provider, context=[], credentials={}, tools=[], model="m",
+            tool_router=router, state=_turn_state(), token_usage_service=FakeTokenUsageService(),
+        )
+    ]
+
+    assert router.calls == [], "nothing runs on arguments the model didn't send"
+    [result] = [e for e in events if _type(e) == SSEEventType.TOOL_CALL_RESULT]
+    assert result.success is False
+    told = json.loads(result.content)["error"]
+    assert "not valid JSON" in told and "Call load_skill again" in told
+    assert "Call load_skill again" in json.dumps(provider.contexts[1]), "the model reads why on its next call"
 
 
 async def test_agentic_loop_swallows_token_usage_recording_errors():

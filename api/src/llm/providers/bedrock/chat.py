@@ -4,7 +4,6 @@ Amazon Bedrock LLM Provider.
 Uses the Bedrock Converse API with AWS access key authentication.
 """
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional
@@ -175,19 +174,7 @@ class BedrockProvider(LLMProvider):
                     # Handle content block stop (emit tool_use event if tool)
                     if "contentBlockStop" in event:
                         if current_tool_id and current_tool_name:
-                            # Parse the accumulated tool input JSON
-                            try:
-                                tool_input = json.loads(current_tool_input_json) if current_tool_input_json else {}
-                            except json.JSONDecodeError:
-                                log.warning(f"Failed to parse tool input: {current_tool_input_json}")
-                                tool_input = {}
-
-                            yield LLMEvent(
-                                type="tool_use",
-                                tool_use_id=current_tool_id,
-                                tool_name=current_tool_name,
-                                tool_input=tool_input,
-                            )
+                            yield LLMEvent.tool_call(current_tool_id, current_tool_name, current_tool_input_json)
 
                             # Reset tool tracking
                             current_tool_id = None

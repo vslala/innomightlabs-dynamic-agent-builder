@@ -28,6 +28,10 @@ Paths are relative to `api/` unless marked otherwise.
   - **Recent tools.** `recent_runtime_tools` builds the working set; `KrishnaMemGPT._recent_mcp_tools` loads it into `state.recent_mcp_tools`, and any failure leaves it empty.
   - **Tests.** The cache is cleared between tests (`tests/conftest.py`, `fresh_mcp_tool_lists`).
 - **Phase 3 (built).** `parallel_tool_calls: True` in `responses_body`, and `ANCHOR_BATCH` in `krishna_memgpt_system_prompt.j2`. Calls still run one after another; running read-only calls concurrently stays with [LLD-parallel-actions.md](../api/docs/LLD-parallel-actions.md) Part A.
+- **Phase 3 regression, fixed (2026-11-13).** The first deployed Grok run with batching sent four `load_skill` calls in one response, and all four reached the tools with `{}`. Only the streamed deltas were read for arguments, and arguments that couldn't be read were silently turned into `{}`, so the agent got "skill_id Field required" instead of the truth. The fix has three parts:
+  - **Assembler.** `src/llm/wire/responses_calls.py` (`FunctionCallAssembler`) builds each call from whichever events carry its arguments, by authority: the finished item (`output_item.done`, or the completed response's `output`), then `function_call_arguments.done`, then the deltas. It matches events by item id or, without one, by output index, emits each call once, and logs which event carried the arguments.
+  - **Handler table.** `stream_chat` reads events through `ResponseStream`, one handler per event type.
+  - **Unreadable arguments.** `LLMEvent.tool_call` and `read_tool_arguments` (`src/llm/chat.py`) are the one rule for Responses, Bedrock and Ollama: an object or nothing is read; anything else sets `tool_input_error`. The loop then doesn't run the call and tells the model why (`unreadable_arguments`).
 
 ## 1. The problem, measured
 

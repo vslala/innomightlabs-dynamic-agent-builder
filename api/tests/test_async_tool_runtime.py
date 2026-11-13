@@ -39,6 +39,7 @@ class FakeProviderEvent:
     tool_name: str = ""
     tool_input: dict[str, Any] | None = None
     tool_use_id: str = ""
+    tool_input_error: str = ""
 
 
 class AsyncStartProvider:

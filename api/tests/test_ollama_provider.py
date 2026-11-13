@@ -204,12 +204,16 @@ class TestOllamaEventExtraction:
 
         assert events[0].tool_use_id == "call-abc"
 
-    def test_accepts_tool_arguments_as_object_or_json_string(self):
-        assert OllamaProvider._tool_arguments({"q": "x"}) == {"q": "x"}
-        assert OllamaProvider._tool_arguments('{"q": "x"}') == {"q": "x"}
-        assert OllamaProvider._tool_arguments("not json") == {}
-        assert OllamaProvider._tool_arguments("[1, 2]") == {}
-        assert OllamaProvider._tool_arguments(None) == {}
+    def test_accepts_tool_arguments_as_object_or_json_string_and_reports_anything_else(self):
+        def read(arguments):
+            [event] = OllamaProvider._tool_use_events({"tool_calls": [{"function": {"name": "search", "arguments": arguments}}]}, id_offset=0)
+            return event.tool_input, bool(event.tool_input_error)
+
+        assert read({"q": "x"}) == ({"q": "x"}, False)
+        assert read('{"q": "x"}') == ({"q": "x"}, False)
+        assert read(None) == ({}, False)
+        assert read("not json") == ({}, True)
+        assert read("[1, 2]") == ({}, True)
 
     def test_malformed_tool_calls_are_skipped(self):
         message = {"tool_calls": ["nope", {}, {"function": {"name": ""}}, {"function": "bad"}]}

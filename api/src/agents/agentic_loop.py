@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -63,6 +64,15 @@ SKIPPED_FOR_CONSENT = ToolExecutionOutcome(
     result='{"ok": false, "skipped": "Not run: waiting for the person to approve an earlier action in this turn."}',
     success=False,
 )
+
+
+def unreadable_arguments(tool_event: LLMEvent) -> ToolExecutionOutcome:
+    """What a call gets when its arguments couldn't be read: it doesn't run, and the model is told why, so it can call
+    again with what it meant instead of acting on a guess."""
+    error = f"Not run: {tool_event.tool_input_error}. Call {tool_event.tool_name} again with its arguments as one JSON object."
+    return ToolExecutionOutcome(result=json.dumps({"ok": False, "error": error}), success=False)
+
+
 ASYNC_JOB_TIMEOUT_MESSAGE = (
     "Async tool job is still running after the maximum in-turn wait time. "
     "The response was not completed because the agent has not received the final tool result."
@@ -373,6 +383,9 @@ class _Turn:
             started_at: datetime | None = None
             if self.paused_on:
                 outcome = SKIPPED_FOR_CONSENT
+            elif tool_event.tool_input_error:
+                log.warning("Not running %s: %s", tool_event.tool_name, tool_event.tool_input_error)
+                outcome = unreadable_arguments(tool_event)
             else:
                 started_at = datetime.now(timezone.utc)
                 task = asyncio.create_task(self._execute_and_settle(tool_event))

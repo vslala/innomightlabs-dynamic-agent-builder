@@ -2,6 +2,7 @@
 
 It sits outside `providers/` so the shared wire formats (`wire/`) can use it without loading every provider."""
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Literal, Optional
@@ -44,6 +45,45 @@ class LLMEvent:
     #: The parts of `prompt_tokens` the vendor read from its prompt cache, and wrote to it.
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    #: Why a tool call's arguments couldn't be read. The loop doesn't run such a call; it tells the model instead.
+    tool_input_error: str = ""
+
+    @classmethod
+    def tool_call(
+        cls, tool_use_id: str, tool_name: str, arguments: object, *, thought_signature: bytes | None = None
+    ) -> "LLMEvent":
+        """A tool call from its arguments as the vendor sent them: an object, a JSON string, or nothing at all."""
+        tool_input, error = read_tool_arguments(arguments)
+        return cls(
+            type="tool_use",
+            tool_use_id=tool_use_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+            tool_input_error=error,
+            thought_signature=thought_signature,
+        )
+
+
+#: How much of unreadable arguments the model is shown, so it can see what it sent.
+ARGUMENTS_PREVIEW_CHARS = 200
+
+
+def read_tool_arguments(arguments: object) -> tuple[dict, str]:
+    """(the arguments, why they couldn't be read). Nothing is no arguments; anything but a JSON object is an error,
+    never a guess: running a call with `{}` in place of what the model meant fails late, with the wrong message."""
+    if arguments is None or arguments == "":
+        return {}, ""
+    if isinstance(arguments, dict):
+        return arguments, ""
+    if not isinstance(arguments, str):
+        return {}, f"the arguments were a {type(arguments).__name__}, not a JSON object"
+    try:
+        parsed = json.loads(arguments)
+    except json.JSONDecodeError as exc:
+        return {}, f"the arguments were not valid JSON ({exc.msg}): {arguments[:ARGUMENTS_PREVIEW_CHARS]}"
+    if not isinstance(parsed, dict):
+        return {}, f"the arguments were a JSON {type(parsed).__name__}, not an object: {arguments[:ARGUMENTS_PREVIEW_CHARS]}"
+    return parsed, ""
 
 
 class LLMProvider(ABC):
