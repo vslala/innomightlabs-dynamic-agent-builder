@@ -14,6 +14,9 @@ class GenerateImageRequest(BaseModel):
     quality: str | None = Field(default=None, max_length=32)
     output_format: Literal["png", "jpeg", "webp"] = "png"
 
+    def options(self) -> "ImageGenerationOptions":
+        return ImageGenerationOptions(size=self.size, quality=self.quality, output_format=self.output_format)
+
 
 class GeneratedImageResponse(BaseModel):
     """Generated image response item."""

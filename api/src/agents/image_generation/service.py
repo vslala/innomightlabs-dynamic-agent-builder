@@ -13,7 +13,6 @@ from src.agents.image_generation.models import (
     GeneratedImageBytes,
     GenerateImageRequest,
     GenerateImageResponse,
-    ImageGenerationOptions,
 )
 from src.agents.image_generation.provider import ImageProviderFactory
 from src.agents.image_generation.settings import ImageGenerationSettingsRepository
@@ -94,38 +93,9 @@ class AgentImageGenerationService:
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        """The route has authorized the caller for this agent and conversation. The image is made on
-        the agent's account's provider settings."""
-        context = AgentConversationContext(agent=agent, conversation=conversation)
-        result = await self._generate(
-            agent=context.agent,
-            conversation=context.conversation,
-            actor_email=actor_email,
-            request=request,
-        )
-        for image in result.images:
-            image.url = (
-                f"{settings.api_base_url.rstrip('/')}/conversations/"
-                f"{context.conversation.conversation_id}/messages/{result.assistant_message_id}/images/{image.image_id}"
-            )
-        return result
-
-    async def stream_for_dashboard(
-        self,
-        *,
-        agent: Agent,
-        conversation: Conversation,
-        actor_email: str,
-        request: GenerateImageRequest,
-    ) -> AsyncIterator[SSEEvent]:
-        async for event in self._stream_generate(
-            agent=agent,
-            conversation=conversation,
-            actor_email=actor_email,
-            request=request,
-            dashboard_urls=True,
-        ):
-            yield event
+        """The route has authorized the caller for this agent and conversation. Image URLs point at the dashboard's
+        own image route."""
+        return await self._generate_chat_turn(agent, conversation, actor_email, request, dashboard_urls=True)
 
     async def generate_for_widget(
         self,
@@ -135,64 +105,17 @@ class AgentImageGenerationService:
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        return await self._generate(
-            agent=agent,
-            conversation=conversation,
-            actor_email=actor_email,
-            request=request,
-        )
+        return await self._generate_chat_turn(agent, conversation, actor_email, request, dashboard_urls=False)
 
-    async def generate_for_agent_turn(
+    async def stream_for_dashboard(
         self,
         *,
-        agent_id: str,
-        conversation_id: str,
+        agent: Agent,
+        conversation: Conversation,
         actor_email: str,
         request: GenerateImageRequest,
-        user_message_id: str | None = None,
-    ) -> GenerateImageResponse:
-        context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
-        artist = self._artist_for(context.agent)
-        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
-        provider = self.provider_factory.get(artist.provider_name)
-        generated_images = await provider.generate(
-            prompt=request.prompt,
-            credentials=credentials,
-            model=artist.model,
-            options=ImageGenerationOptions(
-                size=request.size,
-                quality=request.quality,
-                output_format=request.output_format,
-            ),
-        )
-
-        return self._persist_generated_images(
-            agent=context.agent,
-            conversation=context.conversation,
-            actor_email=actor_email,
-            prompt=request.prompt,
-            user_message_id=user_message_id or "",
-            generated_images=generated_images,
-            dashboard_urls=False,
-        )
-
-    async def stream_for_agent_turn(
-        self,
-        *,
-        agent_id: str,
-        conversation_id: str,
-        actor_email: str,
-        request: GenerateImageRequest,
-        user_message_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
-        context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
-        async for event in self._stream_generate_existing_turn(
-            agent=context.agent,
-            conversation=context.conversation,
-            actor_email=actor_email,
-            request=request,
-            user_message_id=user_message_id or "",
-        ):
+        async for event in self._stream_chat_turn(agent, conversation, actor_email, request, dashboard_urls=True):
             yield event
 
     async def stream_for_widget(
@@ -203,179 +126,132 @@ class AgentImageGenerationService:
         actor_email: str,
         request: GenerateImageRequest,
     ) -> AsyncIterator[SSEEvent]:
-        async for event in self._stream_generate(
-            agent=agent,
-            conversation=conversation,
-            actor_email=actor_email,
-            request=request,
-            dashboard_urls=False,
-        ):
+        async for event in self._stream_chat_turn(agent, conversation, actor_email, request, dashboard_urls=False):
             yield event
 
-    async def _generate(
+    async def stream_for_agent_turn(
         self,
         *,
+        agent_id: str,
+        conversation_id: str,
+        actor_email: str,
+        request: GenerateImageRequest,
+        user_message_id: str | None = None,
+    ) -> AsyncIterator[SSEEvent]:
+        """The Image Generation skill, inside a running chat turn: the turn already saved the person's message and
+        goes on after the picture, so only the drawing's own events are sent."""
+        context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
+        artist = self._artist_for(context.agent)
+
+        yield SSEEvent(event_type=SSEEventType.IMAGE_GENERATION_STARTED, content="Starting image generation...")
+        drawn: list[GeneratedImageBytes] = []
+        async for event in self._draw_streaming(artist, request, drawn):
+            yield event
+
+        result = self._persist_generated_images(
+            agent=context.agent,
+            conversation=context.conversation,
+            actor_email=actor_email,
+            prompt=request.prompt,
+            user_message_id=user_message_id or "",
+            generated_images=drawn,
+            dashboard_urls=False,
+        )
+        yield _completion_event(result)
+
+    async def _generate_chat_turn(
+        self,
         agent: Agent,
         conversation: Conversation,
         actor_email: str,
         request: GenerateImageRequest,
+        *,
+        dashboard_urls: bool,
     ) -> GenerateImageResponse:
+        """A drawing asked for directly: saves the person's prompt and the assistant's images as a chat turn."""
         artist = self._artist_for(agent)
-
-        user_msg = Message(
-            conversation_id=conversation.conversation_id,
-            created_by=actor_email,
-            role="user",
-            content=request.prompt,
-        )
-        self.message_repo.save(user_msg)
-
-        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
-        provider = self.provider_factory.get(artist.provider_name)
-        generated_images = await provider.generate(
-            prompt=request.prompt,
-            credentials=credentials,
-            model=artist.model,
-            options=ImageGenerationOptions(
-                size=request.size,
-                quality=request.quality,
-                output_format=request.output_format,
-            ),
-        )
-
+        user_message = self._save_prompt(conversation, actor_email, request)
+        drawn = await self._draw(artist, request)
         return self._persist_generated_images(
             agent=agent,
             conversation=conversation,
             actor_email=actor_email,
             prompt=request.prompt,
-            user_message_id=user_msg.message_id,
-            generated_images=generated_images,
-            dashboard_urls=False,
+            user_message_id=user_message.message_id,
+            generated_images=drawn,
+            dashboard_urls=dashboard_urls,
         )
 
-    async def _stream_generate(
+    async def _stream_chat_turn(
         self,
-        *,
         agent: Agent,
         conversation: Conversation,
         actor_email: str,
         request: GenerateImageRequest,
+        *,
         dashboard_urls: bool,
     ) -> AsyncIterator[SSEEvent]:
+        """`_generate_chat_turn` as a stream: the whole turn's events, from the saved prompt to the stream's end."""
         artist = self._artist_for(agent)
-
-        user_msg = Message(
-            conversation_id=conversation.conversation_id,
-            created_by=actor_email,
-            role="user",
-            content=request.prompt,
-        )
-        self.message_repo.save(user_msg)
+        user_message = self._save_prompt(conversation, actor_email, request)
         yield SSEEvent(
             event_type=SSEEventType.USER_MESSAGE_SAVED,
             content="User message saved",
-            message_id=user_msg.message_id,
+            message_id=user_message.message_id,
         )
-        yield SSEEvent(
-            event_type=SSEEventType.IMAGE_GENERATION_STARTED,
-            content="Starting image generation...",
-        )
+        yield SSEEvent(event_type=SSEEventType.IMAGE_GENERATION_STARTED, content="Starting image generation...")
 
-        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
-        provider = self.provider_factory.get(artist.provider_name)
-        generated_images: list[GeneratedImageBytes] = []
-
-        async for provider_event in provider.stream_generate(
-            prompt=request.prompt,
-            credentials=credentials,
-            model=artist.model,
-            options=ImageGenerationOptions(
-                size=request.size,
-                quality=request.quality,
-                output_format=request.output_format,
-            ),
-        ):
-            if provider_event.kind == "partial" and provider_event.image_b64:
-                yield SSEEvent(
-                    event_type=SSEEventType.IMAGE_GENERATION_PARTIAL,
-                    content="Rendering image preview...",
-                    image_b64=provider_event.image_b64,
-                    image_mime_type=provider_event.mime_type,
-                    image_width=provider_event.width,
-                    image_height=provider_event.height,
-                )
-            elif provider_event.kind == "generating":
-                yield SSEEvent(
-                    event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                    content="Generating image...",
-                )
-            elif provider_event.kind == "image" and provider_event.image:
-                generated_images.append(provider_event.image)
-
-        if not generated_images:
-            raise AgentImageGenerationError("Image generation completed without image output")
+        drawn: list[GeneratedImageBytes] = []
+        async for event in self._draw_streaming(artist, request, drawn):
+            yield event
 
         result = self._persist_generated_images(
             agent=agent,
             conversation=conversation,
             actor_email=actor_email,
             prompt=request.prompt,
-            user_message_id=user_msg.message_id,
-            generated_images=generated_images,
+            user_message_id=user_message.message_id,
+            generated_images=drawn,
             dashboard_urls=dashboard_urls,
         )
-        first_image = result.images[0] if result.images else None
         yield SSEEvent(
             event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
             content="Assistant message saved",
             message_id=result.assistant_message_id,
         )
-        yield SSEEvent(
-            event_type=SSEEventType.IMAGE_GENERATION_COMPLETE,
-            content="Image generation complete",
-            message_id=result.assistant_message_id,
-            image_url=first_image.url if first_image else None,
-            image_id=first_image.image_id if first_image else None,
-            image_filename=first_image.filename if first_image else None,
-            image_mime_type=first_image.mime_type if first_image else None,
-            image_width=first_image.width if first_image else None,
-            image_height=first_image.height if first_image else None,
-            images=[image.model_dump(mode="json") for image in result.images],
-        )
-        yield SSEEvent(
-            event_type=SSEEventType.STREAM_COMPLETE,
-            content="Response complete",
+        yield _completion_event(result)
+        yield SSEEvent(event_type=SSEEventType.STREAM_COMPLETE, content="Response complete")
+
+    def _save_prompt(self, conversation: Conversation, actor_email: str, request: GenerateImageRequest) -> Message:
+        return self.message_repo.save(
+            Message(
+                conversation_id=conversation.conversation_id,
+                created_by=actor_email,
+                role="user",
+                content=request.prompt,
+            )
         )
 
-    async def _stream_generate_existing_turn(
-        self,
-        *,
-        agent: Agent,
-        conversation: Conversation,
-        actor_email: str,
-        request: GenerateImageRequest,
-        user_message_id: str,
-    ) -> AsyncIterator[SSEEvent]:
-        provider_settings = self._validate_and_load_provider_settings(agent)
-
-        yield SSEEvent(
-            event_type=SSEEventType.IMAGE_GENERATION_STARTED,
-            content="Starting image generation...",
-        )
-
-        credentials = await self._load_credentials(agent.agent_provider, provider_settings)
-        provider = self.provider_factory.get(agent.agent_provider)
-        generated_images: list[GeneratedImageBytes] = []
-
-        async for provider_event in provider.stream_generate(
+    async def _draw(self, artist: "Artist", request: GenerateImageRequest) -> list[GeneratedImageBytes]:
+        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
+        return await self.provider_factory.get(artist.provider_name).generate(
             prompt=request.prompt,
             credentials=credentials,
-            model=agent.agent_model or "",
-            options=ImageGenerationOptions(
-                size=request.size,
-                quality=request.quality,
-                output_format=request.output_format,
-            ),
+            model=artist.model,
+            options=request.options(),
+        )
+
+    async def _draw_streaming(
+        self, artist: "Artist", request: GenerateImageRequest, drawn: list[GeneratedImageBytes]
+    ) -> AsyncIterator[SSEEvent]:
+        """The drawing's progress as SSE events; the finished pictures are appended to `drawn`, since an async
+        generator can't also return them."""
+        credentials = await self._load_credentials(artist.provider_name, artist.provider_settings)
+        async for provider_event in self.provider_factory.get(artist.provider_name).stream_generate(
+            prompt=request.prompt,
+            credentials=credentials,
+            model=artist.model,
+            options=request.options(),
         ):
             if provider_event.kind == "partial" and provider_event.image_b64:
                 yield SSEEvent(
@@ -387,43 +263,12 @@ class AgentImageGenerationService:
                     image_height=provider_event.height,
                 )
             elif provider_event.kind == "generating":
-                yield SSEEvent(
-                    event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                    content="Generating image...",
-                )
+                yield SSEEvent(event_type=SSEEventType.LIFECYCLE_NOTIFICATION, content="Generating image...")
             elif provider_event.kind == "image" and provider_event.image:
-                generated_images.append(provider_event.image)
+                drawn.append(provider_event.image)
 
-        if not generated_images:
+        if not drawn:
             raise AgentImageGenerationError("Image generation completed without image output")
-
-        result = self._persist_generated_images(
-            agent=agent,
-            conversation=conversation,
-            actor_email=actor_email,
-            prompt=request.prompt,
-            user_message_id=user_message_id,
-            generated_images=generated_images,
-            dashboard_urls=False,
-        )
-        self._ensure_signed_image_urls(result)
-        first_image = result.images[0] if result.images else None
-        yield SSEEvent(
-            event_type=SSEEventType.IMAGE_GENERATION_COMPLETE,
-            content="Image generation complete",
-            message_id=result.assistant_message_id,
-            image_url=first_image.url if first_image else None,
-            image_id=first_image.image_id if first_image else None,
-            image_filename=first_image.filename if first_image else None,
-            image_mime_type=first_image.mime_type if first_image else None,
-            image_width=first_image.width if first_image else None,
-            image_height=first_image.height if first_image else None,
-            images=[image.model_dump(mode="json") for image in result.images],
-        )
-
-    def _ensure_signed_image_urls(self, result: GenerateImageResponse) -> None:
-        for image in result.images:
-            image.url = self.storage.presign_get_url(image.s3_key)
 
     def _persist_generated_images(
         self,
@@ -556,3 +401,20 @@ class AgentImageGenerationService:
                 provider_settings_repo=self.provider_settings_repo,
             ),
         )
+
+
+def _completion_event(result: GenerateImageResponse) -> SSEEvent:
+    """The finished drawing: every image, with the first one's details at the top level for older clients."""
+    first = result.images[0] if result.images else None
+    return SSEEvent(
+        event_type=SSEEventType.IMAGE_GENERATION_COMPLETE,
+        content="Image generation complete",
+        message_id=result.assistant_message_id,
+        image_url=first.url if first else None,
+        image_id=first.image_id if first else None,
+        image_filename=first.filename if first else None,
+        image_mime_type=first.mime_type if first else None,
+        image_width=first.width if first else None,
+        image_height=first.height if first else None,
+        images=[image.model_dump(mode="json") for image in result.images],
+    )

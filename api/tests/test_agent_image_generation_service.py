@@ -1,25 +1,27 @@
-from types import SimpleNamespace
+"""Drawing through an agent: who draws, and the chat turn the drawing leaves behind.
+
+The service runs for real against moto. Only the S3 storage and the vendor's drawing adapter are stand-ins, since
+those are the external boundaries."""
+
+import json
 
 import pytest
 
-from src.agents.image_generation.models import GeneratedImageBytes, GenerateImageRequest
-from src.agents.image_generation.service import (
-    AgentConversationContext,
-    AgentImageGenerationService,
-)
+from src.agents.image_generation.models import GeneratedImageBytes, GenerateImageRequest, ImageGenerationStreamEvent
+from src.agents.image_generation.service import AgentImageGenerationService, ImageGenerationNotSupportedError
+from src.agents.image_generation.settings import ImageGenerationSettings, ImageGenerationSettingsRepository
 from src.agents.models import Agent
+from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
+from src.conversations.repository import ConversationRepository
+from src.crypto import encrypt
 from src.llm.events import SSEEventType
-from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields
+from src.messages.repositories import get_message_repository
+from src.settings.models import ProviderSettings
+from src.settings.repository import ProviderSettingsRepository
+from tests.mock_data import TEST_USER_EMAIL, account_for, agent_fields, conversation_fields
 
-
-class FakeMessageRepository:
-    def __init__(self):
-        self.saved = []
-
-    def save(self, message):
-        self.saved.append(message)
-        return message
+ACCOUNT = account_for(TEST_USER_EMAIL)
 
 
 class FakeStorage:
@@ -33,81 +35,161 @@ class FakeStorage:
         return f"https://signed.example/{key}?signature=test"
 
 
-class FakeProvider:
+class FakeDrawing:
+    """The vendor: draws one 256px PNG and remembers what it was asked."""
+
+    def __init__(self):
+        self.asked: dict = {}
+
     async def stream_generate(self, **kwargs):
-        yield SimpleNamespace(kind="generating")
-        yield SimpleNamespace(
-            kind="image",
-            image=GeneratedImageBytes(
-                data=b"fake-image",
-                output_format="png",
-                mime_type="image/png",
-                prompt=kwargs["prompt"],
-                width=256,
-                height=256,
-            ),
-        )
+        self.asked.update(kwargs)
+        yield ImageGenerationStreamEvent(kind="generating")
+        yield ImageGenerationStreamEvent(kind="image", image=GeneratedImageBytes(
+            data=b"fake-image", output_format="png", mime_type="image/png", prompt=kwargs["prompt"],
+            width=256, height=256,
+        ))
+
+    async def generate(self, **kwargs):
+        self.asked.update(kwargs)
+        return [GeneratedImageBytes(data=b"fake-image", output_format="png", mime_type="image/png",
+                                    prompt=kwargs["prompt"])]
 
 
-class FakeProviderFactory:
+class FakeDrawingFactory:
+    def __init__(self):
+        self.drawing = FakeDrawing()
+        self.asked_for: list[str] = []
+
     def get(self, provider_name):
-        return FakeProvider()
+        self.asked_for.append(provider_name)
+        return self.drawing
 
 
-class FakeAgentImageGenerationService(AgentImageGenerationService):
-    def _load_agent_turn_context(self, *, agent_id, conversation_id):
-        return AgentConversationContext(
-            agent=Agent(
-                agent_id=agent_id,
-                agent_name="Image Agent",
-                agent_architecture="krishna-memgpt",
-                agent_provider="OpenAI",
-                agent_model="gpt-5.4",
-                agent_persona="Generate images.",
-                **agent_fields(TEST_USER_EMAIL),
-            ),
-            conversation=Conversation(
-                conversation_id=conversation_id,
-                title="Image conversation",
-                agent_id=agent_id,
-                **conversation_fields(TEST_USER_EMAIL),
-            ),
-        )
-
-    def _validate_and_load_provider_settings(self, agent):
-        return SimpleNamespace()
-
-    async def _load_credentials(self, provider_name, provider_settings):
-        return {"access_token": "token"}
+@pytest.fixture
+def factory() -> FakeDrawingFactory:
+    return FakeDrawingFactory()
 
 
-@pytest.mark.asyncio
-async def test_stream_for_agent_turn_completion_includes_signed_image_url():
-    service = FakeAgentImageGenerationService(
-        message_repo=FakeMessageRepository(),
-        storage=FakeStorage(),
-        provider_factory=FakeProviderFactory(),
-    )
+@pytest.fixture
+def service(dynamodb_table, factory) -> AgentImageGenerationService:
+    return AgentImageGenerationService(storage=FakeStorage(), provider_factory=factory)
 
-    events = [
+
+def _provider_set_up(name: str) -> None:
+    ProviderSettingsRepository().save(ProviderSettings(
+        account_id=ACCOUNT, provider_name=name, encrypted_credentials=encrypt(json.dumps({"api_key": "sk-test"}))))
+
+
+def _drawing_with(provider_name: str, model_name: str) -> None:
+    _provider_set_up(provider_name)
+    ImageGenerationSettingsRepository().save(ImageGenerationSettings(
+        account_id=ACCOUNT, enabled=True, provider_name=provider_name, model_name=model_name))
+
+
+def _agent_and_conversation(provider: str = "Anthropic") -> tuple[Agent, Conversation]:
+    agent = AgentRepository().save(Agent(
+        agent_name="Artist", agent_architecture="krishna-memgpt", agent_provider=provider, agent_model="claude-haiku",
+        agent_persona="You draw.", **agent_fields(TEST_USER_EMAIL),
+    ))
+    conversation = ConversationRepository().save(Conversation(
+        title="Pictures", agent_id=agent.agent_id, **conversation_fields(TEST_USER_EMAIL)))
+    return agent, conversation
+
+
+async def _skill_draws(service: AgentImageGenerationService, agent: Agent, conversation: Conversation) -> list:
+    return [
         event
         async for event in service.stream_for_agent_turn(
-            agent_id="agent-1",
-            conversation_id="conversation-1",
-            actor_email="actor@example.com",
+            agent_id=agent.agent_id,
+            conversation_id=conversation.conversation_id,
+            actor_email=TEST_USER_EMAIL,
             user_message_id="user-message-1",
             request=GenerateImageRequest(prompt="maze", output_format="png"),
         )
     ]
 
-    complete = next(
+
+# --- The Image Generation skill, inside a chat turn --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_skill_draws_with_the_accounts_setting_not_the_agents_model(service, factory):
+    _drawing_with("OpenAIAPI", "gpt-5.5")
+    agent, conversation = _agent_and_conversation(provider="Anthropic")
+
+    events = await _skill_draws(service, agent, conversation)
+
+    assert factory.asked_for == ["OpenAIAPI"]
+    assert factory.drawing.asked["model"] == "gpt-5.5"
+    assert factory.drawing.asked["credentials"] == {"api_key": "sk-test"}
+    assert [event.event_type for event in events] == [
+        SSEEventType.IMAGE_GENERATION_STARTED,
+        SSEEventType.LIFECYCLE_NOTIFICATION,
+        SSEEventType.IMAGE_GENERATION_COMPLETE,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_skills_picture_is_saved_as_the_assistants_reply_to_the_turns_message(service):
+    _drawing_with("OpenAIAPI", "gpt-5.5")
+    agent, conversation = _agent_and_conversation()
+
+    complete = (await _skill_draws(service, agent, conversation))[-1]
+
+    assert complete.image_url.startswith("https://signed.example/")
+    assert complete.images[0]["url"] == complete.image_url
+    saved = get_message_repository("dynamodb").find_by_conversation(conversation.conversation_id)
+    assert [(message.role, len(message.images)) for message in saved] == [("assistant", 1)]
+
+
+@pytest.mark.asyncio
+async def test_the_skill_says_where_to_turn_drawing_on_when_the_account_hasnt(service):
+    agent, conversation = _agent_and_conversation(provider="Anthropic")
+
+    with pytest.raises(ImageGenerationNotSupportedError, match="Settings > Image Generation"):
+        await _skill_draws(service, agent, conversation)
+
+
+# --- Asked for directly (dashboard, widget) ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_streamed_drawing_saves_the_prompt_and_the_picture_as_a_turn(service):
+    _drawing_with("OpenAIAPI", "gpt-5.5")
+    agent, conversation = _agent_and_conversation()
+
+    events = [
         event
-        for event in events
-        if event.event_type == SSEEventType.IMAGE_GENERATION_COMPLETE
+        async for event in service.stream_for_dashboard(
+            agent=agent, conversation=conversation, actor_email=TEST_USER_EMAIL,
+            request=GenerateImageRequest(prompt="maze"),
+        )
+    ]
+
+    assert [event.event_type for event in events] == [
+        SSEEventType.USER_MESSAGE_SAVED,
+        SSEEventType.IMAGE_GENERATION_STARTED,
+        SSEEventType.LIFECYCLE_NOTIFICATION,
+        SSEEventType.ASSISTANT_MESSAGE_SAVED,
+        SSEEventType.IMAGE_GENERATION_COMPLETE,
+        SSEEventType.STREAM_COMPLETE,
+    ]
+    complete = events[4]
+    # The dashboard reads images through its own authorised route, not a signed S3 link
+    assert complete.image_url.endswith(
+        f"/conversations/{conversation.conversation_id}/messages/{complete.message_id}/images/{complete.image_id}")
+    saved = get_message_repository("dynamodb").find_by_conversation(conversation.conversation_id)
+    assert sorted(message.role for message in saved) == ["assistant", "user"]
+
+
+@pytest.mark.asyncio
+async def test_a_widget_drawing_answers_with_signed_urls(service):
+    _drawing_with("OpenAIAPI", "gpt-5.5")
+    agent, conversation = _agent_and_conversation()
+
+    result = await service.generate_for_widget(
+        agent=agent, conversation=conversation, actor_email=TEST_USER_EMAIL,
+        request=GenerateImageRequest(prompt="maze"),
     )
 
-    assert complete.image_url
-    assert complete.image_url.startswith("https://signed.example/")
-    assert complete.images
-    assert complete.images[0]["url"].startswith("https://signed.example/")
-    assert complete.images[0]["url"] == complete.image_url
+    assert result.user_message_id and result.images[0].url.startswith("https://signed.example/")
