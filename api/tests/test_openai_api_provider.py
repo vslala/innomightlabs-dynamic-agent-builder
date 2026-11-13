@@ -6,7 +6,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from src.config.settings import DEFAULT_OPENAI_MODELS
+from src.config.settings import DEFAULT_OPENAI_API_IMAGE_MODELS, DEFAULT_OPENAI_MODELS
+from src.llm.models import ModelCapability
 from src.crypto import encrypt
 from src.config import settings
 from src.llm.credentials import load_provider_credentials
@@ -220,12 +221,19 @@ class TestModelDiscovery:
     def configured_models(self, monkeypatch):
         monkeypatch.setattr(settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
 
-    def test_lists_only_chat_models_newest_first(self, monkeypatch):
+    def test_lists_chat_models_newest_first_then_the_image_models(self, monkeypatch):
         seen = _models_response(monkeypatch)
 
         models = OpenAIAPICatalog().list_models(_provider_settings())
 
-        assert [model.model_name for model in models] == ["gpt-5.5", "gpt-4.1", "o4-mini", "gpt-4o"]
+        assert [(model.model_name, model.can(ModelCapability.CHAT), model.can(ModelCapability.IMAGE_GENERATION))
+                for model in models] == [
+            ("gpt-5.5", True, False),
+            ("gpt-4.1", True, False),
+            ("o4-mini", True, False),
+            ("gpt-4o", True, False),
+            ("gpt-image-2", False, True),
+        ]
         assert models[0].display_name == "[OpenAI API] gpt-5.5"
         assert {model.provider for model in models} == {"openai_api"}
         [request] = seen
@@ -238,12 +246,14 @@ class TestModelDiscovery:
 
         models = OpenAIAPICatalog().list_models(_provider_settings())
 
-        assert [model.model_name for model in models] == DEFAULT_OPENAI_MODELS
+        assert [model.model_name for model in models] == DEFAULT_OPENAI_MODELS + DEFAULT_OPENAI_API_IMAGE_MODELS
 
     def test_falls_back_on_an_unexpected_payload(self, monkeypatch):
         _models_response(monkeypatch, payload={"data": "nope"})
 
-        assert [m.model_name for m in OpenAIAPICatalog().list_models(_provider_settings())] == DEFAULT_OPENAI_MODELS
+        listed = [m.model_name for m in OpenAIAPICatalog().list_models(_provider_settings())]
+
+        assert listed == DEFAULT_OPENAI_MODELS + DEFAULT_OPENAI_API_IMAGE_MODELS
 
     def test_is_a_configurable_model_source(self):
         found = find_provider("openaiapi")

@@ -1,9 +1,7 @@
-"""The account's image generation: the setting admins choose, who draws because of it, and the OpenAI API adapter."""
+"""The account's image generation: the setting admins choose, and who draws because of it."""
 
 import pytest
 
-from src.llm.images import ImageGenerationOptions, collect_images
-from src.llm.providers import provider
 from src.agents.image_generation.service import (
     AgentImageGenerationError,
     AgentImageGenerationService,
@@ -17,7 +15,6 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from tests.llm_doubles import ListedModels, use_provider
 from tests.mock_data import TEST_USER_EMAIL, account_for, agent_fields
-from tests.test_agent_image_provider import FakeAsyncClient, FakeStreamResponse
 
 ACCOUNT = account_for(TEST_USER_EMAIL)
 
@@ -129,36 +126,6 @@ def test_the_chosen_provider_must_still_be_set_up(dynamodb_table):
 
     with pytest.raises(AgentImageGenerationError, match="not configured"):
         AgentImageGenerationService()._artist_for(agent_on("Bedrock"))
-
-
-# --- The OpenAI API adapter -------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_the_openai_api_adapter_draws_with_the_api_key_at_the_public_endpoint(monkeypatch):
-    sent: dict = {}
-
-    class RecordingClient(FakeAsyncClient):
-        def stream(self, method, url, headers=None, json=None):
-            sent.update(url=url, authorization=(headers or {}).get("Authorization"), model=(json or {}).get("model"))
-            return FakeStreamResponse()
-
-    monkeypatch.setattr("src.llm.wire.responses_images.httpx.AsyncClient", RecordingClient)
-
-    images = await collect_images(provider("OpenAIAPI").images.draw(
-        prompt="red pixel", credentials={"api_key": "sk-test"}, model="gpt-5.5",
-        options=ImageGenerationOptions(output_format="png"),
-    ))
-
-    assert sent == {"url": "https://api.openai.com/v1/responses", "authorization": "Bearer sk-test", "model": "gpt-5.5"}
-    assert len(images) == 1 and images[0].provider_metadata["provider"] == "openai_api"
-
-
-@pytest.mark.asyncio
-async def test_the_openai_api_adapter_wants_an_api_key():
-    with pytest.raises(ValueError, match="api_key"):
-        await collect_images(provider("OpenAIAPI").images.draw(
-            prompt="x", credentials={}, model="gpt-5.5", options=ImageGenerationOptions()))
 
 
 def test_one_agent_read_on_its_own_says_it_draws_too(test_client, auth_headers, drawing_models):

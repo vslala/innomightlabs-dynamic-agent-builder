@@ -70,13 +70,15 @@ def test_every_chatgpt_model_draws_because_it_hosts_the_image_tool(slug: str) ->
     assert openai_model(slug).can(ModelCapability.CHAT, ModelCapability.IMAGE_GENERATION)
 
 
-def test_every_openai_api_chat_model_draws_too(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_openai_api_key_draws_with_the_image_models_not_its_chat_models(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "openai_models", ["gpt-5.5"])
+    monkeypatch.setattr(settings, "openai_api_image_models", ["gpt-image-2"])
     broken = ProviderSettings(account_id="acct", provider_name="OpenAIAPI", encrypted_credentials="not-encrypted")
 
-    [model] = OpenAIAPICatalog().list_models(broken)  # the listing fails, so the configured models are offered
+    chat, drawing = OpenAIAPICatalog().list_models(broken)  # the listing fails, so the configured models are offered
 
-    assert model.can(ModelCapability.CHAT, ModelCapability.IMAGE_GENERATION)
+    assert chat.can(ModelCapability.CHAT) and not chat.can(ModelCapability.IMAGE_GENERATION)
+    assert drawing.can(ModelCapability.IMAGE_GENERATION) and not drawing.can(ModelCapability.CHAT)
 
 
 def test_ollama_asks_each_model_once_and_reads_vision(monkeypatch: pytest.MonkeyPatch) -> None:

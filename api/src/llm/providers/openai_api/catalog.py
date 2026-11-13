@@ -13,7 +13,7 @@ import re
 import httpx
 
 from src.config import settings
-from src.llm.models import ModelInfo, chat_capabilities
+from src.llm.models import ModelCapability, ModelInfo, chat_capabilities
 from src.llm.providers.openai_api.chat import OPENAI_API_BASE_URL
 from src.llm.providers.provider import stored_credentials
 from src.settings.models import ProviderSettings
@@ -29,6 +29,9 @@ NON_CHAT_MARKERS = (
     "audio", "realtime", "transcribe", "tts", "image", "search", "embedding", "moderation",
     "instruct", "codex", "chat-latest", "live", "-pro",
 )
+#: The dedicated image models `/v1/models` lists, by family: `/v1/images/generations` draws with them. DALL·E is left
+#: out: it answers in another shape (`response_format`, no `output_format`). Checked against the docs on 2026-11-12.
+IMAGE_MODEL_PREFIXES = ("gpt-image-", "chatgpt-image-")
 #: Legacy models a funded account lists but the Responses API answers with `model_not_found`.
 REFUSED_MODELS = frozenset({"gpt-4", "gpt-4-turbo"})
 #: A chat family (`gpt-5.5`, `o4-mini`), not a dated snapshot of one (`gpt-4o-2024-08-06`, `gpt-3.5-turbo-0125`).
@@ -54,23 +57,23 @@ class OpenAIAPICatalog:
             log.warning("Falling back to configured OpenAI API models: %s", e)
             entries = []
 
-        listed = sorted(
-            (entry for entry in entries if is_chat_model(entry)),
-            key=lambda entry: entry.get("created") if isinstance(entry.get("created"), int) else 0,
-            reverse=True,
-        )
-        slugs = [str(entry["id"]) for entry in listed] or [slug.strip() for slug in settings.openai_models if slug.strip()]
+        chat = [str(entry["id"]) for entry in _newest_first(entries) if is_chat_model(entry)]
+        drawing = [str(entry["id"]) for entry in _newest_first(entries) if is_image_model(entry)]
         return [
-            ModelInfo(
-                model_id=slug,
-                model_name=slug,
-                display_name=f"[OpenAI API] {slug}",
-                provider="openai_api",
-                # Every chat model hosts the Responses `image_generation` tool, so every one draws.
-                capabilities=chat_capabilities(reads_images=reads_images(slug), draws=True),
-            )
-            for slug in slugs
+            *(
+                _model(slug, chat_capabilities(reads_images=reads_images(slug)))
+                for slug in chat or [slug.strip() for slug in settings.openai_models if slug.strip()]
+            ),
+            *(
+                _model(slug, [ModelCapability.IMAGE_GENERATION])
+                for slug in drawing or [slug.strip() for slug in settings.openai_api_image_models if slug.strip()]
+            ),
         ]
+
+
+def is_image_model(entry: object) -> bool:
+    model_id = entry.get("id") if isinstance(entry, dict) else None
+    return isinstance(model_id, str) and model_id.startswith(IMAGE_MODEL_PREFIXES)
 
 
 def is_chat_model(entry: object) -> bool:
@@ -86,3 +89,14 @@ def is_chat_model(entry: object) -> bool:
 def reads_images(model_id: str) -> bool:
     """`/v1/models` has no modality field, so the vision families are matched by prefix (settings)."""
     return model_id.startswith(tuple(settings.openai_api_vision_model_prefixes))
+
+
+def _newest_first(entries: list) -> list[dict]:
+    listed = [entry for entry in entries if isinstance(entry, dict)]
+    return sorted(listed, key=lambda entry: entry["created"] if isinstance(entry.get("created"), int) else 0, reverse=True)
+
+
+def _model(slug: str, capabilities: list[ModelCapability]) -> ModelInfo:
+    return ModelInfo(
+        model_id=slug, model_name=slug, display_name=f"[OpenAI API] {slug}", provider="openai_api", capabilities=capabilities
+    )

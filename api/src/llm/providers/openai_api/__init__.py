@@ -3,10 +3,10 @@
 from src.form_models import Form, FormInput, FormInputType
 from src.llm.providers.provider import Provider
 from src.llm.wire.responses import responses_refuses_model
-from src.llm.wire.responses_images import ResponsesToolImages
 
 from .catalog import OpenAIAPICatalog
-from .chat import OPENAI_API_BASE_URL, OpenAIAPIProvider
+from .chat import OpenAIAPIProvider
+from .images import OpenAIAPIImages
 
 OPENAI_API = Provider(
     name="OpenAIAPI",
@@ -29,10 +29,5 @@ OPENAI_API = Provider(
     chat=OpenAIAPIProvider(),
     catalog=OpenAIAPICatalog(),
     refuses_model=responses_refuses_model,
-    images=ResponsesToolImages(
-        url=f"{OPENAI_API_BASE_URL}/responses",
-        credential_field="api_key",
-        label="OpenAI API",
-        provider_key="openai_api",
-    ),
+    images=OpenAIAPIImages(),
 )

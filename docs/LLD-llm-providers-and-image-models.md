@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (phases 0–4 built; probes P1–P4 and the backfill pending; phase 5 not started) |
+| Status | 🚧 In progress (phases 0–4 and 5a built; probes P1–P5 and the backfill pending) |
 | Owner | vslala |
 | Last reviewed | 2026-11-12 |
 | Depends on | [api/src/llm/CONTRIBUTION.md](../api/src/llm/CONTRIBUTION.md), [LLD-multimodal-image-generation-v1.md](../api/docs/LLD-multimodal-image-generation-v1.md), [LLD-image-input-and-read-image-tool.md](LLD-image-input-and-read-image-tool.md) |
@@ -71,6 +71,21 @@ say "OpenAI". `tests/test_responses_wire.py` asserts that the OpenAI request bod
 - **Not yet done: probes P1–P4 (§8).** They need a real xAI key, and none was available in this session. The code
   follows the documented API. P1 (do function calls stream as OpenAI's do?) and P3 (is the listing under `models` or
   `data`? `_listing` reads both) are the ones that could change code. Run them before the manual check in §9.
+
+**Phase 5a (2026-11-13).** The OpenAI API key draws with OpenAI's image models:
+- **Catalog.** `providers/openai_api/catalog.py` lists `gpt-image-*` and `chatgpt-image-*` (DALL·E is left out: it
+  answers in another shape) as `IMAGE_GENERATION` only, with `OPENAI_API_IMAGE_MODELS` (default `gpt-image-2`) as
+  the fallback. Its chat models no longer claim to draw.
+- **Drawing.** `providers/openai_api/images.py` (`OpenAIAPIImages`) streams `POST /v1/images/generations` with
+  `partial_images: 2`, so previews still reach the chat. `ResponsesToolImages` now serves only the ChatGPT sign-in,
+  which has no images endpoint.
+- **Backfill.** `scripts/backfill_image_generation_settings.py` now asks each account's catalog which models draw.
+  An account with no setting gets its agent's model if it still draws, otherwise the catalog's first drawing model.
+  A saved setting whose model no longer draws (an OpenAI API chat model) is moved to the first drawing model. Run
+  it after deploying 5a, since it reads the new catalogs.
+- **P5, not yet run:** the stream's event names (`image_generation.partial_image`, `image_generation.completed`, each
+  with `b64_json`) are from OpenAI's docs and haven't been seen live. The adapter ignores events it doesn't know, so
+  a different name shows up as "completed without image output".
 
 ## 1. Goal
 
@@ -776,6 +791,7 @@ Run the LLM suite in `api/src/llm/CONTRIBUTION.md`, then `uv run pytest tests -q
 | P2 | xAI's status and body for an unknown model | Add that text to `responses_refuses_model` with the date |
 | P3 | `/v1/language-models` and `/v1/image-generation-models`: is the list under `models` or `data`, and are `input_modalities` populated? | `_listing` reads whichever; missing modalities → `grok-4*` reads images |
 | P4 | `images/generations`: `quality` accepted with `grok-imagine-image-2.0`; output always JPEG; any `revised_prompt` | Drop `quality`; the format is sniffed anyway |
+| P5 | OpenAI `images/generations` with `stream: true`: are the events `image_generation.partial_image` / `image_generation.completed` with `b64_json`? | Rename them in `providers/openai_api/images.py` |
 
 Record the answers in an "Implementation notes" section at the top.
 

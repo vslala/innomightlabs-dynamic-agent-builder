@@ -1,7 +1,7 @@
 """Drawing with the Responses API's `image_generation` tool, which any of the provider's chat models can call.
 
-The ChatGPT sign-in (Codex) and an OpenAI API key send the same stream; they differ in where it goes and which
-credential authorises it, so each is one `ResponsesToolImages` value, not a subclass."""
+The ChatGPT sign-in (Codex) draws this way: it has no images endpoint. A backend is one `ResponsesToolImages` value
+(where the stream goes, which credential authorises it), not a subclass."""
 
 from __future__ import annotations
 

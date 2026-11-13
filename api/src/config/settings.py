@@ -32,6 +32,8 @@ DEFAULT_OPENAI_MODELS = [
 
 #: Offered only when xAI's model listings can't be read (checked against docs.x.ai on 2026-11-12); normally the lists
 #: come from `/v1/language-models` and `/v1/image-generation-models` (see GrokCatalog).
+#: Offered only when the OpenAI API's `/v1/models` can't be read; normally its `gpt-image-*` models are listed.
+DEFAULT_OPENAI_API_IMAGE_MODELS = ["gpt-image-2"]
 DEFAULT_GROK_MODELS = ["grok-4.7", "grok-4.6", "grok-4.5"]
 DEFAULT_GROK_IMAGE_MODELS = ["grok-imagine-image-2.0"]
 
@@ -248,6 +250,7 @@ class Settings:
     openai_oauth_client_id: str = ""
     openai_oauth_scopes: str = "openid profile email offline_access"
     openai_models: list[str] = field(default_factory=lambda: DEFAULT_OPENAI_MODELS.copy())
+    openai_api_image_models: list[str] = field(default_factory=lambda: DEFAULT_OPENAI_API_IMAGE_MODELS.copy())
     grok_models: list[str] = field(default_factory=lambda: DEFAULT_GROK_MODELS.copy())
     grok_image_models: list[str] = field(default_factory=lambda: DEFAULT_GROK_IMAGE_MODELS.copy())
     openai_oauth_id_token_add_organizations: bool = False
@@ -690,6 +693,7 @@ class Settings:
                 "OPENAI_MODELS",
                 DEFAULT_OPENAI_MODELS,
             ),
+            openai_api_image_models=parse_env_list("OPENAI_API_IMAGE_MODELS", DEFAULT_OPENAI_API_IMAGE_MODELS),
             grok_models=parse_env_list("GROK_MODELS", DEFAULT_GROK_MODELS),
             grok_image_models=parse_env_list("GROK_IMAGE_MODELS", DEFAULT_GROK_IMAGE_MODELS),
             openai_oauth_id_token_add_organizations=env_bool("OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS"),
