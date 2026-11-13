@@ -1,10 +1,9 @@
 """Token usage recording forwards the turn's public API key, when there is one."""
 
-from types import SimpleNamespace
-
 import pytest
 
 from src.agents.agentic_loop import _record_token_usage
+from src.llm.chat import LLMEvent
 from src.token_usage.models import TokenUsagePeriod, TokenUsageRecord
 from src.skills.models import ActorKind
 from tests.mock_data import account_for
@@ -42,7 +41,7 @@ async def test_record_token_usage_forwards_api_key_id(api_key_id):
         api_key_id=api_key_id,
     )
 
-    await _record_token_usage(recorder, state, SimpleNamespace(prompt_tokens=10, completion_tokens=5))
+    await _record_token_usage(recorder, state, LLMEvent(type="usage", prompt_tokens=10, completion_tokens=5))
 
     assert recorder.calls[0]["api_key_id"] == api_key_id
     assert recorder.calls[0]["agent_id"] == "agent-1"

@@ -40,7 +40,13 @@ class FakeVisionProvider:
         self.active = self.max_active = 0
 
     async def stream_response(
-        self, messages: list[dict], credentials: dict, tools: list | None = None, model: str | None = None
+        self,
+        messages: list[dict],
+        credentials: dict,
+        tools: list | None = None,
+        model: str | None = None,
+        *,
+        cache_key: str | None = None,
     ) -> AsyncIterator[LLMEvent]:
         self.calls.append({"messages": messages, "model": model, "tools": tools})
         self.active += 1

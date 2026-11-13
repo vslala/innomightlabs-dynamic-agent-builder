@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.llm.providers.anthropic.chat import AnthropicProvider
+from src.llm.providers.anthropic.chat import AnthropicProvider, mark_cache_breakpoints
 
 
 def test_anthropic_provider_adds_type_to_bedrock_style_text_blocks() -> None:
@@ -140,3 +140,74 @@ async def test_anthropic_provider_yields_usage_event_from_final_message(monkeypa
     assert len(usage_events) == 1
     assert usage_events[0].prompt_tokens == 10
     assert usage_events[0].completion_tokens == 20
+
+
+def _stream_capturing_request(monkeypatch, usage) -> dict:
+    """Replace the client with one that answers with `usage` and keeps the request it was sent."""
+    request: dict = {}
+    stream_obj = FakeAnthropicStream(
+        events=[SimpleNamespace(type="message_stop")],
+        final_message=SimpleNamespace(stop_reason="end_turn", usage=usage),
+    )
+
+    def stream(**kwargs):
+        request.update(kwargs)
+        return stream_obj
+
+    monkeypatch.setattr(
+        "src.llm.providers.anthropic.chat.AsyncAnthropic",
+        lambda api_key: SimpleNamespace(messages=SimpleNamespace(stream=stream)),
+    )
+    return request
+
+
+async def _usage_of_a_call(**options):
+    events = [
+        event
+        async for event in AnthropicProvider().stream_response(
+            messages=[{"role": "user", "content": [{"text": "Look this up"}, {"text": "Carry on"}]}],
+            credentials={"api_key": "test-key"},
+            **options,
+        )
+    ]
+    return next(event for event in events if event.type == "usage")
+
+
+async def test_a_call_that_continues_a_conversation_marks_where_the_next_call_reads_the_cache(monkeypatch):
+    request = _stream_capturing_request(monkeypatch, SimpleNamespace(input_tokens=1, output_tokens=1))
+
+    await _usage_of_a_call(cache_key="conversation-1")
+
+    newest = request["messages"][-1]["content"]
+    assert [block.get("cache_control") for block in newest] == [{"type": "ephemeral"}] * 2
+
+
+async def test_a_one_off_call_is_not_cached(monkeypatch):
+    """Anthropic charges extra for a cache write, which a call nothing follows never reads back."""
+    request = _stream_capturing_request(monkeypatch, SimpleNamespace(input_tokens=1, output_tokens=1))
+
+    await _usage_of_a_call()
+
+    assert not any("cache_control" in block for block in request["messages"][-1]["content"])
+
+
+def test_only_the_newest_messages_last_two_blocks_are_marked():
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "Hi"}]},
+        {"role": "user", "content": [{"type": "tool_result"}, {"type": "tool_result"}, {"type": "text", "text": "Go"}]},
+    ]
+
+    mark_cache_breakpoints(messages)
+
+    assert "cache_control" not in messages[0]["content"][0]
+    assert ["cache_control" in block for block in messages[1]["content"]] == [False, True, True]
+
+
+async def test_the_prompt_counts_the_tokens_anthropic_read_from_and_wrote_to_the_cache(monkeypatch):
+    _stream_capturing_request(monkeypatch, SimpleNamespace(
+        input_tokens=10, output_tokens=20, cache_read_input_tokens=900, cache_creation_input_tokens=90,
+    ))
+
+    usage = await _usage_of_a_call(cache_key="conversation-1")
+
+    assert (usage.prompt_tokens, usage.cache_read_tokens, usage.cache_write_tokens) == (1000, 900, 90)

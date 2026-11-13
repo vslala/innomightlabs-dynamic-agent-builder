@@ -83,6 +83,8 @@ class AnthropicProvider(LLMProvider):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         """
         Stream response from Anthropic API directly.
@@ -121,6 +123,9 @@ class AnthropicProvider(LLMProvider):
         # Add tools if provided
         if tools:
             request_params["tools"] = self._normalize_tools(tools)
+
+        if cache_key:
+            mark_cache_breakpoints(request_input.messages)
 
         log.info(
             f"Calling Anthropic API with model {model_id}, "
@@ -183,18 +188,38 @@ class AnthropicProvider(LLMProvider):
                         log.info(f"Anthropic stream completed: {stop_reason}")
                         yield LLMEvent(type="stop", content=stop_reason_of(stop_reason, ANTHROPIC_STOP_REASONS))
 
-                        # Log usage
-                        usage = final_message.usage
-                        log.info(
-                            f"Anthropic usage - input tokens: {usage.input_tokens}, "
-                            f"output tokens: {usage.output_tokens}"
-                        )
-                        yield LLMEvent(
-                            type="usage",
-                            prompt_tokens=usage.input_tokens,
-                            completion_tokens=usage.output_tokens,
-                        )
+                        yield usage_event(final_message.usage)
 
         except Exception as e:
             log.error(f"Anthropic API error: {e}", exc_info=True)
             raise
+
+
+#: Anthropic caches only up to blocks marked `cache_control`; a later call reads what an earlier one marked.
+CACHE_BREAKPOINT = {"type": "ephemeral"}
+
+
+def mark_cache_breakpoints(messages: list[dict[str, Any]]) -> None:
+    """Mark the newest message's last two blocks, so the next call of the conversation finds this one's prefix.
+
+    Two, because the agent loop's instruction to carry on rides as the last block of the newest tool results and
+    moves on every call (`_Turn.nudge`): a prefix that ends with it is never sent again, while the block before it is.
+    A later call looks back up to 20 blocks from its own marks for one an earlier call wrote, and a loop call adds two.
+    """
+    if not messages:
+        return
+    for block in messages[-1]["content"][-2:]:
+        block["cache_control"] = CACHE_BREAKPOINT
+
+
+def usage_event(usage: Any) -> LLMEvent:
+    """Anthropic's `input_tokens` leaves out what it read from or wrote to the cache; `prompt_tokens` counts it all."""
+    cache_read = getattr(usage, "cache_read_input_tokens", None) or 0
+    cache_write = getattr(usage, "cache_creation_input_tokens", None) or 0
+    return LLMEvent(
+        type="usage",
+        prompt_tokens=usage.input_tokens + cache_read + cache_write,
+        completion_tokens=usage.output_tokens,
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
+    )

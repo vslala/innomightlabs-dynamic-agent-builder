@@ -22,9 +22,11 @@ class OpenAIAPIProvider(LLMProvider):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         # The public API accepts the Codex reasoning fields and carries reasoning between turns the same way.
-        body = responses_body(model or self.default_model, messages, tools, **CODEX_EXTRAS)
+        body = responses_body(model or self.default_model, messages, tools, cache_key=cache_key, **CODEX_EXTRAS)
         async for event in stream_chat(
             f"{OPENAI_API_BASE_URL}/responses", bearer_headers(credentials), body, label="OpenAI API"
         ):

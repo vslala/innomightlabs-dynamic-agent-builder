@@ -39,9 +39,12 @@ class TokenUsageService:
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
         api_key_id: Optional[str] = None,
     ) -> TokenUsageRecord:
-        """Record usage for one LLM call.
+        """Record usage for one LLM call. The cache counts are the parts of `prompt_tokens` the vendor read from its
+        prompt cache and wrote to it: they cost a fraction, and a premium, of an ordinary input token.
 
         No ownership check here -- this is called from the already-authorized
         conversation path (agentic_loop.py), unlike get_usage below which is
@@ -55,6 +58,8 @@ class TokenUsageService:
             llm_model=llm_model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
             api_key_id=api_key_id,
         )
 
@@ -97,6 +102,8 @@ class TokenUsageService:
                 llm_model=record.llm_model,
                 prompt_tokens=record.prompt_tokens,
                 completion_tokens=record.completion_tokens,
+                cache_read_tokens=record.cache_read_tokens,
+                cache_write_tokens=record.cache_write_tokens,
                 total_tokens=record.total_tokens,
                 call_count=record.call_count,
             )

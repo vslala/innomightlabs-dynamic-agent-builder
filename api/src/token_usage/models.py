@@ -51,6 +51,9 @@ class TokenUsageRecord:
     llm_model: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    #: Parts of `prompt_tokens`: read from the vendor's prompt cache, and written to it.
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     total_tokens: int = 0
     call_count: int = 0
     created_at: Optional[str] = None
@@ -65,6 +68,8 @@ class TokenUsageRecord:
             llm_model=item["llm_model"],
             prompt_tokens=int(item.get("prompt_tokens", 0)),
             completion_tokens=int(item.get("completion_tokens", 0)),
+            cache_read_tokens=int(item.get("cache_read_tokens", 0)),
+            cache_write_tokens=int(item.get("cache_write_tokens", 0)),
             total_tokens=int(item.get("total_tokens", 0)),
             call_count=int(item.get("call_count", 0)),
             created_at=item.get("created_at"),
@@ -78,6 +83,8 @@ class TokenUsagePoint(BaseModel):
     llm_model: str
     prompt_tokens: int
     completion_tokens: int
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     total_tokens: int
     call_count: int
 

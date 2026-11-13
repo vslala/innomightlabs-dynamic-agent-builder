@@ -31,9 +31,15 @@ DEFAULT_INSTRUCTIONS = "You are a helpful assistant."
 CHAT_TIMEOUT_SECONDS = 60.0
 
 
-def responses_body(model: str, messages: list[dict], tools: list[dict] | None, **extra: Any) -> dict[str, Any]:
-    """A streamed, unstored request. `extra` carries what one backend adds (Codex's reasoning fields)."""
+def responses_body(
+    model: str, messages: list[dict], tools: list[dict] | None, *, cache_key: str | None = None, **extra: Any
+) -> dict[str, Any]:
+    """A streamed, unstored request. `extra` carries what one backend adds (Codex's reasoning fields).
+
+    `cache_key` goes as `prompt_cache_key`: OpenAI and xAI send the calls that share one to the same server's cache.
+    Without it xAI may send a call to a server that never read its earlier prefix, and the call pays for all of it."""
     instructions, items = responses_input(messages)
+    cache_routing = {"prompt_cache_key": cache_key} if cache_key else {}
     return {
         "model": model,
         "instructions": instructions,
@@ -45,6 +51,7 @@ def responses_body(model: str, messages: list[dict], tools: list[dict] | None, *
         "parallel_tool_calls": False,
         "store": False,
         "stream": True,
+        **cache_routing,
         **extra,
     }
 
@@ -150,8 +157,7 @@ async def stream_chat(url: str, headers: dict[str, str], body: dict[str, Any], *
                     )
 
                 elif event_type in ("response.completed", "response.incomplete"):
-                    prompt_tokens, completion_tokens = usage_of(event)
-                    yield LLMEvent(type="usage", prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+                    yield usage_event(event)
                     details = (event.get("response") or {}).get("incomplete_details") or {}
                     yield LLMEvent(type="stop", content=stop_reason_of(details.get("reason"), INCOMPLETE_REASONS))
 
@@ -173,18 +179,27 @@ async def stream_chat(url: str, headers: dict[str, str], body: dict[str, Any], *
                     raise RuntimeError(f"{label} stream error (request_id={request_id}): {err}")
 
 
-def usage_of(event: dict[str, Any]) -> tuple[int, int]:
-    """(input, output) tokens from a `response.completed` event, or zeros when they aren't there: usage is telemetry,
-    so a shape the vendor changes must never break the stream."""
+def usage_event(event: dict[str, Any]) -> LLMEvent:
+    """The usage in a `response.completed` event. `input_tokens` already counts the cached tokens, which
+    `input_tokens_details` breaks out. Zeros when it isn't there: usage is telemetry, so a shape the vendor changes
+    must never break the stream."""
     response = event.get("response")
     usage = response.get("usage") if isinstance(response, dict) else None
     if not isinstance(usage, dict):
-        return 0, 0
+        return LLMEvent(type="usage")
+    details = usage.get("input_tokens_details")
+    cache = details if isinstance(details, dict) else {}
     try:
-        return int(usage.get("input_tokens", 0) or 0), int(usage.get("output_tokens", 0) or 0)
+        return LLMEvent(
+            type="usage",
+            prompt_tokens=int(usage.get("input_tokens") or 0),
+            completion_tokens=int(usage.get("output_tokens") or 0),
+            cache_read_tokens=int(cache.get("cached_tokens") or 0),
+            cache_write_tokens=int(cache.get("cache_write_tokens") or 0),
+        )
     except (TypeError, ValueError):
         log.warning("Unreadable Responses usage payload: %s", usage)
-        return 0, 0
+        return LLMEvent(type="usage")
 
 
 def responses_refuses_model(exc: Exception) -> bool:

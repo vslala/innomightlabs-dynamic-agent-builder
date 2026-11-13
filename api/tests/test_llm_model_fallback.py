@@ -35,11 +35,19 @@ class ScriptedProvider(LLMProvider):
         self.refuse = refuse
         self.stream_before_failing = stream_before_failing
         self.calls: list[Optional[str]] = []
+        self.cache_keys: list[Optional[str]] = []
 
     async def stream_response(
-        self, messages: list[dict], credentials: dict, tools: Optional[list[dict]] = None, model: Optional[str] = None
+        self,
+        messages: list[dict],
+        credentials: dict,
+        tools: Optional[list[dict]] = None,
+        model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         self.calls.append(model)
+        self.cache_keys.append(cache_key)
         if model in self.refuse:
             if self.stream_before_failing:
                 yield LLMEvent(type="text", content="partial")
@@ -98,6 +106,14 @@ async def test_a_substitute_must_have_the_required_capabilities(fallback):
     inner = ScriptedProvider(refuse={"gpt-5.5": CODEX_REFUSAL})
 
     assert await _texts(fallback(inner, capabilities=["image_understanding"]), "gpt-5.5") == ["answer from gpt-5.4"]
+
+
+async def test_the_substitute_continues_the_same_conversation_in_the_vendors_cache(fallback):
+    inner = ScriptedProvider(refuse={"gpt-5.5": CODEX_REFUSAL})
+
+    _ = [event async for event in fallback(inner).stream_response([], {}, None, "gpt-5.5", cache_key="conversation-1")]
+
+    assert inner.cache_keys == ["conversation-1", "conversation-1"]
 
 
 async def test_other_failures_are_not_retried(fallback, catalog):

@@ -38,8 +38,12 @@ class LLMEvent:
     tool_name: str = ""
     tool_input: dict = field(default_factory=dict)
     thought_signature: bytes | None = None
+    #: Every input token of the call, however the vendor splits them: it reports cache hits and writes apart.
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    #: The parts of `prompt_tokens` the vendor read from its prompt cache, and wrote to it.
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 class LLMProvider(ABC):
@@ -63,6 +67,8 @@ class LLMProvider(ABC):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         """
         Stream response events from the LLM.
@@ -73,6 +79,9 @@ class LLMProvider(ABC):
             credentials: Provider-specific credentials dict (e.g., {"access_key": "...", "secret_key": "..."})
             tools: Optional list of tool definitions for function calling
             model: Optional model name/id to use (provider-specific)
+            cache_key: Names the conversation this call continues, so the vendor can reuse what it already read of
+                it (its prompt cache). None for a one-off call, which a vendor that charges for cache writes then
+                doesn't pay for.
 
         Yields:
             LLMEvent objects representing text chunks, tool calls, or stop signal

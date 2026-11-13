@@ -124,7 +124,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
 
         full_response = ""
         async for event in session.provider.stream_response(
-            context, session.credentials, tools=None, model=agent.agent_model
+            context, session.credentials, tools=None, model=agent.agent_model, cache_key=conversation.conversation_id
         ):
             if event.type == "text":
                 full_response += event.content

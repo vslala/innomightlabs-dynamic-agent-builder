@@ -86,6 +86,8 @@ class BedrockProvider(LLMProvider):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         """
         Stream response from Bedrock using the Converse API.
@@ -200,18 +202,7 @@ class BedrockProvider(LLMProvider):
 
                     # Handle metadata event (usage info)
                     if "metadata" in event:
-                        usage = event["metadata"].get("usage", {})
-                        prompt_tokens = usage.get("inputTokens", 0)
-                        completion_tokens = usage.get("outputTokens", 0)
-                        log.info(
-                            f"Bedrock usage - input tokens: {prompt_tokens}, "
-                            f"output tokens: {completion_tokens}"
-                        )
-                        yield LLMEvent(
-                            type="usage",
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=completion_tokens,
-                        )
+                        yield usage_event(event["metadata"].get("usage", {}))
 
         except Exception as e:
             log.error(f"Bedrock API error: {e}", exc_info=True)
@@ -257,3 +248,16 @@ class BedrockProvider(LLMProvider):
                 "content": [{"text": content_text(block.content)}],
             }
         }
+
+
+def usage_event(usage: dict[str, Any]) -> LLMEvent:
+    """Converse's `inputTokens` leaves out what it read from or wrote to the cache; `prompt_tokens` counts it all."""
+    cache_read = int(usage.get("cacheReadInputTokens") or 0)
+    cache_write = int(usage.get("cacheWriteInputTokens") or 0)
+    return LLMEvent(
+        type="usage",
+        prompt_tokens=int(usage.get("inputTokens") or 0) + cache_read + cache_write,
+        completion_tokens=int(usage.get("outputTokens") or 0),
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
+    )

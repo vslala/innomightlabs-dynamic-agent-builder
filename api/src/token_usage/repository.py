@@ -23,6 +23,8 @@ class TokenUsageRepository:
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
         api_key_id: Optional[str] = None,
         occurred_at: Optional[datetime] = None,
     ) -> TokenUsageRecord:
@@ -56,6 +58,8 @@ class TokenUsageRepository:
                     llm_model=llm_model,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_write_tokens=cache_write_tokens,
                 )
                 if pk == agent_pk and period == TokenUsagePeriod.DAY:
                     day_record = record
@@ -72,6 +76,8 @@ class TokenUsageRepository:
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        cache_read_tokens: int,
+        cache_write_tokens: int,
     ) -> TokenUsageRecord:
         total_tokens = prompt_tokens + completion_tokens
         now = datetime.now(timezone.utc).isoformat()
@@ -81,6 +87,8 @@ class TokenUsageRepository:
             UpdateExpression=(
                 "SET prompt_tokens = if_not_exists(prompt_tokens, :zero) + :prompt_tokens, "
                 "completion_tokens = if_not_exists(completion_tokens, :zero) + :completion_tokens, "
+                "cache_read_tokens = if_not_exists(cache_read_tokens, :zero) + :cache_read_tokens, "
+                "cache_write_tokens = if_not_exists(cache_write_tokens, :zero) + :cache_write_tokens, "
                 "total_tokens = if_not_exists(total_tokens, :zero) + :total_tokens, "
                 "call_count = if_not_exists(call_count, :zero) + :one, "
                 "updated_at = :updated_at, "
@@ -96,6 +104,8 @@ class TokenUsageRepository:
                 ":one": 1,
                 ":prompt_tokens": prompt_tokens,
                 ":completion_tokens": completion_tokens,
+                ":cache_read_tokens": cache_read_tokens,
+                ":cache_write_tokens": cache_write_tokens,
                 ":total_tokens": total_tokens,
                 ":updated_at": now,
                 ":agent_id": agent_id,

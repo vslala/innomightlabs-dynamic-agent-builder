@@ -5,7 +5,7 @@ import json
 import pytest
 
 from src.llm.providers.openai.chat import CODEX_EXTRAS
-from src.llm.wire.responses import bearer_headers, responses_body, responses_input, usage_of
+from src.llm.wire.responses import bearer_headers, responses_body, responses_input, usage_event
 from src.llm.wire.sse import sse_events
 
 SEARCH_TOOL = {
@@ -91,13 +91,40 @@ def test_a_large_tool_result_goes_whole():
     assert items[-1]["output"] == result
 
 
+def _completed(usage):
+    return {"type": "response.completed", "response": {"usage": usage}}
+
+
+def test_usage_counts_every_input_token_and_says_how_many_the_cache_served():
+    usage = usage_event(_completed({
+        "input_tokens": 1000,
+        "output_tokens": 8,
+        "input_tokens_details": {"cached_tokens": 900, "cache_write_tokens": 50},
+    }))
+
+    assert (usage.prompt_tokens, usage.completion_tokens) == (1000, 8)
+    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (900, 50)
+
+
 def test_usage_is_read_defensively():
-    assert usage_of({"type": "response.completed", "response": {"usage": {"input_tokens": 12, "output_tokens": 8}}}) == (12, 8)
+    def counts(event):
+        usage = usage_event(event)
+        return usage.prompt_tokens, usage.completion_tokens, usage.cache_read_tokens
+
+    assert counts(_completed({"input_tokens": 12, "output_tokens": 8})) == (12, 8, 0)
     # Shapes the vendor might change never raise: usage is telemetry.
-    assert usage_of({"type": "response.completed"}) == (0, 0)
-    assert usage_of({"type": "response.completed", "response": {"usage": "not-a-dict"}}) == (0, 0)
-    assert usage_of({"type": "response.completed", "response": None}) == (0, 0)
-    assert usage_of({"type": "response.completed", "response": "text"}) == (0, 0)
+    assert counts({"type": "response.completed"}) == (0, 0, 0)
+    assert counts(_completed("not-a-dict")) == (0, 0, 0)
+    assert counts(_completed({"input_tokens": "many"})) == (0, 0, 0)
+    assert counts({"type": "response.completed", "response": None}) == (0, 0, 0)
+    assert counts({"type": "response.completed", "response": "text"}) == (0, 0, 0)
+
+
+def test_a_call_that_continues_a_conversation_names_it_for_the_vendors_cache():
+    hello = [{"role": "user", "content": "Hello"}]
+
+    assert responses_body("grok-4.7", hello, None, cache_key="conversation-1")["prompt_cache_key"] == "conversation-1"
+    assert "prompt_cache_key" not in responses_body("grok-4.7", hello, None)
 
 
 def test_an_api_key_vendor_is_called_with_the_key_as_a_bearer_token():
@@ -127,3 +154,4 @@ async def test_sse_events_are_the_json_objects_of_the_data_lines():
     )
 
     assert [event async for event in sse_events(response)] == [{"type": "response.created"}]
+

@@ -180,3 +180,21 @@ def _dt(date_str: str):
     from datetime import datetime, timezone
 
     return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+
+def test_the_buckets_count_what_the_vendors_cache_read_and_wrote(dynamodb_table):
+    repo = TokenUsageRepository()
+    for cache_read, cache_write in ((900, 100), (950, 0)):
+        repo.increment_usage(
+            agent_id="agent-1",
+            llm_model="grok-4.7",
+            prompt_tokens=1000,
+            completion_tokens=5,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+            occurred_at=_dt("2026-03-15"),
+        )
+
+    [day] = repo.get_usage_range(agent_id="agent-1", period=TokenUsagePeriod.DAY, from_key="2026-03-15", to_key="2026-03-15")
+
+    assert (day.prompt_tokens, day.cache_read_tokens, day.cache_write_tokens) == (2000, 1850, 100)

@@ -51,7 +51,7 @@ class RecordingProvider:
     def __init__(self):
         self.received_credentials = None
 
-    async def stream_response(self, messages, credentials, tools=None, model=None):
+    async def stream_response(self, messages, credentials, tools=None, model=None, *, cache_key=None):
         self.received_credentials = credentials
         if False:
             yield None

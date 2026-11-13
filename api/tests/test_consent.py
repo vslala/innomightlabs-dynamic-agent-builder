@@ -305,7 +305,7 @@ class _Provider:
     def __init__(self):
         self.contexts: list[list[dict]] = []
 
-    async def stream_response(self, context, credentials, tools, model):
+    async def stream_response(self, context, credentials, tools, model, cache_key=None):
         self.contexts.append(json.loads(json.dumps(context, default=str)))
         if len(self.contexts) == 1:
             yield _Event("text", "Here it is. ")

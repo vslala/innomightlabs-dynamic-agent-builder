@@ -192,6 +192,8 @@ class GeminiProvider(LLMProvider):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         model_id = model or DEFAULT_MODEL_NAME
         client = self._build_client(credentials)
@@ -235,10 +237,12 @@ class GeminiProvider(LLMProvider):
                     yield event
 
             if usage_metadata is not None:
+                # Gemini caches by itself (implicit caching); the prompt count includes the cached part.
                 yield LLMEvent(
                     type="usage",
                     prompt_tokens=usage_metadata.prompt_token_count or 0,
                     completion_tokens=usage_metadata.candidates_token_count or 0,
+                    cache_read_tokens=usage_metadata.cached_content_token_count or 0,
                 )
 
             # google-genai renders the enum as "FinishReason.MAX_TOKENS"; the name is what matters.

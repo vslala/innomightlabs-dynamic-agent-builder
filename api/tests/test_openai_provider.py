@@ -34,6 +34,13 @@ def test_openai_codex_request_headers_include_account_and_sse_metadata(monkeypat
     assert headers["thread-id"] == headers["session-id"]
 
 
+def test_a_call_that_continues_a_conversation_keeps_its_codex_session():
+    credentials = OpenAICredentials(access_token="t", expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+
+    assert codex_headers(credentials, session_id="conversation-1")["session-id"] == "conversation-1"
+    assert codex_headers(credentials)["session-id"] != codex_headers(credentials)["session-id"]
+
+
 class FakeOpenAIStreamResponse:
     def __init__(self, lines: list[str]):
         self.headers: dict[str, str] = {}

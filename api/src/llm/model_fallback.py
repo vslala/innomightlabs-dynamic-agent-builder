@@ -64,6 +64,8 @@ class ModelFallbackProvider(LLMProvider):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         key = (self.provider.name, self.provider_settings.account_id, model or "")
         remembered = _substitutes.get(key)
@@ -71,7 +73,9 @@ class ModelFallbackProvider(LLMProvider):
 
         yielded = False
         try:
-            async for event in self.provider.chat.stream_response(messages, credentials, tools, attempt):
+            async for event in self.provider.chat.stream_response(
+                messages, credentials, tools, attempt, cache_key=cache_key
+            ):
                 yielded = True
                 yield event
             return
@@ -90,7 +94,9 @@ class ModelFallbackProvider(LLMProvider):
             )
             _substitutes[key] = (time.monotonic() + SUBSTITUTE_TTL_SECONDS, substitute)
 
-        async for event in self.provider.chat.stream_response(messages, credentials, tools, substitute):
+        async for event in self.provider.chat.stream_response(
+            messages, credentials, tools, substitute, cache_key=cache_key
+        ):
             yield event
 
     async def _substitute_for(self, refused: Optional[str]) -> Optional[str]:

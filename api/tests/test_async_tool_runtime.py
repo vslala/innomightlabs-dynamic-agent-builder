@@ -27,6 +27,11 @@ from tests.test_skills import _create_agent_for_user
 from src.skills.models import ActorKind
 
 
+def _loop_state():
+    """The loop only needs the conversation, to name it for the vendor's cache; the tools here don't read the state."""
+    return SimpleNamespace(conversation_id="conversation-1")
+
+
 @dataclass
 class FakeProviderEvent:
     type: str
@@ -41,7 +46,7 @@ class AsyncStartProvider:
         self.contexts: list[list[dict[Any, Any]]] = []
         self.calls = 0
 
-    async def stream_response(self, context, credentials, tools, model):
+    async def stream_response(self, context, credentials, tools, model, cache_key=None):
         self.calls += 1
         self.contexts.append(list(context))
         if self.calls == 1:
@@ -285,7 +290,7 @@ async def test_the_loop_settles_an_async_job_itself_and_shows_only_the_real_tool
             tools=[],
             model="test-model",
             tool_router=router,
-            state=object(),
+            state=_loop_state(),
         )
     ]
 
@@ -325,7 +330,7 @@ async def test_waiting_on_a_job_reports_progress_to_the_client(monkeypatch):
             tools=[],
             model="test-model",
             tool_router=router,
-            state=object(),
+            state=_loop_state(),
         )
     ]
 
@@ -368,7 +373,7 @@ async def test_the_turn_fails_if_a_job_outlives_the_in_turn_budget(monkeypatch):
             tools=[],
             model="test-model",
             tool_router=RecordingAsyncRouter(statuses=["running"] * 50),
-            state=object(),
+            state=_loop_state(),
         ):
             events.append(event)
 
@@ -393,7 +398,7 @@ async def test_a_synchronous_tool_result_is_passed_straight_through(monkeypatch)
             tools=[],
             model="test-model",
             tool_router=router,
-            state=object(),
+            state=_loop_state(),
         )
     ]
 

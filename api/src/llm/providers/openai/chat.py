@@ -31,15 +31,19 @@ class OpenAIProvider(LLMProvider):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
-        body = responses_body(model or self.default_model, messages, tools, **CODEX_EXTRAS)
-        headers = codex_headers(OpenAICredentials.model_validate(credentials))
+        body = responses_body(model or self.default_model, messages, tools, cache_key=cache_key, **CODEX_EXTRAS)
+        headers = codex_headers(OpenAICredentials.model_validate(credentials), session_id=cache_key)
         async for event in stream_chat(settings.openai_oauth_responses_url, headers, body, label="OpenAI OAuth"):
             yield event
 
 
-def codex_headers(credentials: OpenAICredentials) -> dict[str, str]:
-    """The headers the Codex CLI sends: the token, its ChatGPT account, and a fresh session per call."""
+def codex_headers(credentials: OpenAICredentials, *, session_id: str | None = None) -> dict[str, str]:
+    """The headers the Codex CLI sends: the token, its ChatGPT account, and the session. Like the CLI, a call that
+    continues a conversation keeps its session (`session_id`, the conversation's cache key); a one-off call gets a
+    fresh one."""
     headers = {
         "Authorization": f"Bearer {credentials.access_token}",
         "Content-Type": "application/json",
@@ -50,7 +54,7 @@ def codex_headers(credentials: OpenAICredentials) -> dict[str, str]:
     account_id = credentials.account_id or extract_account_id_from_access_token(credentials.access_token)
     if account_id:
         headers["ChatGPT-Account-ID"] = account_id
-    session_id = str(uuid4())
+    session_id = session_id or str(uuid4())
     headers["session-id"] = session_id
     headers["thread-id"] = session_id
     return headers

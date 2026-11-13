@@ -201,6 +201,8 @@ class OllamaProvider(LLMProvider):
         credentials: dict,
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         model_id = (model or "").strip()
         if not model_id:

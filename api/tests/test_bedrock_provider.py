@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.llm.providers.bedrock.chat import BedrockProvider
+from src.llm.providers.bedrock.chat import BedrockProvider, usage_event
 
 
 def test_bedrock_provider_converts_canonical_messages() -> None:
@@ -132,3 +132,10 @@ async def test_bedrock_provider_yields_usage_event_from_metadata(monkeypatch) ->
     assert len(usage_events) == 1
     assert usage_events[0].prompt_tokens == 7
     assert usage_events[0].completion_tokens == 3
+
+
+def test_the_prompt_counts_the_tokens_bedrock_read_from_and_wrote_to_the_cache() -> None:
+    usage = usage_event({"inputTokens": 10, "outputTokens": 3, "cacheReadInputTokens": 900, "cacheWriteInputTokens": 90})
+
+    assert (usage.prompt_tokens, usage.completion_tokens) == (1000, 3)
+    assert (usage.cache_read_tokens, usage.cache_write_tokens) == (900, 90)

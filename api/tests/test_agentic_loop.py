@@ -1,5 +1,6 @@
-import json
 import copy
+import json
+import logging
 
 import pytest
 from dataclasses import dataclass, replace
@@ -39,14 +40,18 @@ class FakeProviderEvent:
     thought_signature: bytes | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 class FakeProvider:
     def __init__(self):
         self.calls = 0
+        self.cache_keys: list[str | None] = []
 
-    async def stream_response(self, context, credentials, tools, model):
+    async def stream_response(self, context, credentials, tools, model, cache_key=None):
         self.calls += 1
+        self.cache_keys.append(cache_key)
         if self.calls == 1:
             yield FakeProviderEvent(
                 type="tool_use",
@@ -54,7 +59,9 @@ class FakeProvider:
                 tool_input={"customer_id": "cus_123"},
                 tool_use_id="tooluse_1",
             )
-            yield FakeProviderEvent(type="usage", prompt_tokens=10, completion_tokens=5)
+            yield FakeProviderEvent(
+                type="usage", prompt_tokens=10, completion_tokens=5, cache_read_tokens=6, cache_write_tokens=4
+            )
             yield FakeProviderEvent(type="stop")
             return
 
@@ -77,7 +84,10 @@ class FakeTokenUsageService:
         self.calls: list[dict[str, Any]] = []
         self._totals: dict[str, dict[str, int]] = {}
 
-    def record_usage(self, *, owner_email, agent_id, llm_model, prompt_tokens, completion_tokens, api_key_id=None):
+    def record_usage(
+        self, *, owner_email, agent_id, llm_model, prompt_tokens, completion_tokens,
+        cache_read_tokens=0, cache_write_tokens=0, api_key_id=None,
+    ):
         self.calls.append(
             {
                 "owner_email": owner_email,
@@ -85,6 +95,8 @@ class FakeTokenUsageService:
                 "llm_model": llm_model,
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
+                "cache_read_tokens": cache_read_tokens,
+                "cache_write_tokens": cache_write_tokens,
             }
         )
         totals = self._totals.setdefault(
@@ -121,7 +133,7 @@ class FakeThoughtSignatureProvider:
         self.calls = 0
         self.contexts = []
 
-    async def stream_response(self, context, credentials, tools, model):
+    async def stream_response(self, context, credentials, tools, model, cache_key=None):
         self.calls += 1
         self.contexts.append(context.copy())
         if self.calls == 1:
@@ -172,7 +184,7 @@ class MultiStepProvider:
     def __init__(self):
         self.calls = 0
 
-    async def stream_response(self, context, credentials, tools, model):
+    async def stream_response(self, context, credentials, tools, model, cache_key=None):
         self.calls += 1
         if self.calls == 1:
             yield FakeProviderEvent(
@@ -207,7 +219,7 @@ class ScriptedProvider:
         self.contexts: list[list[dict[str, Any]]] = []
         self.tools: list[list[Any]] = []
 
-    async def stream_response(self, context, credentials, tools, model):
+    async def stream_response(self, context, credentials, tools, model, cache_key=None):
         self.contexts.append(copy.deepcopy(context))
         self.tools.append(list(tools))
         for event in self.replies.pop(0):
@@ -239,7 +251,7 @@ async def _run(provider, tools=("lookup_customer",)) -> list[Any]:
             tools=list(tools),
             model="test-model",
             tool_router=FakeToolRouter(),
-            state=object(),
+            state=_turn_state(),
         )
     ]
 
@@ -254,7 +266,7 @@ async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
             tools=[],
             model="test-model",
             tool_router=FakeToolRouter(),
-            state=object(),
+            state=_turn_state(),
         )
     ]
 
@@ -284,7 +296,7 @@ async def test_agentic_loop_prompts_model_to_continue_or_finish_after_tool_resul
             tools=[],
             model="test-model",
             tool_router=router,
-            state=object(),
+            state=_turn_state(),
         )
     ]
 
@@ -380,7 +392,7 @@ async def test_a_large_tool_result_reaches_the_model_whole():
             tools=["lookup_customer"],
             model="test-model",
             tool_router=BigResultRouter(),
-            state=object(),
+            state=_turn_state(),
         )
     ]
 
@@ -405,7 +417,7 @@ async def test_agentic_loop_preserves_provider_thought_signature_in_tool_context
             tools=[],
             model="test-model",
             tool_router=FakeToolRouter(),
-            state=object(),
+            state=_turn_state(),
         )
     ]
 
@@ -425,7 +437,7 @@ async def test_agentic_loop_surfaces_runtime_events_during_tool_execution():
             tools=[],
             model="test-model",
             tool_router=FakeStreamingToolRouter(),
-            state=object(),
+            state=_turn_state(),
         )
     ]
 
@@ -476,6 +488,8 @@ async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
         "llm_model": "claude-sonnet-4-5",
         "prompt_tokens": 10,
         "completion_tokens": 5,
+        "cache_read_tokens": 6,
+        "cache_write_tokens": 4,
     }
     assert token_usage_service.calls[1] == {
         "owner_email": "owner@example.com",
@@ -483,6 +497,8 @@ async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
         "llm_model": "claude-sonnet-4-5",
         "prompt_tokens": 7,
         "completion_tokens": 3,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
     }
 
     # A TOKEN_USAGE_UPDATE is streamed once per recorded call too, so the
@@ -496,6 +512,32 @@ async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
         ("claude-sonnet-4-5", 10, 5, 15, 1),
         ("claude-sonnet-4-5", 17, 8, 25, 2),
     ]
+
+
+async def test_every_call_names_the_conversation_so_the_vendor_can_serve_its_prefix_from_cache(caplog):
+    provider = FakeProvider()
+
+    with caplog.at_level(logging.INFO, logger="src.agents.agentic_loop"):
+        _ = [
+            event
+            async for event in run_agentic_tool_loop(
+                provider=provider,
+                context=[],
+                credentials={},
+                tools=[],
+                model="claude-sonnet-4-5",
+                tool_router=FakeToolRouter(),
+                state=_turn_state(),
+                token_usage_service=FakeTokenUsageService(),
+            )
+        ]
+
+    assert provider.cache_keys == ["conversation-1", "conversation-1"]
+    # The turn's total is logged, so what a run cost, and how much the cache saved, can be read from the logs.
+    assert (
+        "Agent turn conversation=conversation-1 calls=2 "
+        "prompt_tokens=17 cache_read_tokens=6 cache_write_tokens=4 completion_tokens=8"
+    ) in caplog.text
 
 
 async def test_agentic_loop_swallows_token_usage_recording_errors():
@@ -566,7 +608,7 @@ async def test_agentic_loop_loses_no_runtime_event_emitted_just_before_the_tool_
             tools=[],
             model="test-model",
             tool_router=BurstThenReturnToolRouter(),
-            state=object(),
+            state=_turn_state(),
         )
     ]
 
@@ -596,7 +638,7 @@ class WrapperToolProvider:
     def __init__(self):
         self.calls = 0
 
-    async def stream_response(self, context, credentials, tools, model):
+    async def stream_response(self, context, credentials, tools, model, cache_key=None):
         self.calls += 1
         if self.calls == 1:
             yield FakeProviderEvent(
@@ -690,7 +732,7 @@ async def _run_with(router, provider) -> list[Any]:
             tools=["core_memory_append"],
             model="test-model",
             tool_router=router,
-            state=object(),
+            state=_turn_state(),
         )
     ]
 

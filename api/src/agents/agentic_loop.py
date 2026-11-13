@@ -119,6 +119,8 @@ class LLMProvider(Protocol):
         credentials: dict[Any, Any],
         tools: Optional[list[dict[Any, Any]]] = None,
         model: Optional[str] = None,
+        *,
+        cache_key: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
         ...
 
@@ -144,6 +146,8 @@ class TokenUsageRecorder(Protocol):
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
         api_key_id: Optional[str] = None,
     ) -> "TokenUsageRecord":
         ...
@@ -159,6 +163,36 @@ class Step(Enum):
     STOPPED = auto()
     #: Waiting on the person; the turn carries on later from its exchange.
     PAUSED = auto()
+
+
+@dataclass
+class TokenTally:
+    """Tokens model calls used, summed: what they cost, and how much of their input the vendor's cache served."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+    @classmethod
+    def of(cls, usage: LLMEvent | None) -> TokenTally:
+        """One call's tally, empty when the provider reported no usage."""
+        tally = cls()
+        if usage is not None:
+            tally.add(usage)
+        return tally
+
+    def add(self, usage: LLMEvent) -> None:
+        self.prompt_tokens += usage.prompt_tokens
+        self.completion_tokens += usage.completion_tokens
+        self.cache_read_tokens += usage.cache_read_tokens
+        self.cache_write_tokens += usage.cache_write_tokens
+
+    def __str__(self) -> str:
+        return (
+            f"prompt_tokens={self.prompt_tokens} cache_read_tokens={self.cache_read_tokens} "
+            f"cache_write_tokens={self.cache_write_tokens} completion_tokens={self.completion_tokens}"
+        )
 
 
 @dataclass
@@ -246,6 +280,7 @@ async def run_agentic_tool_loop(
                     # Even silence ends the turn here: the caller then records which tools ran.
                     step = Step.DONE
 
+        log.info("Agent turn conversation=%s calls=%d %s", state.conversation_id, turn.model_calls, turn.usage)
         if step is Step.STOPPED:
             yield SSEEvent(event_type=SSEEventType.ERROR, content=STOPPED_MESSAGES[call.stop_reason])
             return
@@ -272,6 +307,8 @@ class _Turn:
     runtime: AgentTurnRuntime = field(default_factory=AgentTurnRuntime)
 
     model_calls: int = 0
+    #: Every model call's tokens, logged when the turn ends: how a run's cost can be told from its logs.
+    usage: TokenTally = field(default_factory=TokenTally)
     full_text: str = ""
     tools_ran: bool = False
     #: The call the person has to decide on before the turn can go on.
@@ -286,7 +323,10 @@ class _Turn:
         usage_event: LLMEvent | None = None
 
         tools = [] if answer_only else self.tools
-        async for event in self.provider.stream_response(self.context, self.credentials, tools, self.model):
+        # Every call of a conversation starts with the previous call's context, so the vendor can serve it from cache.
+        async for event in self.provider.stream_response(
+            self.context, self.credentials, tools, self.model, cache_key=self.state.conversation_id
+        ):
             if event.type == "text" and event.content:
                 call.text += event.content
                 self.full_text += event.content
@@ -306,7 +346,7 @@ class _Turn:
                 call.stop_reason = event.content or "end_turn"
 
         log.info(
-            "Agent loop call=%d step=%s stop=%s text_chars=%d tool_calls=%d context_messages=%d context_chars=%d",
+            "Agent loop call=%d step=%s stop=%s text_chars=%d tool_calls=%d context_messages=%d context_chars=%d %s",
             self.model_calls,
             step.name,
             call.stop_reason,
@@ -314,9 +354,11 @@ class _Turn:
             len(call.tool_calls),
             len(self.context),
             _context_chars(self.context),
+            TokenTally.of(usage_event),
         )
 
         if usage_event is not None:
+            self.usage.add(usage_event)
             usage = await _record_token_usage(self.usage_service, self.state, usage_event)
             if usage is not None:
                 yield usage
@@ -450,6 +492,8 @@ async def _record_token_usage(
             llm_model=state.model_name,
             prompt_tokens=usage_event.prompt_tokens,
             completion_tokens=usage_event.completion_tokens,
+            cache_read_tokens=usage_event.cache_read_tokens,
+            cache_write_tokens=usage_event.cache_write_tokens,
             api_key_id=state.api_key_id,
         )
     except Exception:
