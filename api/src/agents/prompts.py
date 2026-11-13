@@ -7,7 +7,6 @@ data: no network calls, no DB reads, no Python-side layout helpers.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +24,9 @@ _env = Environment(
 
 
 def render_system_prompt(template_name: str, **context: Any) -> str:
-    """Render `template_name` with `context`, plus the current timestamp.
+    """Render `template_name` with `context`. The current time isn't part of it: each user message carries the time
+    it was sent (`conversation_strategy.sent_at`), so the system prompt reads the same all conversation long, and the
+    vendor's prompt cache keeps matching it.
 
     StrictUndefined is deliberate: a section that references data nobody
     passed should fail loudly here rather than silently render a gap into a
@@ -33,10 +34,7 @@ def render_system_prompt(template_name: str, **context: Any) -> str:
     """
     return (
         _env.get_template(template_name)
-        .render(
-            timestamp=datetime.now(timezone.utc).strftime("%A, %B %d, %Y at %I:%M %p UTC"),
-            **context,
-        )
+        .render(**context)
         .strip()
     )
 

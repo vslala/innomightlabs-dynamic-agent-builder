@@ -46,7 +46,7 @@ def test_krishna_memgpt_prompt_renders_required_sections():
     )
 
     assert "<identity>" in prompt
-    assert "Current date and time:" in prompt
+    assert "TIME: Each user message starts with the time it was sent" in prompt
     assert "ANCHOR_TASK: Answer the user's latest request." in prompt
     assert "ANCHOR_PERSONA:" in prompt
     assert "You are a careful backend engineer." in prompt
@@ -256,3 +256,18 @@ def test_no_conversation_context_section_without_a_context():
 
     for prompt in (memgpt, mini):
         assert "<conversation_context>" not in prompt
+
+
+def test_the_prompt_reads_the_same_all_conversation_and_ends_with_core_memory():
+    """A vendor's prompt cache matches from the start: no clock in it, and what tools change comes last."""
+    build = lambda: build_krishna_memgpt_system_prompt(  # noqa: E731
+        agent_persona="You are a careful backend engineer.",
+        core_memory=_core_memory_snapshot(),
+        tool_sections=["<skills>\nEnabled skills (0):\n</skills>"],
+    )
+
+    prompt = build()
+
+    assert prompt == build()
+    assert "Current date and time" not in prompt
+    assert prompt.index("<memory_tools>") < prompt.index("<skills>") < prompt.index("BLOCK=human")

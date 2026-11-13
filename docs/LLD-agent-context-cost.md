@@ -17,6 +17,11 @@ Paths are relative to `api/` unless marked otherwise.
   - **Contract.** `LLMProvider.stream_response` takes a keyword `cache_key`. `LLMEvent` carries `cache_read_tokens` and `cache_write_tokens` beside `prompt_tokens`, which now counts every input token on every vendor.
   - **Wiring.** The agent loop and Krishna Mini pass the conversation id. One-off calls (dream, compaction, vision, smart suggestions) pass nothing.
   - **Bedrock request side not built.** Converse needs explicit `cachePoint` blocks, older models reject them, and no Bedrock agent runs tool-heavy turns today. The usage side is built, so Bedrock's implicit cache hits are counted.
+- **Phase 1b (built after review): a prompt that reads the same.** The system prompt opened with "Current date and time" to the minute. A new turn and every memory-write refresh therefore changed the prompt's first lines, and the whole history after them missed the cache. Three changes:
+  - **The time moved onto the messages.** Each user message now starts with the time it was sent, from its own `created_at` (`conversation_strategy.sent_at`, `[Sent Friday, November 13, 2026 at 01:37 PM UTC]`), so it reads the same on every later call. `identity.j2` says once that the latest one is the current time.
+  - **Replies stay unstamped.** A model shown timestamped replies starts writing them.
+  - **Core memory moved last.** In Krishna MemGPT's prompt it now follows the tool sections: what tools change goes last, so a memory write re-reads only memory and the history. Ila's draft section was already last.
+  - **Still a cache breaker.** `FixedWindowStrategy` drops the oldest messages once a conversation passes its word limit, which changes the start of the history on every turn after that. Not changed here.
 - **Phase 2 (built).**
   - **Shared search.** The keyword search and `summarize` moved from `src/skills/disclosure.py` to `src/common/keyword_search.py` (`rank`, `summarize`), used by both disclosures.
   - **Listing and cache.** `MCPConnectorService._offered_tools` holds the cached server list and the caller filter. `list_runtime_tools` takes `tool_names` and `query`, and the tool's `tools` argument reaches it as `tool_names`.

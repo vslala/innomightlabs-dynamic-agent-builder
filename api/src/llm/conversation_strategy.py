@@ -133,8 +133,24 @@ class FixedWindowStrategy(ConversationStrategy):
         return f"FixedWindowStrategy(max_words={self.max_words})"
 
 
+#: How a user message tells the model when it was sent (`identity.j2` explains it). From the message's own
+#: `created_at`, so a message reads the same on every later call and the vendor's prompt cache keeps matching it.
+SENT_AT_FORMAT = "[Sent %A, %B %d, %Y at %I:%M %p UTC]"
+
+
+def sent_at(msg: "Message") -> str:
+    created_at = msg.created_at if msg.created_at.tzinfo else msg.created_at.replace(tzinfo=timezone.utc)
+    return created_at.astimezone(timezone.utc).strftime(SENT_AT_FORMAT)
+
+
 def _with_attachments(msg: "Message", reference_tags: ReferenceTags) -> str:
-    """The message as the model reads it: what the user attached first, then the text, then generated images."""
+    """The message as the model reads it: a user message's time first, then what the user attached, then the text,
+    then generated images. Assistant messages carry no time: a model shown timestamped replies starts writing them."""
+    stamp = f"{sent_at(msg)}\n" if msg.role == "user" else ""
+    return stamp + _content_with_attachments(msg, reference_tags)
+
+
+def _content_with_attachments(msg: "Message", reference_tags: ReferenceTags) -> str:
     sections = [f'<attached_file name="{att.filename}">\n{att.content}\n</attached_file>' for att in msg.attachments]
     sections += [attached_image_tag(image) for image in msg.image_attachments]
     sections += [tag for ref in msg.references if (tag := reference_tags.get((ref.kind, ref.id)))]

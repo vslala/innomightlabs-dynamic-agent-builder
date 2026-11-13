@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.llm.conversation_strategy import FixedWindowStrategy
+from src.llm.conversation_strategy import FixedWindowStrategy, sent_at
 from src.messages import references
 from src.messages.models import Message, MessageReference
 from src.messages.references import (
@@ -88,5 +88,5 @@ def test_the_context_shows_each_reference_before_the_text_and_counts_it():
     context = FixedWindowStrategy(max_words=100).build_context(messages, reference_tags={("note", "1"): tag})
     tight = FixedWindowStrategy(max_words=5).build_context(messages, reference_tags={("note", "1"): tag})
 
-    assert context[-1]["content"] == f"{tag}\n\nlook at this"
+    assert context[-1]["content"] == f"{sent_at(messages[-1])}\n{tag}\n\nlook at this"
     assert tight == [], "the tag's words count against the budget"

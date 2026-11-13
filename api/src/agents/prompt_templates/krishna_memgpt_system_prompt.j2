@@ -15,10 +15,8 @@ ANCHOR_BATCH: When you need several tool calls that don't depend on each other's
 ANCHOR_STOP: Once the task is fully complete and no further tool call is required, stop and give the final answer.
 </attention_anchors>
 
-{% if core_memory %}
-{% include "krishna_memgpt/sections/core_memory.j2" %}
-{% endif %}
-
+{# What stays the same all conversation comes first, and core memory, which tools change, last: a vendor's prompt
+   cache matches a prompt from its start, so a memory write then re-reads only memory and what follows it. #}
 {% include "krishna_memgpt/sections/memory_tools.j2" %}
 
 {# The sections of the tool families offered this turn, in their order (krishna_memgpt_families.py) #}
@@ -26,6 +24,10 @@ ANCHOR_STOP: Once the task is fully complete and no further tool call is require
 {{ section }}
 
 {% endfor %}
+
+{% if core_memory %}
+{% include "krishna_memgpt/sections/core_memory.j2" %}
+{% endif %}
 
 {% if capacity_warnings %}
 {% include "krishna_memgpt/sections/memory_warning.j2" %}
