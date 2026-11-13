@@ -9,8 +9,8 @@ and event stream all come from OpenAIProvider; only the endpoint and the key dif
 
 from typing import AsyncIterator, Optional
 
-from .base import LLMEvent
-from .openai import OpenAIProvider
+from src.llm.providers.base import LLMEvent
+from src.llm.providers.openai.chat import OpenAIProvider
 
 OPENAI_API_BASE_URL = "https://api.openai.com/v1"
 

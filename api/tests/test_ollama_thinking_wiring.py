@@ -8,6 +8,7 @@ from src.conversations.models import Conversation
 from src.memory.snapshot import CoreMemorySnapshot
 from src.skills.models import ActorKind
 from tests.mock_data import agent_fields, conversation_fields
+from tests.llm_doubles import use_chat_everywhere
 
 
 class FakeMessageRepository:
@@ -75,10 +76,7 @@ def _ollama_agent(thinking_mode) -> Agent:
 
 async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provider(monkeypatch):
     recording_provider = RecordingProvider()
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: recording_provider,
-    )
+    use_chat_everywhere(monkeypatch, recording_provider)
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
@@ -119,10 +117,7 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
 
 async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preference(monkeypatch):
     recording_provider = RecordingProvider()
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: recording_provider,
-    )
+    use_chat_everywhere(monkeypatch, recording_provider)
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
@@ -157,10 +152,7 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
 
 async def test_krishna_mini_forwards_the_agents_thinking_choice_to_the_provider(monkeypatch):
     recording_provider = RecordingProvider()
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: recording_provider,
-    )
+    use_chat_everywhere(monkeypatch, recording_provider)
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,

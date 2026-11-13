@@ -35,13 +35,10 @@ from src.settings.repository import (
     get_default_agent_preference_repository,
     get_provider_settings_repository,
 )
-from src.settings.schemas import (
-    PROVIDER_SCHEMAS,
-    SUPPORTED_PROVIDERS,
-    get_agent2agent_settings_schema,
-    get_provider_schema,
-)
-from src.crypto import encrypt, decrypt
+from src.settings.schemas import get_agent2agent_settings_schema
+from src.llm.providers import PROVIDERS, Provider, find_provider
+from src.llm.providers.provider import OAuthSignIn
+from src.crypto import encrypt
 
 log = logging.getLogger(__name__)
 
@@ -60,8 +57,22 @@ agent_repository = AgentRepository()
 class ProviderWithStatus(BaseModel):
     """Provider schema with configuration status."""
     provider_name: str
+    title: str
     form: form_models.Form
+    #: Set for a provider an admin signs into; the form then takes the pasted callback.
+    oauth: OAuthSignIn | None = None
     is_configured: bool
+
+
+def _known_provider(provider_name: str) -> Provider:
+    found = find_provider(provider_name)
+    if not found or found.name != provider_name:
+        supported = ", ".join(p.name for p in PROVIDERS)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown provider: {provider_name}. Supported: {supported}",
+        )
+    return found
 
 
 class SetDefaultAgentRequest(BaseModel):
@@ -132,16 +143,16 @@ async def list_providers(
     configured_providers = {s.provider_name for s in repo.find_all_in_account(principal.account_id)}
 
     # Build response with all providers
-    result = []
-    for provider_name in SUPPORTED_PROVIDERS:
-        schema = PROVIDER_SCHEMAS[provider_name]
-        result.append(ProviderWithStatus(
-            provider_name=provider_name,
-            form=schema,
-            is_configured=provider_name in configured_providers,
-        ))
-
-    return result
+    return [
+        ProviderWithStatus(
+            provider_name=provider.name,
+            title=provider.title,
+            form=provider.settings_form,
+            oauth=provider.oauth,
+            is_configured=provider.name in configured_providers,
+        )
+        for provider in PROVIDERS
+    ]
 
 
 @router.get("/providers/{provider_name}", response_model=ProviderSettingsResponse)
@@ -156,13 +167,7 @@ async def get_provider_settings(
     Note: Actual credentials are not returned for security.
     """
 
-    # Validate provider name
-    if provider_name not in SUPPORTED_PROVIDERS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
-        )
-
+    _known_provider(provider_name)
     settings = repo.find_by_provider(principal.account_id, provider_name)
 
     if settings:
@@ -192,24 +197,13 @@ async def save_provider_settings(
     The credentials are encrypted before storage.
     """
 
-    # Validate provider name
-    schema = get_provider_schema(provider_name)
-    if not schema:
+    chosen = _known_provider(provider_name)
+    if chosen.oauth:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
+            detail=f"{chosen.title} is connected by signing in, through {chosen.settings_form.submit_path}",
         )
-
-    if provider_name == "OpenAI":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OpenAI must be configured using OAuth via /auth/openai/complete",
-        )
-    if provider_name == "GoogleDrive":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="GoogleDrive must be configured using OAuth via /auth/google-drive/start",
-        )
+    schema = chosen.settings_form
 
     # Validate required fields from schema (fields marked optional may be blank)
     missing_fields = [
@@ -254,13 +248,7 @@ async def delete_provider_settings(
     Delete the account's provider configuration (admins only).
     """
 
-    # Validate provider name
-    if provider_name not in SUPPORTED_PROVIDERS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
-        )
-
+    _known_provider(provider_name)
     success = repo.delete(principal.account_id, provider_name)
     if not success:
         raise HTTPException(

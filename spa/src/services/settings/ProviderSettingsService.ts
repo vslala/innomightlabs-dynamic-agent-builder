@@ -6,11 +6,25 @@ import { httpClient } from "../http/client";
 import type { FormSchema } from "../../types/form";
 
 /**
+ * A provider an admin signs into instead of pasting a key: a button opens `start_path`'s authorize URL, the guide
+ * says what to do there, and the form (posted to its own `submit_path`) takes the pasted callback.
+ */
+export interface OAuthSignIn {
+  start_path: string;
+  button_label: string;
+  guide: string;
+  submit_label: string;
+}
+
+/**
  * Provider schema with configuration status.
  */
 export interface ProviderWithStatus {
   provider_name: string;
+  /** What Settings calls it, e.g. "OpenAI (API key)". */
+  title: string;
   form: FormSchema;
+  oauth: OAuthSignIn | null;
   is_configured: boolean;
 }
 
@@ -24,12 +38,8 @@ export interface ProviderSettingsResponse {
   updated_at?: string;
 }
 
-export interface OpenAIStartResponse {
+export interface OAuthStartResponse {
   authorize_url: string;
-}
-
-export interface OpenAICompleteRequest {
-  callback_url: string;
 }
 
 class ProviderSettingsService {
@@ -48,16 +58,10 @@ class ProviderSettingsService {
   }
 
   /**
-   * Save provider credentials.
+   * Save what the provider's form asks for (a key, or a pasted sign-in callback) where the form says.
    */
-  async saveProviderSettings(
-    providerName: string,
-    credentials: Record<string, string>
-  ): Promise<ProviderSettingsResponse> {
-    return httpClient.post<ProviderSettingsResponse>(
-      `/settings/providers/${providerName}`,
-      credentials
-    );
+  async saveProviderForm(provider: ProviderWithStatus, values: Record<string, string>): Promise<ProviderSettingsResponse> {
+    return httpClient.post<ProviderSettingsResponse>(provider.form.submit_path, values);
   }
 
   /**
@@ -67,12 +71,8 @@ class ProviderSettingsService {
     await httpClient.delete(`/settings/providers/${providerName}`);
   }
 
-  async startOpenAIConnect(): Promise<OpenAIStartResponse> {
-    return httpClient.post<OpenAIStartResponse>("/auth/openai/start", {});
-  }
-
-  async completeOpenAIConnect(payload: OpenAICompleteRequest): Promise<ProviderSettingsResponse> {
-    return httpClient.post<ProviderSettingsResponse>("/auth/openai/complete", payload);
+  async startSignIn(oauth: OAuthSignIn): Promise<OAuthStartResponse> {
+    return httpClient.post<OAuthStartResponse>(oauth.start_path, {});
   }
 }
 

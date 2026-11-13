@@ -51,7 +51,7 @@ async def test_load_provider_credentials_uses_openai_oauth_refresh_path(monkeypa
         return expected
 
     monkeypatch.setattr(
-        "src.llm.credentials.ensure_valid_openai_credentials",
+        "src.llm.providers.openai.credentials.ensure_valid_openai_credentials",
         fake_ensure_valid_openai_credentials,
     )
     repo = FakeProviderSettingsRepository()

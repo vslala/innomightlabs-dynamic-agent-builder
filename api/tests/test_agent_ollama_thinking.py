@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 
 from src.agents.models import Agent
-from src.agents.schemas import UPDATE_AGENT_FORM
+from src.agents.schemas import get_update_agent_form
 from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, agent_fields
 
 
@@ -74,12 +74,12 @@ class TestAgentModel:
 
 class TestUpdateAgentFormSchema:
     def test_the_field_is_declared_optional(self):
-        field = next(f for f in UPDATE_AGENT_FORM.form_inputs if f.name == "agent_ollama_thinking")
+        field = next(f for f in get_update_agent_form("agent-1").form_inputs if f.name == "agent_ollama_thinking")
 
         assert field.is_optional is True
 
     def test_the_field_offers_exactly_the_three_documented_choices(self):
-        field = next(f for f in UPDATE_AGENT_FORM.form_inputs if f.name == "agent_ollama_thinking")
+        field = next(f for f in get_update_agent_form("agent-1").form_inputs if f.name == "agent_ollama_thinking")
 
         assert {option.value for option in field.options} == {"default", "enabled", "disabled"}
 

@@ -12,7 +12,8 @@ from src.form_models import Form, FormInput, SelectOption
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 
 if TYPE_CHECKING:
-    from src.llm.models import ModelInfo, ProviderModelSource
+    from src.llm.models import ModelInfo
+    from src.llm.providers.provider import Provider
     from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
@@ -162,18 +163,18 @@ class AgentModelChoices:
     unlisted: list[str] = field(default_factory=list)
 
 
-def _configured_sources(context: FormOptionsContext) -> list[tuple[ProviderModelSource, ProviderSettings]]:
-    from src.llm.models import PROVIDER_MODEL_SOURCES
+def _configured_providers(context: FormOptionsContext) -> list[tuple[Provider, ProviderSettings]]:
+    from src.llm.providers import PROVIDERS
 
     repo = context.provider_settings_repository or get_provider_settings_repository()
     configured = {settings.provider_name: settings for settings in repo.find_all_in_account(context.owner.account_id)}
-    return [(source, configured[source.provider_name]) for source in PROVIDER_MODEL_SOURCES if source.provider_name in configured]
+    return [(provider, configured[provider.name]) for provider in PROVIDERS if provider.name in configured]
 
 
 def configured_providers(context: FormOptionsContext) -> list[str]:
     """The providers the account has set up in Settings, in catalog order. Reads the settings only: no provider is
     asked for its models, so it's cheap enough for every turn."""
-    return [source.provider_name for source, _ in _configured_sources(context)]
+    return [provider.name for provider, _ in _configured_providers(context)]
 
 
 def load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
@@ -189,15 +190,15 @@ def load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
     catalog: list[tuple[str, ModelInfo]] = []
     unlisted: list[str] = []
 
-    for source, provider_settings in _configured_sources(context):
-        providers.append(source.provider_name)
+    for provider, provider_settings in _configured_providers(context):
+        providers.append(provider.name)
         try:
-            catalog.extend((source.provider_name, model) for model in source.load_models(provider_settings))
+            catalog.extend((provider.name, model) for model in provider.catalog.list_models(provider_settings))
         except Exception as e:
-            unlisted.append(source.provider_name)
+            unlisted.append(provider.name)
             log.warning(
                 "Failed to load %s models for account %s: %s",
-                source.provider_name,
+                provider.name,
                 context.owner.account_id,
                 e,
             )

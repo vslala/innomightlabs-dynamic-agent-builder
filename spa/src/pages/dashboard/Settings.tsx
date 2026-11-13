@@ -29,6 +29,7 @@ import { authService } from "../../services/auth";
 import { httpClient } from "../../services/http";
 import {
   providerSettingsService,
+  type OAuthSignIn,
   type ProviderWithStatus,
 } from "../../services/settings/ProviderSettingsService";
 import {
@@ -46,8 +47,9 @@ import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
 import { ImageGenerationSettingsCard } from "./ImageGenerationSettingsCard";
 import { ImageReadingSettingsCard } from "./ImageReadingSettingsCard";
+import { OAuthGuide } from "./OAuthGuide";
 import { ProviderRow } from "./ProviderRow";
-import { providerTitle, removalPrompt } from "./providerLabels";
+import { removalPrompt } from "./providerLabels";
 import styles from "./Settings.module.css";
 import { platform } from "../../platform";
 
@@ -78,9 +80,9 @@ export function Settings() {
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [openaiConnecting, setOpenaiConnecting] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   // The provider whose saved credentials the person is being asked to delete, and whether that is under way.
-  const [providerToRemove, setProviderToRemove] = useState<string | null>(null);
+  const [providerToRemove, setProviderToRemove] = useState<ProviderWithStatus | null>(null);
   const [removingProvider, setRemovingProvider] = useState(false);
   const [smartSuggestionSettings, setSmartSuggestionSettings] = useState<SmartSuggestionSettings | null>(null);
   const [smartSuggestionSchema, setSmartSuggestionSchema] = useState<FormSchema | null>(null);
@@ -155,22 +157,17 @@ export function Settings() {
     setConfiguringProvider(null);
   };
 
-  const handleSaveProvider = async (providerName: string, data: Record<string, FormValue>) => {
+  const handleSaveProvider = async (provider: ProviderWithStatus, data: Record<string, FormValue>) => {
     setSavingProvider(true);
     setError(null);
     try {
-      if (providerName === "OpenAI") {
-        const callbackUrl = typeof data.callback_url === "string" ? data.callback_url.trim() : "";
-        await providerSettingsService.completeOpenAIConnect({ callback_url: callbackUrl });
-      } else {
-        const payload: Record<string, string> = {};
-        for (const [key, value] of Object.entries(data)) {
-          if (typeof value === "string") {
-            payload[key] = value;
-          }
+      const values: Record<string, string> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === "string") {
+          values[key] = value.trim();
         }
-        await providerSettingsService.saveProviderSettings(providerName, payload);
       }
+      await providerSettingsService.saveProviderForm(provider, values);
       // Refresh providers list to update status
       await loadProviders();
       setConfiguringProvider(null);
@@ -182,20 +179,20 @@ export function Settings() {
     }
   };
 
-  const handleOpenAIConnect = async () => {
-    setOpenaiConnecting(true);
+  const handleSignIn = async (provider: ProviderWithStatus, oauth: OAuthSignIn) => {
+    setSigningIn(true);
     setError(null);
     try {
-      const response = await providerSettingsService.startOpenAIConnect();
+      const response = await providerSettingsService.startSignIn(oauth);
       const opened = window.open(response.authorize_url, "_blank", "noopener,noreferrer");
       if (!opened) {
         setError("Popup blocked. Please allow popups and try again.");
       }
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to start OpenAI OAuth connection. Please try again."));
-      console.error("Error starting OpenAI OAuth:", err);
+      setError(getErrorMessage(err, `Failed to start signing in to ${provider.title}. Please try again.`));
+      console.error("Error starting a provider sign-in:", err);
     } finally {
-      setOpenaiConnecting(false);
+      setSigningIn(false);
     }
   };
 
@@ -204,13 +201,13 @@ export function Settings() {
     setRemovingProvider(true);
     setError(null);
     try {
-      await providerSettingsService.deleteProviderSettings(providerToRemove);
+      await providerSettingsService.deleteProviderSettings(providerToRemove.provider_name);
       await loadProviders();
-      if (configuringProvider === providerToRemove) {
+      if (configuringProvider === providerToRemove.provider_name) {
         setConfiguringProvider(null);
       }
     } catch (err) {
-      setError(getErrorMessage(err, `Failed to remove ${providerTitle(providerToRemove)}. Please try again.`));
+      setError(getErrorMessage(err, `Failed to remove ${providerToRemove.title}. Please try again.`));
       console.error("Error removing provider:", err);
     } finally {
       setRemovingProvider(false);
@@ -687,28 +684,19 @@ export function Settings() {
                       className={styles.providerConfigPanel}
                     >
                       <Stack className={styles.stackGap4}>
-                        <SectionCardHeader icon={SettingsIcon} title={`Configure ${providerTitle(provider.provider_name)}`} />
-                        {provider.provider_name === "OpenAI" && (
-                          <div className={styles.oauthGuide}>
-                            <p className={styles.oauthGuideText}>
-                              1. Click Open OpenAI Login. 2. Sign in and approve access. 3. Copy the full localhost callback URL from your browser (the page may fail to load). 4. Paste that URL below and submit.
-                            </p>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={handleOpenAIConnect}
-                              disabled={openaiConnecting}
-                            >
-                              {openaiConnecting ? "Opening..." : "Open OpenAI Login"}
-                            </Button>
-                          </div>
+                        <SectionCardHeader icon={SettingsIcon} title={`Configure ${provider.title}`} />
+                        {provider.oauth && (
+                          <OAuthGuide
+                            oauth={provider.oauth}
+                            opening={signingIn}
+                            onOpen={(oauth) => handleSignIn(provider, oauth)}
+                          />
                         )}
                         <SchemaForm
                           schema={provider.form}
-                          onSubmit={(data) => handleSaveProvider(provider.provider_name, data)}
+                          onSubmit={(data) => handleSaveProvider(provider, data)}
                           onCancel={handleCancelConfigure}
-                          submitLabel={provider.provider_name === "OpenAI" ? "Complete Connection" : "Save Configuration"}
+                          submitLabel={provider.oauth?.submit_label ?? "Save Configuration"}
                           isLoading={savingProvider}
                         />
                       </Stack>
@@ -719,9 +707,9 @@ export function Settings() {
                       key={provider.provider_name}
                       provider={provider}
                       canManage={canManage}
-                      removing={removingProvider && providerToRemove === provider.provider_name}
+                      removing={removingProvider && providerToRemove?.provider_name === provider.provider_name}
                       onConfigure={() => handleConfigureClick(provider.provider_name)}
-                      onRemove={() => setProviderToRemove(provider.provider_name)}
+                      onRemove={() => setProviderToRemove(provider)}
                     />
                   )
                 )}

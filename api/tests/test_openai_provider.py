@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.auth.openai_oauth import OpenAICredentials
-from src.llm.providers.openai import OpenAIProvider
+from src.llm.providers.openai.chat import OpenAIProvider
 
 
 def test_openai_codex_request_body_uses_responses_envelope():
@@ -97,7 +97,7 @@ def test_openai_codex_request_headers_include_account_and_sse_metadata(monkeypat
         expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
         account_id="chatgpt-account-1",
     )
-    monkeypatch.setattr("src.llm.providers.openai.settings.openai_oauth_originator", "codex_cli_rs")
+    monkeypatch.setattr("src.llm.providers.openai.chat.settings.openai_oauth_originator", "codex_cli_rs")
 
     headers = provider._request_headers(credentials)
 
@@ -191,7 +191,7 @@ class FakeOpenAIAsyncClient:
 
 
 async def test_openai_provider_yields_usage_event_from_response_completed(monkeypatch):
-    monkeypatch.setattr("src.llm.providers.openai.httpx.AsyncClient", FakeOpenAIAsyncClient)
+    monkeypatch.setattr("src.llm.providers.openai.chat.httpx.AsyncClient", FakeOpenAIAsyncClient)
 
     provider = OpenAIProvider()
     credentials = {
@@ -227,7 +227,7 @@ def _stream_of(*events):
 
 
 async def _events(monkeypatch, *stream_events):
-    monkeypatch.setattr("src.llm.providers.openai.httpx.AsyncClient", _stream_of(*stream_events))
+    monkeypatch.setattr("src.llm.providers.openai.chat.httpx.AsyncClient", _stream_of(*stream_events))
     credentials = {
         "access_token": "token",
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),

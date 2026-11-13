@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from src.crypto import encrypt
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from src.settings.schemas import SUPPORTED_PROVIDERS
+from src.llm.providers import PROVIDERS
 from tests.mock_data import TEST_USER_EMAIL, account_for
 
 ANTHROPIC = {"api_key": "sk-ant-test"}
@@ -25,7 +25,7 @@ def provider_listings(monkeypatch, without_bedrock):
     def fake_get(url, headers=None, timeout=None):
         return httpx.Response(200, json={"data": [{"id": "gpt-5.5", "created": 1}]}, request=httpx.Request("GET", url))
 
-    monkeypatch.setattr("src.llm.models.httpx.get", fake_get)
+    monkeypatch.setattr("src.llm.providers.openai_api.catalog.httpx.get", fake_get)
 
 
 def _configure(test_client: TestClient, auth_headers: dict, provider: str, credentials: dict) -> None:
@@ -99,7 +99,7 @@ def test_an_unknown_provider_cannot_be_removed(test_client: TestClient, auth_hea
     assert _remove(test_client, auth_headers, "NotAProvider").status_code == 400
 
 
-@pytest.mark.parametrize("provider", SUPPORTED_PROVIDERS)
+@pytest.mark.parametrize("provider", [p.name for p in PROVIDERS])
 def test_every_provider_the_settings_page_lists_can_be_removed(test_client: TestClient, auth_headers: dict, provider: str):
     # Stored directly: OpenAI is connected by signing in, so its credentials can't be posted like a key.
     ProviderSettingsRepository().save(

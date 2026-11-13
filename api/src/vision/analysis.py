@@ -19,7 +19,7 @@ from src.config import settings
 from src.llm.credentials import load_provider_credentials
 from src.llm.messages import ImageBlock, TextBlock
 from src.llm.model_fallback import ModelFallbackProvider
-from src.llm.providers.factory import get_llm_provider
+from src.llm.providers import provider
 from src.messages.models import ImageAnalysis
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
@@ -162,11 +162,10 @@ class ImageReader:
         text: list[str] = []
         prompt_tokens = completion_tokens = 0
         # A substitute for a refused model must read images too.
-        provider = ModelFallbackProvider(
-            get_llm_provider(provider_name), provider_name, provider_settings,
-            capabilities=vision.understanding(True),
+        reader = ModelFallbackProvider(
+            provider(provider_name), provider_settings, capabilities=vision.understanding(True)
         )
-        async for event in provider.stream_response(
+        async for event in reader.stream_response(
             messages, credentials, tools=None, model=vision_settings.model_name
         ):
             if event.type == "text":

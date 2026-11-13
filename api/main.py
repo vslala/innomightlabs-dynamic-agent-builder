@@ -7,7 +7,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from src.auth import auth_router, middleware
+from src.auth import middleware
+from src.auth.router import router as auth_router
 from src.auth.app_router import router as auth_app_router
 from src.auth.native_router import router as auth_native_router
 from src.rate_limits.middleware import RateLimitMiddleware

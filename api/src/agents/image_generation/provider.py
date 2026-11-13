@@ -15,7 +15,7 @@ from src.agents.image_generation.models import (
     ImageGenerationOptions,
 )
 from src.config import settings
-from src.llm.providers.openai_api import OPENAI_API_BASE_URL
+from src.llm.providers.openai_api.chat import OPENAI_API_BASE_URL
 
 log = logging.getLogger(__name__)
 

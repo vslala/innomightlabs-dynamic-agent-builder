@@ -6,11 +6,15 @@ import type { ProviderWithStatus } from "../../services/settings/ProviderSetting
 import { ProviderRow } from "./ProviderRow";
 
 const provider = (overrides: Partial<ProviderWithStatus> = {}): ProviderWithStatus => ({
-  provider_name: "Anthropic",
-  form: { form_name: "Anthropic", submit_path: "", form_inputs: [] },
+  provider_name: "Keyed",
+  title: "Keyed provider",
+  form: { form_name: "Keyed", submit_path: "/settings/providers/Keyed", form_inputs: [] },
+  oauth: null,
   is_configured: true,
   ...overrides,
 });
+
+const SIGN_IN = { start_path: "/auth/x/start", button_label: "Open Login", guide: "Sign in.", submit_label: "Complete Connection" };
 
 function row(overrides: Partial<React.ComponentProps<typeof ProviderRow>> = {}) {
   return {
@@ -65,8 +69,8 @@ describe("ProviderRow", () => {
     expect(remove.props.disabled).toBe(true);
   });
 
-  it("calls an OpenAI sign-in Disconnect", () => {
-    const names = buttons(row({ provider: provider({ provider_name: "OpenAI" }) })).map(label);
+  it("calls a sign-in Disconnect", () => {
+    const names = buttons(row({ provider: provider({ oauth: SIGN_IN }) })).map(label);
 
     expect(names).toEqual(["Disconnect", "Reconnect"]);
   });
@@ -79,6 +83,7 @@ describe("ProviderRow", () => {
     const configured = renderToStaticMarkup(<>{ProviderRow(row())}</>);
     const unset = renderToStaticMarkup(<>{ProviderRow(row({ provider: provider({ is_configured: false }) }))}</>);
 
+    expect(configured).toContain("Keyed provider");
     expect(configured).toContain("Configured");
     expect(unset).toContain("Not configured");
   });

@@ -5,11 +5,11 @@ from __future__ import annotations
 import base64
 
 from src.llm.messages import ImageBlock, normalize_messages
-from src.llm.providers.anthropic import AnthropicProvider
-from src.llm.providers.bedrock import BedrockProvider
-from src.llm.providers.gemini import GeminiProvider
-from src.llm.providers.ollama import OllamaProvider
-from src.llm.providers.openai import OpenAIProvider
+from src.llm.providers.anthropic.chat import AnthropicProvider
+from src.llm.providers.bedrock.chat import BedrockProvider
+from src.llm.providers.gemini.chat import GeminiProvider
+from src.llm.providers.ollama.chat import OllamaProvider
+from src.llm.providers.openai.chat import OpenAIProvider
 
 PNG = b"\x89PNG\r\n\x1a\nfake-image-bytes"
 PNG_BASE64 = base64.b64encode(PNG).decode("ascii")

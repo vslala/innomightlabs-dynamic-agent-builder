@@ -150,4 +150,4 @@ class TestOpenAISettings:
         )
 
         assert response.status_code == 400
-        assert "OAuth" in response.json()["detail"]
+        assert "connected by signing in" in response.json()["detail"]

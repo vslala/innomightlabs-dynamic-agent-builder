@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.llm.providers.anthropic import AnthropicProvider
+from src.llm.providers.anthropic.chat import AnthropicProvider
 
 
 def test_anthropic_provider_adds_type_to_bedrock_style_text_blocks() -> None:
@@ -121,7 +121,7 @@ async def test_anthropic_provider_yields_usage_event_from_final_message(monkeypa
         messages=SimpleNamespace(stream=lambda **kwargs: stream_obj)
     )
     monkeypatch.setattr(
-        "src.llm.providers.anthropic.AsyncAnthropic",
+        "src.llm.providers.anthropic.chat.AsyncAnthropic",
         lambda api_key: fake_client,
     )
 

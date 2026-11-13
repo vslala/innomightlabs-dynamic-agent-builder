@@ -22,7 +22,7 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,8 @@ DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 @dataclass(frozen=True)
 class GeminiMessageConversion:
     system_instruction: str | None
-    messages: list[types.Content]
+    #: Every item is a `types.Content`; the SDK's `contents` takes the wider `ContentUnion` list, and lists are invariant.
+    messages: list[types.ContentUnion]
 
 
 class GeminiProvider(LLMProvider):
@@ -76,7 +77,7 @@ class GeminiProvider(LLMProvider):
         conversation_messages: list[ChatMessage],
     ) -> GeminiMessageConversion:
         tool_names_by_id: dict[str, str] = {}
-        contents: list[types.Content] = []
+        contents: list[types.ContentUnion] = []
 
         for message in conversation_messages:
             role = message.role

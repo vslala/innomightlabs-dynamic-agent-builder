@@ -3,9 +3,9 @@ import json
 import httpx
 import pytest
 
-from src.llm.ollama import OllamaConnection, merge_thinking_override
-from src.llm.providers.factory import get_llm_provider
-from src.llm.providers.ollama import OllamaProvider
+from src.llm.providers import provider
+from src.llm.providers.ollama.chat import OllamaProvider
+from src.llm.providers.ollama.connection import OllamaConnection, merge_thinking_override
 
 
 SAMPLE_TOOL = {
@@ -405,7 +405,7 @@ class TestOllamaStreaming:
 
 
 def test_factory_resolves_the_ollama_provider():
-    assert isinstance(get_llm_provider("Ollama"), OllamaProvider)
+    assert isinstance(provider("Ollama").chat, OllamaProvider)
 
 
 async def test_accepts_the_agent_loops_positional_call_convention():

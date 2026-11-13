@@ -8,8 +8,8 @@ import pytest
 from src.auth.openai_oauth import OpenAICredentials, OpenAIOAuthError, credentials_from_provider_settings
 from src.config.settings import DEFAULT_OPENAI_MODELS
 from src.crypto import encrypt
-from src.llm import models as llm_models
-from src.llm.models import ModelsService
+from src.llm.providers.openai import catalog as openai_catalog
+from src.llm.providers.openai.catalog import OpenAICatalog
 from src.settings.models import ProviderSettings
 from tests.mock_data import account_for, TEST_USER_EMAIL
 
@@ -18,7 +18,7 @@ CATALOG = {"models": [{"slug": "gpt-6-astra", "display_name": "GPT-6-Astra", "vi
 
 @pytest.fixture(autouse=True)
 def configured_models(monkeypatch):
-    monkeypatch.setattr(llm_models.settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
+    monkeypatch.setattr(openai_catalog.settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
     monkeypatch.setattr("src.auth.openai_oauth.settings.openai_oauth_client_id", "client-1")
 
 
@@ -34,7 +34,7 @@ class FakeRepository:
 @pytest.fixture
 def repository(monkeypatch) -> FakeRepository:
     repo = FakeRepository()
-    monkeypatch.setattr("src.settings.repository.get_provider_settings_repository", lambda: repo)
+    monkeypatch.setattr("src.llm.providers.openai.catalog.get_provider_settings_repository", lambda: repo)
     return repo
 
 
@@ -62,7 +62,7 @@ def _catalog_requests(monkeypatch) -> list[httpx.Request]:
         status = 200 if headers["Authorization"] == "Bearer new-token" else 401
         return httpx.Response(status, json=CATALOG, request=request)
 
-    monkeypatch.setattr("src.llm.models.httpx.get", fake_get)
+    monkeypatch.setattr("src.llm.providers.openai.catalog.httpx.get", fake_get)
     return seen
 
 
@@ -83,7 +83,7 @@ def test_an_expired_token_is_refreshed_and_saved_before_the_catalog_is_read(monk
     seen = _catalog_requests(monkeypatch)
     asked = _refresh_gives(monkeypatch, {"access_token": "new-token", "expires_in": 864000})
 
-    models = ModelsService().get_openai_models(_signed_in(timedelta(minutes=-5)))
+    models = OpenAICatalog().list_models(_signed_in(timedelta(minutes=-5)))
 
     assert [model.model_name for model in models] == ["gpt-6-astra"]
     assert asked == ["refresh-1"]
@@ -100,7 +100,7 @@ def test_a_live_token_is_used_as_it_is(monkeypatch, repository):
     asked = _refresh_gives(monkeypatch, {"access_token": "new-token"})
     settings = _signed_in(timedelta(days=3))
 
-    ModelsService().get_openai_models(settings)
+    OpenAICatalog().list_models(settings)
 
     assert asked == []
     assert repository.saved == []
@@ -110,10 +110,10 @@ def test_a_live_token_is_used_as_it_is(monkeypatch, repository):
 def test_a_cached_catalog_needs_neither_a_refresh_nor_a_request(monkeypatch, repository):
     seen = _catalog_requests(monkeypatch)
     asked = _refresh_gives(monkeypatch, {"access_token": "new-token"})
-    service = ModelsService()
-    service.get_openai_models(_signed_in(timedelta(minutes=-5)))
+    catalog = OpenAICatalog()
+    catalog.list_models(_signed_in(timedelta(minutes=-5)))
 
-    service.get_openai_models(_signed_in(timedelta(minutes=-5)))
+    catalog.list_models(_signed_in(timedelta(minutes=-5)))
 
     assert len(seen) == 1
     assert len(asked) == 1
@@ -123,7 +123,7 @@ def test_a_refused_refresh_offers_the_configured_models_and_says_why(monkeypatch
     _catalog_requests(monkeypatch)
     _refresh_gives(monkeypatch, OpenAIOAuthError("Your OpenAI sign-in has expired. Please connect it again."))
 
-    models = ModelsService().get_openai_models(_signed_in(timedelta(minutes=-5)))
+    models = OpenAICatalog().list_models(_signed_in(timedelta(minutes=-5)))
 
     assert [model.model_name for model in models] == DEFAULT_OPENAI_MODELS
     assert repository.saved == []
@@ -135,6 +135,6 @@ async def test_refreshes_from_inside_a_running_event_loop(monkeypatch, repositor
     _catalog_requests(monkeypatch)
     _refresh_gives(monkeypatch, {"access_token": "new-token"})
 
-    models = ModelsService().get_openai_models(_signed_in(timedelta(minutes=-5)))
+    models = OpenAICatalog().list_models(_signed_in(timedelta(minutes=-5)))
 
     assert [model.model_name for model in models] == ["gpt-6-astra"]

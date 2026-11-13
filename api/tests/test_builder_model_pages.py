@@ -8,9 +8,10 @@ from src.agents.service import validate_provider_model
 from src.blueprints.account_pages import MODELS_PAGE
 from src.blueprints.book import blueprint_book
 from src.builder.models import BuilderSession
-from src.llm.models import ModelInfo, ProviderModelSource
+from src.llm.models import ModelInfo
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
+from tests.llm_doubles import ListedModels, use_provider
 from tests.mock_data import TEST_USER_EMAIL, account_for
 from tests.mock_data import test_owner as _test_owner
 
@@ -33,20 +34,21 @@ class Listing:
             "OpenAI": [ModelInfo(model_id="o1", model_name="gpt-5.5", display_name="GPT-5.5", provider="openai")],
         }
 
-    def source(self, provider: str) -> ProviderModelSource:
+    def catalog(self, provider: str) -> ListedModels:
         def load(_settings: ProviderSettings) -> list[ModelInfo]:
             self.calls.append(provider)
             if provider in self.failing:
                 raise RuntimeError("provider is down")
             return self.models[provider]
 
-        return ProviderModelSource(provider, load)
+        return ListedModels(load)
 
 
 @pytest.fixture
 def listing(dynamodb_table, monkeypatch) -> Listing:
     fake = Listing()
-    monkeypatch.setattr("src.llm.models.PROVIDER_MODEL_SOURCES", tuple(fake.source(name) for name in fake.models))
+    for name in fake.models:
+        use_provider(monkeypatch, name, catalog=fake.catalog(name))
     return fake
 
 

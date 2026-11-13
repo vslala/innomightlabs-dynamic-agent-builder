@@ -26,6 +26,7 @@ from src.skills.repository import AgentSkillRepository
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
 from tests.mock_data import user_id_for, account_for, agent_fields, conversation_fields
+from tests.llm_doubles import use_chat_everywhere
 
 OWNER = "owner@example.com"
 
@@ -320,7 +321,7 @@ def test_turn_prompt_carries_the_schema_of_an_action_used_last_turn(registry, dy
             yield item
 
     monkeypatch.setattr("src.agents.architectures.krishna_memgpt.run_agentic_tool_loop", fake_loop)
-    monkeypatch.setattr("src.agents.provider_session.get_llm_provider", lambda provider_name: object())
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr("src.agents.provider_session.load_provider_credentials", _no_credentials)
 
     agent = Agent(

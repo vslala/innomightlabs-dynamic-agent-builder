@@ -18,6 +18,7 @@ from src.vision.repository import VisionSettingsRepository
 from src.vision.uploads import ImageUploadService
 from tests.mock_data import account_for, agent_fields, conversation_fields
 from tests.vision_support import create_media_bucket, enable_vision, png_bytes
+from tests.llm_doubles import use_chat_everywhere
 
 OWNER = "owner@example.com"
 
@@ -57,7 +58,7 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         yield TurnComplete(full_text="")
 
     monkeypatch.setattr("src.agents.architectures.krishna_memgpt.run_agentic_tool_loop", capture_loop)
-    monkeypatch.setattr("src.agents.provider_session.get_llm_provider", lambda name: object())
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr("src.agents.provider_session.load_provider_credentials", no_credentials)
     return seen
 

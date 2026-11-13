@@ -25,7 +25,7 @@ from src.agents.access import access_to, owner_of, require_agent, visible_agents
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
 from src.agents.service import AgentService, validate_provider_model
-from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
+from src.agents.schemas import get_create_agent_form, get_update_agent_form
 from src.agents.turns import (
     ConversationTurn,
     ConversationTurnRepository,
@@ -388,8 +388,8 @@ async def update_agent(
     agent = require_agent(principal, agent_id, "agents:Update", repo)
     owner = owner_of(agent)
 
-    # Get valid field names from schema
-    valid_fields = {field.name for field in UPDATE_AGENT_FORM.form_inputs}
+    update_form = get_update_agent_form(agent_id)
+    valid_fields = {field.name for field in update_form.form_inputs}
 
     # Filter to only valid fields that are present in request
     filtered_data = {k: v for k, v in update_data.items() if k in valid_fields and v is not None}
@@ -405,7 +405,7 @@ async def update_agent(
         _require_provider_model(owner, provider, model)
 
     # Encrypt secret fields based on form schema
-    encrypted_data = encrypt_secret_fields(UPDATE_AGENT_FORM, filtered_data)
+    encrypted_data = encrypt_secret_fields(update_form, filtered_data)
 
     # Apply updates to agent
     for field_name, value in encrypted_data.items():

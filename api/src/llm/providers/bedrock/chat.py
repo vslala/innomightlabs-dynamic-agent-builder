@@ -21,7 +21,8 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.providers.bedrock.catalog import BEDROCK_REGION, FALLBACK_MODELS, BedrockCatalog
 
 log = logging.getLogger(__name__)
 
@@ -52,8 +53,7 @@ class BedrockProvider(LLMProvider):
     Supports tool use with the Bedrock tool calling format.
     """
 
-    # Bedrock region (eu-west-2 per project config)
-    REGION = "eu-west-2"
+    default_model = DEFAULT_MODEL_NAME
 
     def get_model_id(self, access_key: str, secret_key: str, model_name: Optional[str] = None) -> str:
         """
@@ -62,13 +62,11 @@ class BedrockProvider(LLMProvider):
         Fetches the models these keys can use and finds the matching model ID.
         Falls back to default model if not found.
         """
-        from src.llm.models import models_service
-
         if not model_name:
             model_name = DEFAULT_MODEL_NAME
 
         # Fetch available models and find matching one
-        available_models = models_service.list_bedrock_models(access_key, secret_key)
+        available_models = BedrockCatalog().list_models_with_keys(access_key, secret_key)
 
         for model in available_models:
             if model.model_name == model_name:
@@ -79,9 +77,8 @@ class BedrockProvider(LLMProvider):
             log.warning(f"Model '{model_name}' not found, using default: {available_models[0].model_name}")
             return available_models[0].model_id
 
-        # Last resort fallback - must be a model that exists in eu-west-2
-        log.warning("No models available, using hardcoded default")
-        return "anthropic.claude-3-7-sonnet-20250219-v1:0"
+        log.warning("No Bedrock models listed, using the first fallback model")
+        return FALLBACK_MODELS[0].model_id
 
     async def stream_response(
         self,
@@ -111,7 +108,7 @@ class BedrockProvider(LLMProvider):
 
         client = boto3.client(
             service_name="bedrock-runtime",
-            region_name=self.REGION,
+            region_name=BEDROCK_REGION,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
         )
@@ -221,7 +218,7 @@ class BedrockProvider(LLMProvider):
             raise
 
     def __repr__(self) -> str:
-        return f"BedrockProvider(default_model={DEFAULT_MODEL_NAME}, region={self.REGION})"
+        return f"BedrockProvider(default_model={DEFAULT_MODEL_NAME}, region={BEDROCK_REGION})"
 
     def _convert_messages(self, messages: list[dict]) -> BedrockMessageConversion:
         split = split_system_messages(normalize_messages(messages))

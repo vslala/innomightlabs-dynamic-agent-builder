@@ -12,9 +12,10 @@ from src.agents.image_generation.service import (
 from src.agents.image_generation.settings import ImageGenerationSettings, ImageGenerationSettingsRepository
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.llm.models import ModelInfo, ProviderModelSource
+from src.llm.models import ModelInfo
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
+from tests.llm_doubles import ListedModels, use_provider
 from tests.mock_data import TEST_USER_EMAIL, account_for, agent_fields
 from tests.test_agent_image_provider import FakeAsyncClient, FakeStreamResponse
 
@@ -33,7 +34,7 @@ def drawing_models(dynamodb_table, monkeypatch):
                   capabilities=["image_generation"]),
         ModelInfo(model_id="embed", model_name="embed", display_name="Embed", provider="openai_api"),
     ]
-    monkeypatch.setattr("src.llm.models.PROVIDER_MODEL_SOURCES", (ProviderModelSource("OpenAIAPI", lambda _s: models),))
+    use_provider(monkeypatch, "OpenAIAPI", catalog=ListedModels(models))
     provider_set_up("OpenAIAPI")
 
 

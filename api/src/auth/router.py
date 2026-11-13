@@ -42,6 +42,7 @@ from .google_drive_oauth import (
     encode_state_session as encode_google_drive_state_session,
     save_credentials as save_google_drive_credentials,
 )
+from src.llm.providers.openai import OPENAI
 from src.skills.google_ads.oauth import (
     GoogleAdsOAuthError,
     build_authorization_url as build_google_ads_authorization_url,
@@ -359,14 +360,14 @@ async def complete_openai_oauth(
         )
         provider_settings = ProviderSettings(
             account_id=session.account_id,
-            provider_name="OpenAI",
+            provider_name=OPENAI.name,
             encrypted_credentials="",
             auth_type="oauth",
             updated_by=request.state.user_id,
         )
         saved = save_credentials(provider_settings, provider_settings_repository, credentials)
         return ProviderSettingsResponse(
-            provider_name="OpenAI",
+            provider_name=OPENAI.name,
             is_configured=True,
             created_at=saved.created_at,
             updated_at=saved.updated_at,

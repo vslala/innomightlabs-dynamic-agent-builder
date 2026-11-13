@@ -16,6 +16,7 @@ from src.conversations.models import Conversation
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
 from tests.mock_data import agent_fields, conversation_fields
+from tests.llm_doubles import use_provider
 
 
 def _agent(provider: str = "Anthropic", thinking: str | None = None) -> Agent:
@@ -51,19 +52,18 @@ async def test_open_provider_session_raises_when_the_provider_is_not_configured(
     assert "Settings > Provider Configuration" in str(caught.value)
 
 
-async def test_open_provider_session_applies_the_thinking_override_only_for_ollama(monkeypatch):
+async def test_open_provider_session_applies_the_thinking_override_only_where_the_provider_has_one(monkeypatch):
     seen: list[dict] = []
 
     async def fake_load(**kwargs):
         return {"base": "creds"}
 
-    def fake_merge(credentials, *, thinking_mode):
+    def fake_merge(credentials, thinking_mode):
         seen.append({"thinking_mode": thinking_mode})
         return {**credentials, "think": thinking_mode}
 
     monkeypatch.setattr("src.agents.provider_session.load_provider_credentials", fake_load)
-    monkeypatch.setattr("src.agents.provider_session.merge_thinking_override", fake_merge)
-    monkeypatch.setattr("src.agents.provider_session.get_llm_provider", lambda name: name)
+    use_provider(monkeypatch, "Ollama", apply_thinking=fake_merge)
 
     ollama = await open_provider_session(
         _agent(provider="Ollama", thinking="enabled"),

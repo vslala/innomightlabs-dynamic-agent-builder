@@ -8,11 +8,11 @@ from fastapi.testclient import TestClient
 
 from src.config.settings import DEFAULT_OPENAI_MODELS
 from src.crypto import encrypt
-from src.llm import models as llm_models
+from src.config import settings
 from src.llm.credentials import load_provider_credentials
-from src.llm.models import find_model_source, models_service
-from src.llm.providers import get_llm_provider
-from src.llm.providers.openai_api import OpenAIAPIProvider
+from src.llm.providers import find_provider, provider
+from src.llm.providers.openai_api.catalog import OpenAIAPICatalog
+from src.llm.providers.openai_api.chat import OpenAIAPIProvider
 from src.settings.models import ProviderSettings
 from tests.mock_data import account_for, TEST_USER_EMAIL
 
@@ -71,7 +71,7 @@ def _sse(*events: dict) -> list[str]:
 
 async def _events(monkeypatch, response: FakeStreamResponse, credentials=None, tools=None):
     seen: list[dict] = []
-    monkeypatch.setattr("src.llm.providers.openai.httpx.AsyncClient", _fake_client(response, seen))
+    monkeypatch.setattr("src.llm.providers.openai.chat.httpx.AsyncClient", _fake_client(response, seen))
     events = [
         event
         async for event in OpenAIAPIProvider().stream_response(
@@ -211,19 +211,19 @@ def _models_response(monkeypatch, payload=MODELS_PAYLOAD, status_code: int = 200
         seen.append(request)
         return httpx.Response(status_code, json=payload, request=request)
 
-    monkeypatch.setattr("src.llm.models.httpx.get", fake_get)
+    monkeypatch.setattr("src.llm.providers.openai_api.catalog.httpx.get", fake_get)
     return seen
 
 
 class TestModelDiscovery:
     @pytest.fixture(autouse=True)
     def configured_models(self, monkeypatch):
-        monkeypatch.setattr(llm_models.settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
+        monkeypatch.setattr(settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
 
     def test_lists_only_chat_models_newest_first(self, monkeypatch):
         seen = _models_response(monkeypatch)
 
-        models = models_service.get_openai_api_models(_provider_settings())
+        models = OpenAIAPICatalog().list_models(_provider_settings())
 
         assert [model.model_name for model in models] == ["gpt-5.5", "gpt-4.1", "o4-mini", "gpt-4o"]
         assert models[0].display_name == "[OpenAI API] gpt-5.5"
@@ -236,24 +236,24 @@ class TestModelDiscovery:
     def test_falls_back_to_the_configured_models_when_the_list_cant_be_read(self, monkeypatch, status_code):
         _models_response(monkeypatch, payload={"error": {}}, status_code=status_code)
 
-        models = models_service.get_openai_api_models(_provider_settings())
+        models = OpenAIAPICatalog().list_models(_provider_settings())
 
         assert [model.model_name for model in models] == DEFAULT_OPENAI_MODELS
 
     def test_falls_back_on_an_unexpected_payload(self, monkeypatch):
         _models_response(monkeypatch, payload={"data": "nope"})
 
-        assert [m.model_name for m in models_service.get_openai_api_models(_provider_settings())] == DEFAULT_OPENAI_MODELS
+        assert [m.model_name for m in OpenAIAPICatalog().list_models(_provider_settings())] == DEFAULT_OPENAI_MODELS
 
     def test_is_a_configurable_model_source(self):
-        source = find_model_source("openaiapi")
+        found = find_provider("openaiapi")
 
-        assert source is not None and source.provider_name == "OpenAIAPI"
+        assert found is not None and found.name == "OpenAIAPI"
 
 
 class TestWiring:
     def test_the_factory_returns_the_api_key_provider(self):
-        assert isinstance(get_llm_provider("OpenAIAPI"), OpenAIAPIProvider)
+        assert isinstance(provider("OpenAIAPI").chat, OpenAIAPIProvider)
 
     async def test_stored_credentials_load_as_the_saved_key(self):
         credentials = await load_provider_credentials(

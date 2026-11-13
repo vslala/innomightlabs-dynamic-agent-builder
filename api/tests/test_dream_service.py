@@ -20,6 +20,7 @@ from src.dream.service import DreamService
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.messages.models import Message
 from tests.mock_data import account_for, agent_fields, conversation_fields, conversations_of
+from tests.llm_doubles import use_chat_everywhere
 
 
 OWNER = "owner@example.com"
@@ -171,7 +172,7 @@ def agent(architecture: str = "krishna-memgpt") -> Agent:
         agent_id=AGENT_ID,
         agent_name="Dreamer",
         agent_architecture=architecture,
-        agent_provider="test",
+        agent_provider="Anthropic",
         agent_persona="Helpful",
         **agent_fields(OWNER),
     )
@@ -179,7 +180,7 @@ def agent(architecture: str = "krishna-memgpt") -> Agent:
 
 def settings(**overrides) -> DreamSettings:
     values: dict[str, Any] = {
-        "account_id": account_for(OWNER), "enabled": True, "provider_name": "test", "model_name": "test-model"
+        "account_id": account_for(OWNER), "enabled": True, "provider_name": "Anthropic", "model_name": "test-model"
     }
     values.update(overrides)
     return DreamSettings(**values)
@@ -205,7 +206,7 @@ def stub_provider_access(monkeypatch) -> None:
         return {"token": "test"}
 
     monkeypatch.setattr("src.dream.service.load_provider_credentials", load_credentials)
-    monkeypatch.setattr("src.dream.service.get_llm_provider", lambda provider_name: object())
+    use_chat_everywhere(monkeypatch, object())
 
 
 def service_for(

@@ -15,14 +15,6 @@ from src.form_options import FormOptionSourceType
 from src.smart_suggestions.models import SmartSuggestionType
 
 
-# Fallback model options if dynamic fetch fails
-# These must be models available in eu-west-2
-DEFAULT_MODEL_OPTIONS = [
-    SelectOption(value="claude-3-7-sonnet", label="Claude 3.7 Sonnet", group="Bedrock"),
-    SelectOption(value="claude-3-sonnet", label="Claude 3 Sonnet", group="Bedrock"),
-    SelectOption(value="claude-3-haiku", label="Claude 3 Haiku (Fast)", group="Bedrock"),
-]
-
 # Session timeout options
 SESSION_TIMEOUT_OPTIONS = [
     SelectOption(value="30", label="30 minutes"),
@@ -110,7 +102,6 @@ def get_create_agent_form() -> Form:
             FormInput(
                 label="Model",
                 name="agent_model",
-                options=DEFAULT_MODEL_OPTIONS,
                 input_type=FormInputType.SEARCH,
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
                 options_filter=FormOptionsFilter(field="agent_provider"),
@@ -162,7 +153,6 @@ def get_update_agent_form(
             FormInput(
                 label="Model",
                 name="agent_model",
-                options=DEFAULT_MODEL_OPTIONS,
                 input_type=FormInputType.SEARCH,
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
                 options_filter=FormOptionsFilter(field="agent_provider"),
@@ -176,44 +166,3 @@ def get_update_agent_form(
             _ollama_thinking_field(),
         ],
     )
-
-
-# Static version for validation (without dynamic agent_id in path)
-UPDATE_AGENT_FORM = Form(
-    form_name="Update Agent Form",
-    submit_path="/agents/{agent_id}",
-    form_inputs=[
-        FormInput(
-            label="Architecture",
-            name="agent_architecture",
-            values=["krishna-mini", "krishna-memgpt"],
-            input_type=FormInputType.SELECT,
-        ),
-        _agent_instructions_field(),
-        FormInput(
-            label="Description (optional)",
-            name="agent_description",
-            input_type=FormInputType.TEXT_AREA,
-            attr={"optional": "true"},
-        ),
-        FormInput(
-            label="Provider Name",
-            name="agent_provider",
-            values=["Bedrock", "Anthropic", "OpenAI", "OpenAIAPI", "Gemini", "Ollama"],
-            input_type=FormInputType.SELECT,
-        ),
-        FormInput(
-            label="Model",
-            name="agent_model",
-            options=DEFAULT_MODEL_OPTIONS,
-            input_type=FormInputType.SEARCH,
-        ),
-        FormInput(
-            label="Session Timeout",
-            name="session_timeout_minutes",
-            options=SESSION_TIMEOUT_OPTIONS,
-            input_type=FormInputType.SELECT,
-        ),
-        _ollama_thinking_field(),
-    ],
-)

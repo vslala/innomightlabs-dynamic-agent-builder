@@ -5,14 +5,13 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from src.llm.ollama import OllamaConnection
-from src.vision import capabilities
+from src.llm.providers.ollama import catalog as ollama_catalog
+from src.llm.providers.ollama.connection import OllamaConnection
 from src.vision.capabilities import (
     anthropic_reads_images,
     bedrock_reads_images,
     codex_reads_images,
     gemini_reads_images,
-    ollama_reads_images,
     openai_api_reads_images,
     understanding,
 )
@@ -59,7 +58,7 @@ def test_understanding_is_the_capability_string_or_nothing() -> None:
 
 
 def test_ollama_asks_each_model_once_and_reads_vision(monkeypatch: pytest.MonkeyPatch) -> None:
-    capabilities._ollama_cache.clear()
+    ollama_catalog._reads_images_cache.clear()
     calls: list[str] = []
 
     def fake_post(url: str, json: dict, **_: object) -> httpx.Response:
@@ -67,21 +66,21 @@ def test_ollama_asks_each_model_once_and_reads_vision(monkeypatch: pytest.Monkey
         reply = {"capabilities": ["completion", "vision"] if json["model"] == "llava" else ["completion"]}
         return httpx.Response(200, json=reply, request=httpx.Request("POST", url))
 
-    monkeypatch.setattr(capabilities.httpx, "post", fake_post)
+    monkeypatch.setattr(ollama_catalog.httpx, "post", fake_post)
     connection = OllamaConnection(base_url="http://ollama.test:11434")
 
-    assert ollama_reads_images(connection, "llava") is True
-    assert ollama_reads_images(connection, "llama3") is False
-    assert ollama_reads_images(connection, "llava") is True
+    assert ollama_catalog.reads_images(connection, "llava") is True
+    assert ollama_catalog.reads_images(connection, "llama3") is False
+    assert ollama_catalog.reads_images(connection, "llava") is True
     assert calls == ["llava", "llama3"]
 
 
 def test_ollama_that_cannot_answer_is_not_vision(monkeypatch: pytest.MonkeyPatch) -> None:
-    capabilities._ollama_cache.clear()
+    ollama_catalog._reads_images_cache.clear()
 
     def failing_post(*_: object, **__: object) -> httpx.Response:
         raise httpx.ConnectError("down")
 
-    monkeypatch.setattr(capabilities.httpx, "post", failing_post)
+    monkeypatch.setattr(ollama_catalog.httpx, "post", failing_post)
 
-    assert ollama_reads_images(OllamaConnection(base_url="http://down.test"), "llava") is False
+    assert ollama_catalog.reads_images(OllamaConnection(base_url="http://down.test"), "llava") is False

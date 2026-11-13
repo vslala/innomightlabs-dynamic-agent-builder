@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 DEFAULT_OPENAI_CODEX_CLIENT_VERSION = "0.159.3"
 
 #: Offered only when the live Codex model catalog can't be read; normally the list
-#: comes from that catalog (see ModelsService.get_openai_models).
+#: comes from that catalog (see OpenAICatalog in src/llm/providers/openai/catalog.py).
 DEFAULT_OPENAI_MODELS = [
     "gpt-6-astra",
     "gpt-6-sol",

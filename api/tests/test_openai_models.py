@@ -8,8 +8,8 @@ import pytest
 from src.auth.openai_oauth import OpenAICredentials
 from src.config.settings import DEFAULT_OPENAI_MODELS
 from src.crypto import encrypt
-from src.llm import models as llm_models
-from src.llm.models import ModelsService
+from src.llm.providers.openai import catalog as openai_catalog
+from src.llm.providers.openai.catalog import OpenAICatalog
 from src.settings.models import ProviderSettings
 from tests.mock_data import account_for, TEST_USER_EMAIL
 
@@ -27,7 +27,7 @@ CATALOG = {
 @pytest.fixture(autouse=True)
 def configured_models(monkeypatch):
     """Deploy scripts set OPENAI_MODELS; pin the fallback so these tests don't depend on the shell."""
-    monkeypatch.setattr(llm_models.settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
+    monkeypatch.setattr(openai_catalog.settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
 
 
 def _provider_settings(account_id: str | None = "acct-1") -> ProviderSettings:
@@ -54,14 +54,14 @@ def _catalog_response(monkeypatch, payload=CATALOG, status_code: int = 200) -> l
         seen.append(request)
         return httpx.Response(status_code, json=payload, request=request)
 
-    monkeypatch.setattr("src.llm.models.httpx.get", fake_get)
+    monkeypatch.setattr("src.llm.providers.openai.catalog.httpx.get", fake_get)
     return seen
 
 
 def test_lists_the_catalogs_listed_models_in_priority_order(monkeypatch):
     seen = _catalog_response(monkeypatch)
 
-    models = ModelsService().get_openai_models(_provider_settings())
+    models = OpenAICatalog().list_models(_provider_settings())
 
     assert [model.model_name for model in models] == ["gpt-6-astra", "gpt-6-luna", "gpt-5.6-sol"]
     assert [model.display_name for model in models] == [
@@ -78,14 +78,14 @@ def test_lists_the_catalogs_listed_models_in_priority_order(monkeypatch):
 
 def test_reuses_an_accounts_catalog_until_it_expires(monkeypatch):
     seen = _catalog_response(monkeypatch)
-    service = ModelsService()
+    catalog = OpenAICatalog()
 
-    service.get_openai_models(_provider_settings())
-    service.get_openai_models(_provider_settings())
+    catalog.list_models(_provider_settings())
+    catalog.list_models(_provider_settings())
     assert len(seen) == 1
 
-    monkeypatch.setattr(llm_models.time, "monotonic", lambda: 10**12)
-    service.get_openai_models(_provider_settings())
+    monkeypatch.setattr(openai_catalog.time, "monotonic", lambda: 10**12)
+    catalog.list_models(_provider_settings())
     assert len(seen) == 2
 
 
@@ -100,7 +100,7 @@ def test_reuses_an_accounts_catalog_until_it_expires(monkeypatch):
 def test_falls_back_to_the_configured_models(monkeypatch, payload, status_code):
     _catalog_response(monkeypatch, payload, status_code)
 
-    models = ModelsService().get_openai_models(_provider_settings())
+    models = OpenAICatalog().list_models(_provider_settings())
 
     assert [model.model_name for model in models] == DEFAULT_OPENAI_MODELS
 
@@ -114,7 +114,7 @@ def test_unreadable_credentials_fall_back_without_a_request(monkeypatch):
         auth_type="oauth",
     )
 
-    models = ModelsService().get_openai_models(broken)
+    models = OpenAICatalog().list_models(broken)
 
     assert [model.model_name for model in models] == DEFAULT_OPENAI_MODELS
     assert seen == []

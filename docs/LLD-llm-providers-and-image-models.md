@@ -2,10 +2,37 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 📝 Proposed |
+| Status | 🚧 In progress (phases 0–1 built) |
 | Owner | vslala |
 | Last reviewed | 2026-11-12 |
 | Depends on | [api/src/llm/CONTRIBUTION.md](../api/src/llm/CONTRIBUTION.md), [LLD-multimodal-image-generation-v1.md](../api/docs/LLD-multimodal-image-generation-v1.md), [LLD-image-input-and-read-image-tool.md](LLD-image-input-and-read-image-tool.md) |
+
+## Implementation notes
+
+**Phase 0 (2026-11-13).** The four service entry points became `_generate_chat_turn` and `_stream_chat_turn` (prompt
+saved, then the drawing) and `stream_for_agent_turn` (the skill: only the drawing's events). All three resolve
+`_artist_for`. `generate_for_agent_turn` had no callers and was deleted, and so was `_ensure_signed_image_urls`, which
+repeated what `_persist_generated_images` already does. `tests/test_agent_image_generation_service.py` now runs the real
+service against moto; on the old code its skill tests fail with the production `AttributeError`.
+
+**Phase 1 (2026-11-13).** Built as designed, except for the following:
+- `providers/base.py` stays where it is (`LLMProvider`, `LLMEvent`). It's already a clear home for the chat contract,
+  and moving it would only touch about 15 imports. `provider.py` holds `Provider`, `ModelCatalog`, `CredentialSource`,
+  `StoredCredentials`, `stored_credentials()` and `OAuthSignIn`.
+- `Provider.oauth: OAuthSignIn | None` replaces the planned `sign_in` literal. The SPA needs the start path, button
+  label, guide and submit label, so they live on the provider, and `Settings.tsx` posts to `form.submit_path` for
+  every provider.
+- `ModelFallbackProvider(provider, provider_settings)` takes the `Provider` itself, not `(chat, name, settings)`.
+- Ollama's `/api/show` vision check moved into `providers/ollama/catalog.py` now, not in phase 3. Leaving it in
+  `vision/capabilities.py` made an import cycle with the provider packages.
+- `src/auth/__init__.py` no longer imports its router (only `main.py` used that export). The import dragged every
+  route into any `src.auth.*` import and made a cycle with `providers/openai`.
+- `agents/schemas.py`: `UPDATE_AGENT_FORM` (a static copy of `get_update_agent_form`) and `DEFAULT_MODEL_OPTIONS`
+  (always replaced on hydration) were deleted.
+- The guard test temporarily allows `agents/image_generation/capabilities.py` and `provider.py`, the two files
+  phases 2–3 replace.
+- Tests stand in for a provider's parts with `tests/llm_doubles.py` (`use_provider`, `use_chat_everywhere`), which
+  swaps the provider's entry in `PROVIDERS`.
 
 ## 1. Goal
 

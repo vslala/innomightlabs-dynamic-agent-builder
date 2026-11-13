@@ -27,6 +27,7 @@ from src.vision.models import VisionSettings
 from src.vision.repository import VisionSettingsRepository
 from src.vision.uploads import ImageUploadService
 from tests.vision_support import ACCOUNT_ID, create_media_bucket, enable_vision, make_agent, png_bytes
+from tests.llm_doubles import use_chat_everywhere
 
 CONVERSATION_ID = "conversation-1"
 REPLY = json.dumps({"description": "A red error dialog.", "answer": "Error 51."})
@@ -69,7 +70,7 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> FakeVisionProvider:
     async def credentials(**_: Any) -> dict[str, str]:
         return {"api_key": "key"}
 
-    monkeypatch.setattr(analysis, "get_llm_provider", lambda name: fake)
+    use_chat_everywhere(monkeypatch, fake)
     monkeypatch.setattr(analysis, "load_provider_credentials", credentials)
     return fake
 

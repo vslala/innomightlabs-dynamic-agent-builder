@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle } from "lucide-react";
 import { Button, ListRow } from "../../components/ui";
 import { Inline } from "../../components/layout";
 import type { ProviderWithStatus } from "../../services/settings/ProviderSettingsService";
-import { providerActions, providerStatus, providerTitle, removalPrompt } from "./providerLabels";
+import { providerActions, providerStatus, removalPrompt } from "./providerLabels";
 import styles from "./Settings.module.css";
 
 interface ProviderRowProps {
@@ -16,8 +16,8 @@ interface ProviderRowProps {
 }
 
 export function ProviderRow({ provider, canManage, removing, onConfigure, onRemove }: ProviderRowProps) {
-  const { provider_name: name, is_configured: configured } = provider;
-  const actions = providerActions(name, configured);
+  const { is_configured: configured } = provider;
+  const actions = providerActions(provider, configured);
   return (
     <ListRow
       icon={
@@ -27,13 +27,13 @@ export function ProviderRow({ provider, canManage, removing, onConfigure, onRemo
           <AlertCircle className={styles.providerUnconfiguredIcon} />
         )
       }
-      title={providerTitle(name)}
-      subtitle={providerStatus(name, configured)}
+      title={provider.title}
+      subtitle={providerStatus(provider, configured)}
       trailing={canManage &&
         <Inline gap="xs" wrap={false}>
           {actions.remove && (
             <Button variant="outline" size="sm" onClick={onRemove} disabled={removing}>
-              {removing ? removalPrompt(name).busy : actions.remove}
+              {removing ? removalPrompt(provider).busy : actions.remove}
             </Button>
           )}
           <Button variant={configured ? "outline" : "default"} size="sm" onClick={onConfigure}>

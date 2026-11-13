@@ -27,7 +27,7 @@ from src.dream.sessions import SessionChunker
 from src.dream.window import DreamWindowBuilder
 from src.llm.credentials import load_provider_credentials
 from src.llm.model_fallback import ModelFallbackProvider
-from src.llm.providers import get_llm_provider
+from src.llm.providers import provider
 from src.memory.repository import MemoryRepository
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.scheduler.models import CreateScheduleRequest, ScheduleTargetType, UpdateScheduleRequest
@@ -156,9 +156,7 @@ class DreamService:
                 provider_settings=provider_settings,
                 provider_settings_repo=self.provider_settings_repository,
             )
-            provider = ModelFallbackProvider(
-                get_llm_provider(dream_settings.provider_name), dream_settings.provider_name, provider_settings
-            )
+            dreamer = ModelFallbackProvider(provider(dream_settings.provider_name), provider_settings)
             cursor = cursor or DreamCursor(agent_id=agent_id, user_id=user_id)
             action_index = 0
             for session_index, session in enumerate(window.sessions):
@@ -183,7 +181,7 @@ class DreamService:
                         window_index=chunk.window_index, window_total=chunk.window_total,
                     )
                     planning = await self.planner.plan(
-                        provider=provider, credentials=credentials, model_name=dream_settings.model_name,
+                        provider=dreamer, credentials=credentials, model_name=dream_settings.model_name,
                         chunk=planning_chunk,
                         block_definitions=self.memory_repository.get_block_definitions(agent_id, user_id),
                         core_memories=self.memory_repository.get_all_core_memories(agent_id, user_id),

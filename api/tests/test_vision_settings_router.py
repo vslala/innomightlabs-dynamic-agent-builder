@@ -9,6 +9,7 @@ from src.iam.service import IamService
 from src.identity import IdentityRepository
 from src.llm.models import ModelInfo
 from src.vision.repository import VisionSettingsRepository
+from tests.llm_doubles import ListedModels, use_provider
 from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, account_for, set_up_bedrock, user_id_for
 from tests.oauth_handoff import owner_headers
 
@@ -23,7 +24,7 @@ def bedrock_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
                   capabilities=["image_understanding"]),
         ModelInfo(model_id="b", model_name="text-only", display_name="Text Only", provider="bedrock"),
     ]
-    monkeypatch.setattr("src.llm.models.models_service.get_bedrock_models", lambda *a, **k: models)
+    use_provider(monkeypatch, "Bedrock", catalog=ListedModels(models))
 
 
 @pytest.fixture

@@ -18,9 +18,9 @@ import httpx
 
 from src.config.settings import settings
 from src.llm.messages import ImageBlock, TextBlock, ToolResultBlock, ToolUseBlock, normalize_messages
-from src.llm.ollama import OllamaConnection
+from src.llm.providers.ollama.connection import OllamaConnection
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
 

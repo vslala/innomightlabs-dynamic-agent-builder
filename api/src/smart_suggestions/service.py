@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from src.llm.credentials import load_provider_credentials
 from src.llm.model_fallback import ModelFallbackProvider
-from src.llm.providers import get_llm_provider
+from src.llm.providers import provider
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.smart_suggestions.models import SmartSuggestionRequest, SmartSuggestionResponse
 from src.smart_suggestions.repository import (
@@ -59,11 +59,9 @@ class SmartSuggestionService:
             provider_settings=provider_settings,
             provider_settings_repo=self.provider_settings_repository,
         )
-        provider = ModelFallbackProvider(
-            get_llm_provider(settings.provider_name), settings.provider_name, provider_settings
-        )
+        suggester = ModelFallbackProvider(provider(settings.provider_name), provider_settings)
         raw_response = ""
-        async for event in provider.stream_response(
+        async for event in suggester.stream_response(
             strategy.build_messages(request),
             credentials,
             tools=None,

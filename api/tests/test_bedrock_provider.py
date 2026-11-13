@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.llm.providers.bedrock import BedrockProvider
+from src.llm.providers.bedrock.chat import BedrockProvider
 
 
 def test_bedrock_provider_converts_canonical_messages() -> None:
@@ -114,7 +114,7 @@ async def test_bedrock_provider_yields_usage_event_from_metadata(monkeypatch) ->
             }
 
     monkeypatch.setattr(
-        "src.llm.providers.bedrock.boto3.client",
+        "src.llm.providers.bedrock.chat.boto3.client",
         lambda **kwargs: FakeBedrockRuntimeClient(),
     )
 

@@ -13,6 +13,7 @@ from src.memory.snapshot import CoreMemorySnapshot
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
 from tests.mock_data import account_for, agent_fields, conversation_fields
+from tests.llm_doubles import use_chat_everywhere
 
 
 class FakeMessageRepository:
@@ -160,10 +161,7 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_run_agentic_tool_loop,
     )
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: object(),
-    )
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
@@ -242,10 +240,7 @@ async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_mcp_tool_call_loop,
     )
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: object(),
-    )
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
@@ -310,10 +305,7 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_prompt_refresh_loop,
     )
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: object(),
-    )
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
@@ -373,10 +365,7 @@ async def test_every_prompt_of_the_turn_gets_the_instructions_with_macros_expand
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_prompt_refresh_loop,
     )
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: object(),
-    )
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
@@ -427,10 +416,7 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_a_record_of_wha
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_empty_tool_turn_loop,
     )
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: object(),
-    )
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
@@ -497,10 +483,7 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_canvas_tool_loop,
     )
-    monkeypatch.setattr(
-        "src.agents.provider_session.get_llm_provider",
-        lambda provider_name: object(),
-    )
+    use_chat_everywhere(monkeypatch, object())
     monkeypatch.setattr(
         "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,

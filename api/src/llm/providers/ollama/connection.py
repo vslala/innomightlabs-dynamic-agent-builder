@@ -68,7 +68,7 @@ def _clean_str(value: Any) -> str | None:
     return value.strip() or None if isinstance(value, str) else None
 
 
-def merge_thinking_override(credentials: Mapping[str, Any], *, thinking_mode: str | None) -> dict[str, Any]:
+def merge_thinking_override(credentials: Mapping[str, Any], thinking_mode: str | None) -> dict[str, Any]:
     """Merge a per-agent thinking-mode choice into decrypted Ollama credentials.
 
     Whether a reasoning model (qwen3, deepseek-r1, ...) spends tokens thinking

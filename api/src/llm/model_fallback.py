@@ -12,56 +12,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Sequence
 from typing import Optional
 
-import anthropic
-from google.genai import errors as genai_errors
-
-from src.llm.models import ModelInfo, find_model_source
+from src.llm.models import ModelInfo
 from src.llm.providers.base import LLMEvent, LLMProvider
+from src.llm.providers.provider import Provider
 from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
 
 #: How long a refused model is swapped for its substitute before the preference is tried again.
 SUBSTITUTE_TTL_SECONDS = 3600
-
-
-@dataclass(frozen=True)
-class ModelRefusal:
-    """How one vendor says "this model is not available to you", as opposed to any other failure."""
-
-    provider_names: frozenset[str]
-    matches: Callable[[Exception], bool]
-
-
-def _openai_refuses_model(exc: Exception) -> bool:
-    # openai.py raises RuntimeError("<label> responses error (<status>, ...): <body>"). The Codex backend says
-    # "The '<model>' model is not supported when using Codex with a ChatGPT account"; the public API answers
-    # `model_not_found` / "does not exist or you do not have access to it".
-    text = str(exc)
-    return "responses error (" in text and any(
-        marker in text for marker in ("model_not_found", "model is not supported", "does not exist")
-    )
-
-
-def _ollama_refuses_model(exc: Exception) -> bool:
-    return "does not have model" in str(exc)
-
-
-#: Bedrock is absent: `BedrockProvider.get_model_id` already maps a missing model onto the live catalog.
-MODEL_REFUSALS: tuple[ModelRefusal, ...] = (
-    ModelRefusal(frozenset({"OpenAI", "OpenAIAPI"}), _openai_refuses_model),
-    ModelRefusal(frozenset({"Anthropic"}), lambda exc: isinstance(exc, anthropic.NotFoundError)),
-    ModelRefusal(frozenset({"Gemini"}), lambda exc: isinstance(exc, genai_errors.ClientError) and exc.code == 404),
-    ModelRefusal(frozenset({"Ollama"}), _ollama_refuses_model),
-)
-
-
-def is_model_refusal(provider_name: str, exc: Exception) -> bool:
-    return any(provider_name in rule.provider_names and rule.matches(exc) for rule in MODEL_REFUSALS)
 
 
 def pick_substitute(
@@ -86,14 +48,12 @@ class ModelFallbackProvider(LLMProvider):
 
     def __init__(
         self,
-        inner: LLMProvider,
-        provider_name: str,
+        provider: Provider,
         provider_settings: ProviderSettings,
         *,
         capabilities: Sequence[str] = (),
     ):
-        self.inner = inner
-        self.provider_name = provider_name
+        self.provider = provider
         self.provider_settings = provider_settings
         self.capabilities = tuple(capabilities)
 
@@ -104,38 +64,35 @@ class ModelFallbackProvider(LLMProvider):
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
-        key = (self.provider_name, self.provider_settings.account_id, model or "")
+        key = (self.provider.name, self.provider_settings.account_id, model or "")
         remembered = _substitutes.get(key)
         attempt = remembered[1] if remembered and remembered[0] > time.monotonic() else model
 
         yielded = False
         try:
-            async for event in self.inner.stream_response(messages, credentials, tools, attempt):
+            async for event in self.provider.chat.stream_response(messages, credentials, tools, attempt):
                 yielded = True
                 yield event
             return
         except Exception as exc:
             # Once text has streamed the caller has a partial answer; a retry would duplicate it.
-            if yielded or not is_model_refusal(self.provider_name, exc):
+            if yielded or not self.provider.refuses_model(exc):
                 raise
             # No model chosen means the provider's own default was the one refused.
-            refused = attempt or self.inner.default_model
+            refused = attempt or self.provider.chat.default_model
             substitute = await self._substitute_for(refused)
             if not substitute:
                 raise
             log.warning(
                 "%s refused model %r for account %s; using %r instead: %s",
-                self.provider_name, refused, self.provider_settings.account_id, substitute, exc,
+                self.provider.name, refused, self.provider_settings.account_id, substitute, exc,
             )
             _substitutes[key] = (time.monotonic() + SUBSTITUTE_TTL_SECONDS, substitute)
 
-        async for event in self.inner.stream_response(messages, credentials, tools, substitute):
+        async for event in self.provider.chat.stream_response(messages, credentials, tools, substitute):
             yield event
 
     async def _substitute_for(self, refused: Optional[str]) -> Optional[str]:
-        source = find_model_source(self.provider_name)
-        if not source:
-            return None
         # Catalog listing is blocking HTTP; keep it off the event loop.
-        catalog = await asyncio.to_thread(source.load_models, self.provider_settings)
+        catalog = await asyncio.to_thread(self.provider.catalog.list_models, self.provider_settings)
         return pick_substitute(catalog, refused=refused, capabilities=self.capabilities)

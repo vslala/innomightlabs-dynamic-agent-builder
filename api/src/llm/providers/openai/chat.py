@@ -25,7 +25,7 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
+from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
 
@@ -357,3 +357,13 @@ def _tool_item(block: ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
             "arguments": json.dumps(block.input, ensure_ascii=True),
         }
     return {"type": "function_call_output", "call_id": block.tool_use_id, "output": block.content}
+
+
+def responses_refuses_model(exc: Exception) -> bool:
+    """`_stream_responses` raises RuntimeError("<label> responses error (<status>, ...): <body>"). The Codex backend
+    says "The '<model>' model is not supported when using Codex with a ChatGPT account"; the public API answers
+    `model_not_found` / "does not exist or you do not have access to it"."""
+    text = str(exc)
+    return "responses error (" in text and any(
+        marker in text for marker in ("model_not_found", "model is not supported", "does not exist")
+    )

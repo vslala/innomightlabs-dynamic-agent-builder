@@ -3,10 +3,10 @@ from types import SimpleNamespace
 from google.genai import types
 
 from src.crypto import encrypt
-from src.llm.models import ModelsService
+from src.llm.providers import provider as provider_named
 from src.llm.providers.base import LLMEvent
-from src.llm.providers.factory import get_llm_provider
-from src.llm.providers.gemini import GeminiProvider
+from src.llm.providers.gemini.catalog import GeminiCatalog
+from src.llm.providers.gemini.chat import GeminiProvider
 from src.settings.models import ProviderSettings
 from tests.mock_data import account_for
 
@@ -125,7 +125,7 @@ def test_gemini_provider_extracts_text_and_tool_use_events_from_chunk():
 
 
 def test_gemini_provider_factory_supports_gemini():
-    provider = get_llm_provider("Gemini")
+    provider = provider_named("Gemini").chat
 
     assert isinstance(provider, GeminiProvider)
 
@@ -154,7 +154,7 @@ def test_gemini_models_are_loaded_from_google_genai(monkeypatch):
         encrypted_credentials=encrypt('{"api_key": "gemini-key"}'),
     )
 
-    models = ModelsService().get_gemini_models(provider_settings)
+    models = GeminiCatalog().list_models(provider_settings)
 
     assert captured["api_key"] == "gemini-key"
     assert captured["config"] == {"page_size": 1000, "query_base": True}
@@ -238,6 +238,6 @@ def test_gemini_models_fallback_when_live_list_fails(monkeypatch):
         encrypted_credentials=encrypt('{"api_key": "gemini-key"}'),
     )
 
-    models = ModelsService().get_gemini_models(provider_settings)
+    models = GeminiCatalog().list_models(provider_settings)
 
     assert [model.model_name for model in models] == ["gemini-2.5-flash", "gemini-2.5-pro"]

@@ -57,7 +57,7 @@ def openai_api_configured(test_client: TestClient, auth_headers: dict, monkeypat
         request = httpx.Request("GET", url, headers=headers)
         return httpx.Response(200, json=OPENAI_API_PAYLOAD, request=request)
 
-    monkeypatch.setattr("src.llm.models.httpx.get", fake_get)
+    monkeypatch.setattr("src.llm.providers.openai_api.catalog.httpx.get", fake_get)
     response = test_client.post("/settings/providers/OpenAIAPI", json={"api_key": "sk-test"}, headers=auth_headers)
     assert response.status_code == 201
 
@@ -97,7 +97,7 @@ class TestAgentForm:
         self, test_client: TestClient, auth_headers: dict, bedrock_configured, monkeypatch
     ):
         clients: list[dict] = []
-        monkeypatch.setattr("src.llm.models.boto3.client", lambda **kwargs: clients.append(kwargs) or _NoListing())
+        monkeypatch.setattr("src.llm.providers.bedrock.catalog.boto3.client", lambda **kwargs: clients.append(kwargs) or _NoListing())
 
         _form_field(test_client, auth_headers, "agent_model")
 

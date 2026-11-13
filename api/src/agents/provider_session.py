@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from src.llm.credentials import load_provider_credentials
 from src.llm.model_fallback import ModelFallbackProvider
-from src.llm.ollama import merge_thinking_override
-from src.llm.providers import get_llm_provider
+from src.llm.providers import provider
 from src.settings.repository import ProviderSettingsRepository
 from src.exceptions import UserFacingError
 
@@ -53,21 +52,14 @@ async def open_provider_session(
     if not provider_settings:
         raise ProviderNotConfigured(agent.agent_provider)
 
+    chosen = provider(agent.agent_provider)
     credentials = await load_provider_credentials(
-        provider_name=agent.agent_provider,
+        provider_name=chosen.name,
         provider_settings=provider_settings,
         provider_settings_repo=provider_settings_repo,
     )
-    # Reasoning-model thinking mode is an Ollama-only knob; every other
-    # provider ignores it, so don't put it in their credentials at all.
-    if agent.agent_provider == "Ollama":
-        credentials = merge_thinking_override(
-            credentials, thinking_mode=agent.agent_ollama_thinking
-        )
+    # Thinking mode is a knob only some providers have; the others never see it in their credentials.
+    if chosen.apply_thinking:
+        credentials = chosen.apply_thinking(credentials, agent.agent_ollama_thinking)
 
-    return ProviderSession(
-        provider=ModelFallbackProvider(
-            get_llm_provider(agent.agent_provider), agent.agent_provider, provider_settings
-        ),
-        credentials=credentials,
-    )
+    return ProviderSession(provider=ModelFallbackProvider(chosen, provider_settings), credentials=credentials)

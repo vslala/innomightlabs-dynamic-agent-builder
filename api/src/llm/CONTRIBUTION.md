@@ -9,19 +9,23 @@ conversation history is windowed. Agents (`src/agents/`) call into it; it holds 
 ```text
 src/llm/
   providers/
-    base.py          LLMProvider ABC, LLMEvent, StopReason, stop_reason_of
-    factory.py       get_llm_provider(name): the name -> provider map
-    bedrock.py       Bedrock (Claude via AWS)
-    anthropic.py     Anthropic API key
-    openai.py        OpenAI via Codex/ChatGPT OAuth (Responses API)
-    openai_api.py    OpenAI with an API key; subclass of openai.py, own endpoint and key
-    gemini.py        Gemini API key
-    ollama.py        user-hosted Ollama (native /api/chat NDJSON)
-  models.py          ModelInfo, ModelsService (catalogs), PROVIDER_MODEL_SOURCES, find_model_source
+    __init__.py      PROVIDERS (every provider, in Settings order), provider(name), find_provider(name)
+    provider.py      Provider (one provider's parts), ModelCatalog, CredentialSource, StoredCredentials, OAuthSignIn
+    base.py          LLMProvider ABC (the chat contract), LLMEvent, StopReason, stop_reason_of
+    <name>/          one package per provider:
+      __init__.py      the Provider value: name, title, settings form, chat, catalog, refusal rule, ...
+      chat.py          the LLMProvider that streams a response
+      catalog.py       its ModelCatalog: the models the account's credentials can use
+    bedrock/         Claude via AWS (catalog also used by chat to map a model name to an id)
+    anthropic/       Anthropic API key
+    openai/          ChatGPT sign-in: Codex Responses API; credentials.py refreshes the OAuth token
+    openai_api/      OpenAI with an API key; its chat subclasses openai/chat.py, own endpoint and key
+    gemini/          Gemini API key
+    ollama/          user-hosted Ollama (native /api/chat NDJSON); connection.py: endpoint validation and headers
+  models.py          ModelInfo
   model_fallback.py  ModelFallbackProvider: retries a vendor-refused stored model on a catalog substitute
   router.py          GET /llm/models/{provider}
-  credentials.py     load_provider_credentials (decrypt, OpenAI token refresh)
-  ollama.py          OllamaConnection: endpoint validation and headers, shared by chat and discovery
+  credentials.py     load_provider_credentials: the provider's CredentialSource
   messages.py        normalize_messages / split_system_messages: provider-neutral ChatMessage blocks
   tools.py           ToolDefinition and to_openai / to_anthropic / to_bedrock / to_ollama converters
   events.py          SSEEvent, SSEEventType, tool_call_events (what a run log keeps), capped_events
@@ -37,29 +41,35 @@ limit is `end_turn`. Usage is its own event because some vendors report it after
 Messages arrive in the agent loop's Bedrock-style blocks (`toolUse`, `toolResult`); convert them with `messages.py` and
 `tools.py` rather than hand-parsing in each provider. The first `system` message is the system prompt.
 
-**Credentials.** A provider receives a plain `credentials` dict and never touches storage. Credentials are stored
-encrypted in `ProviderSettings` (`src/settings`), decrypted by `load_provider_credentials`; only `OpenAI` goes through
-`ensure_valid_openai_credentials`, which refreshes the OAuth token. The agent side resolves them once per turn in
-`agents/provider_session.py`. Never log a credentials dict. Provider forms for the settings page are in
-`src/settings/schemas.py` (`PROVIDER_SCHEMAS`).
+**One definition per provider.** Everything that differs by provider is a field of its `Provider`
+(`providers/provider.py`): name, title, settings form, chat client, catalog, how credentials load, the refusal rule, an
+OAuth sign-in, the thinking knob. `PROVIDERS` lists them; `provider(name)` and `find_provider(name)` find one. Settings,
+the model pickers, credential loading and the fallback all read from it, so no code outside `providers/` names a
+provider (`tests/test_providers_registry.py` and the SPA's `noHardcodedProviders.test.ts` fail if one does). A new
+need that differs by provider becomes a field, not an `if`.
 
-**Provider names** are the exact strings `Bedrock`, `Anthropic`, `OpenAI`, `OpenAIAPI`, `Gemini`, `Ollama`. They are used as
-`Agent.agent_provider`, as `ProviderSettings` keys, in `get_llm_provider`, in `PROVIDER_MODEL_SOURCES` and in
-`PROVIDER_SCHEMAS`. A typo in one is a runtime `ValueError` or a provider that silently never lists models.
+**Provider names** (`Provider.name`) are stored as `Agent.agent_provider`, as `ProviderSettings` keys and in the
+account's model settings, so a name never changes.
 
-**Model catalogs.** `ModelsService` has one `get_<provider>_models` per provider returning `ModelInfo`.
-`PROVIDER_MODEL_SOURCES` is the single list of providers, each offered only once the account has configured it;
-`form_options.py` (agent forms) and `router.py` both iterate it, so a provider is picked up everywhere by adding one
-entry. Bedrock is no exception: its catalog lists with the account's AWS keys, never the server's own AWS identity. A catalog method must fall back (static list or configured `settings.openai_models`) instead of
-failing the form: `form_options` still offers the provider if listing raises, but an empty picker is a bad experience.
-The Codex catalog is cached per account for `OPENAI_CATALOG_TTL_SECONDS`. Filtering rules for the OpenAI API list
-(`OPENAI_API_NON_CHAT_MARKERS` etc.) record what the live API refused and when it was checked; update the date when
-you re-check.
+**Credentials.** A chat client receives a plain `credentials` dict and never touches storage. Credentials are stored
+encrypted in `ProviderSettings` (`src/settings`) and loaded by `load_provider_credentials`, which asks the provider's
+`CredentialSource`: `StoredCredentials` decrypts them; the ChatGPT sign-in's refreshes an expired token first
+(`providers/openai/credentials.py`). The agent side resolves them once per turn in `agents/provider_session.py`. Never
+log a credentials dict.
+
+**Model catalogs.** Each provider's `catalog.py` lists `ModelInfo`s, offered only once the account has configured the
+provider; `form_options.py` (agent forms) and `router.py` read them through `PROVIDERS`. Bedrock is no exception: its
+catalog lists with the account's AWS keys, never the server's own AWS identity. A catalog must fall back (static list
+or configured `settings.openai_models`) instead of failing the form: `form_options` still offers the provider if
+listing raises, but an empty picker is a bad experience. The Codex catalog is cached per account for
+`CATALOG_TTL_SECONDS`. Filtering rules for the OpenAI API list (`NON_CHAT_MARKERS` etc. in
+`providers/openai_api/catalog.py`) record what the live API refused and when it was checked; update the date when you
+re-check.
 
 **Stored models go stale.** Vendors retire models and gate them per account, so wrap a provider that runs a stored
-model in `ModelFallbackProvider(get_llm_provider(name), name, provider_settings)`. It tries the stored model, and on a
-vendor refusal (`MODEL_REFUSALS`, one rule per vendor) retries once on the first suitable catalog model, remembering the
-swap for an hour. Set `default_model` on a provider that has one. See the wiki page `LLM-Model-Fallback`.
+model in `ModelFallbackProvider(provider(name), provider_settings)`. It tries the stored model, and on a vendor refusal
+(`Provider.refuses_model`) retries once on the first suitable catalog model, remembering the swap for an hour. Set
+`default_model` on a chat client that has one. See the wiki page `LLM-Model-Fallback`.
 
 **Router.** `GET /llm/models/{provider}` returns `[]` for an unknown or unconfigured provider so callers can probe.
 It scopes by `principal.account_id`.
@@ -75,22 +85,23 @@ carries `started_at`/`completed_at` for when the tool itself ran; the agentic lo
 
 ## How to add a provider
 
-1. `providers/<name>.py`: subclass `LLMProvider`, implement `stream_response` using `normalize_messages`,
-   `split_system_messages` and the matching `ToolDefinition.to_*` (add a converter in `tools.py` if the wire format is new).
-   Emit `usage` and exactly one `stop`. Model on `anthropic.py` (simple) or `openai_api.py` (reuse by subclassing).
-2. Register it in `providers/factory.py`. Set `default_model` and add a `ModelRefusal` in `model_fallback.py`.
-3. Add a settings form in `src/settings/schemas.py` (`PROVIDER_SCHEMAS`) so accounts can store credentials.
-4. Add `get_<name>_models` to `ModelsService` and a `ProviderModelSource` entry in `PROVIDER_MODEL_SOURCES`.
-5. If credentials need refresh or parsing beyond decrypt-and-JSON, extend `credentials.py`. A catalog (sync) that needs
-   refreshed credentials calls the `*_blocking` loader there (`load_openai_credentials_blocking`), never the stored token.
-6. Add a provider test beside `tests/test_anthropic_provider.py` / `tests/test_gemini_provider.py` and a catalog test
-   like `tests/test_openai_models.py`.
+1. `providers/<name>/chat.py`: subclass `LLMProvider`, implement `stream_response` using `normalize_messages`,
+   `split_system_messages` and the matching `ToolDefinition.to_*` (add a converter in `tools.py` if the wire format is
+   new). Emit `usage` and exactly one `stop`, and set `default_model`. Model on `anthropic/chat.py` (simple) or
+   `openai_api/chat.py` (reuse by subclassing).
+2. `providers/<name>/catalog.py`: a class with `list_models(provider_settings)` that falls back rather than raises.
+   Read saved credentials with `stored_credentials(provider_settings)`.
+3. `providers/<name>/__init__.py`: the `Provider` value with its settings form, chat, catalog and a dated
+   `refuses_model` rule. Set `oauth` and `credentials` only for a provider signed into (see `openai/`).
+4. List it in `PROVIDERS` (`providers/__init__.py`). Settings, the pickers and the SPA pick it up from there.
+5. Tests: a chat test beside `tests/test_anthropic_provider.py`, a catalog test like `tests/test_openai_models.py`.
+   To stand in for a provider's parts elsewhere, use `tests/llm_doubles.py` (`use_provider`, `use_chat_everywhere`).
 
 ## Testing
 
 ```bash
-uv run pytest tests/test_llm_*.py tests/test_*_provider.py tests/test_openai_models.py tests/test_provider_session.py \
-  tests/test_conversation_strategy.py tests/test_form_options_provider_models.py -q
+uv run pytest tests/test_llm_*.py tests/test_*_provider.py tests/test_providers_registry.py tests/test_openai_models.py \
+  tests/test_provider_session.py tests/test_conversation_strategy.py tests/test_form_options_provider_models.py -q
 uv run ruff check src/llm && uv run mypy src/llm
 ```
 
@@ -102,9 +113,9 @@ DynamoDB is involved (provider settings via `dynamodb_table`). Do not add live-n
 - Do keep providers stateless and credentials-in, events-out.
 - Do convert through `messages.py`/`tools.py`; one place per vendor format conversion.
 - Do subclass when a vendor speaks another's protocol (`OpenAIAPIProvider`); do not copy the stream parser.
-- Do add the new provider name to every map (factory, schemas, model sources) in the same change.
-- Don't import from `src/agents` here; the dependency runs agents -> llm (note `models.py` already imports the image
-  capability registry for `capabilities`; do not add more).
+- Do put anything that differs by provider on its `Provider`; don't branch on a provider's name anywhere.
+- Don't import from `src/agents` here; the dependency runs agents -> llm (the OpenAI catalogs still import the image
+  capability registry for `capabilities` until it moves into the catalogs; do not add more).
 - Don't fail a form render because a vendor's listing endpoint is down; fall back.
 - Don't log or return credentials; the `/llm/models` response is `ModelInfo` only.
 - Comments say why (what the vendor does and when it was verified), not what.

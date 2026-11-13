@@ -1,6 +1,6 @@
 """Live smoke test for the OpenAI API-key provider.
 
-Lists the models the key offers through ModelsService, then runs a real tool round trip
+Lists the models the key offers through the provider's catalog, then runs a real tool round trip
 through OpenAIAPIProvider: the model calls a tool, gets its result, and answers. The key
 is read from OPEN_AI_SERVICE_ACCOUNT_KEY and never printed.
 
@@ -13,8 +13,8 @@ import os
 import sys
 
 from src.crypto import encrypt
-from src.llm.models import models_service
-from src.llm.providers.openai_api import OpenAIAPIProvider
+from src.llm.providers.base import LLMProvider
+from src.llm.providers.openai_api import OPENAI_API
 from src.settings.models import ProviderSettings
 
 WEATHER_TOOL = {
@@ -25,7 +25,7 @@ WEATHER_TOOL = {
 }
 
 
-async def turn(provider: OpenAIAPIProvider, messages: list[dict], api_key: str, model: str) -> list:
+async def turn(provider: LLMProvider, messages: list[dict], api_key: str, model: str) -> list:
     events = []
     async for event in provider.stream_response(messages, {"api_key": api_key}, tools=[WEATHER_TOOL], model=model):
         events.append(event)
@@ -45,11 +45,11 @@ async def main() -> None:
         provider_name="OpenAIAPI",
         encrypted_credentials=encrypt(json.dumps({"api_key": api_key})),
     )
-    models = models_service.get_openai_api_models(settings)
+    models = OPENAI_API.catalog.list_models(settings)
     print(f"{len(models)} chat models:", ", ".join(model.model_name for model in models))
 
     model = sys.argv[1] if len(sys.argv) > 1 else "gpt-5.4-mini"
-    provider = OpenAIAPIProvider()
+    provider = OPENAI_API.chat
     messages: list[dict] = [
         {"role": "system", "content": "You are terse. Use tools when they help."},
         {"role": "user", "content": "What's the weather in Paris?"},

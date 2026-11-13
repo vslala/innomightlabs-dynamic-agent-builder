@@ -209,9 +209,9 @@ class TestAgentsRouter:
     ):
         """Test OpenAI model options are loaded from shared settings for edit forms."""
         del dynamodb_table
-        from src.llm import models as llm_models
+        from src.config import settings
 
-        monkeypatch.setattr(llm_models.settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
+        monkeypatch.setattr(settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
         repo = ProviderSettingsRepository()
         repo.save(
             ProviderSettings(

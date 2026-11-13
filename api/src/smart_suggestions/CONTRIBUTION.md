@@ -46,5 +46,5 @@ Strategies are tested as plain functions on canned model output; no LLM is calle
 - Do validate model output with the same code that will later consume the value.
 - Do keep prompts inside the strategy that uses them.
 - Don't parse model output with "first `{` to last `}`"; use `_extract_json_object`.
-- Don't add provider-specific code here; go through `get_llm_provider` and `load_provider_credentials`.
+- Don't add provider-specific code here; go through `provider(name)` (wrapped in `ModelFallbackProvider`) and `load_provider_credentials`.
 - Don't store suggestions; they are returned and discarded.
