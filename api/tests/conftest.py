@@ -31,6 +31,16 @@ from tests.mock_data import (
 )
 
 
+@pytest.fixture(autouse=True)
+def fresh_mcp_tool_lists():
+    """The MCP service keeps each server's tool list for minutes; a test's fake server must not see another's."""
+    from src.connectors.mcp import service
+
+    service._listed_tools.clear()
+    yield
+    service._listed_tools.clear()
+
+
 @pytest.fixture
 def mock_aws_context():
     """Create a mocked AWS context for all tests."""

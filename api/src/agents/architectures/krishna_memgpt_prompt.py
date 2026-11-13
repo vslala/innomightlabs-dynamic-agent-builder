@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.agents.models import MemoryCapacityWarning
 from src.agents.prompts import render_prompt_section, render_system_prompt
 from src.agents.tool_runtime.core_skills import core_skill_prompt
@@ -50,7 +52,16 @@ def core_skill_section(skill_id: str) -> str:
     return f"<{skill_id}>\n{prompt}\n</{skill_id}>" if prompt else ""
 
 
-def mcp_section(connections: list[AgentMCPConnectionResponse], *, shared_by_owner: bool = False) -> str:
+def mcp_section(
+    connections: list[AgentMCPConnectionResponse],
+    *,
+    loaded_tools: list[dict[str, Any]] | None = None,
+    shared_by_owner: bool = False,
+) -> str:
+    """`loaded_tools` are MCP tools shown with their schemas, each with its `mcp_id`, so the agent calls them directly."""
     return render_prompt_section(
-        f"{SECTIONS}/mcp_connectors.j2", enabled_mcp_connections=connections, mcp_shared_by_owner=shared_by_owner
+        f"{SECTIONS}/mcp_connectors.j2",
+        enabled_mcp_connections=connections,
+        loaded_tools=loaded_tools or [],
+        mcp_shared_by_owner=shared_by_owner,
     )

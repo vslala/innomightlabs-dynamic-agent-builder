@@ -207,7 +207,14 @@ async def test_mcp_tools_reach_their_own_handlers():
         conversation_id="conversation-1",
     )
     assert runtimes["mcp_runtime"].list_calls == [
-        {"account_id": account_for("owner@example.com"), "agent_id": "agent-1", "caller": caller, "mcp_id": None}
+        {
+            "account_id": account_for("owner@example.com"),
+            "agent_id": "agent-1",
+            "caller": caller,
+            "mcp_id": None,
+            "tool_names": None,
+            "query": None,
+        }
     ]
     assert runtimes["mcp_runtime"].call_calls == [
         {

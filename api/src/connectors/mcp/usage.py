@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
+from boto3.dynamodb.conditions import Key
 from pydantic import BaseModel, Field
 
 from src.config import settings
@@ -20,6 +21,13 @@ from src.skills.models import ActorKind
 RETENTION = timedelta(days=90)
 MAX_ERROR_CHARS = 300
 MAX_ARGUMENTS_PREVIEW_CHARS = 500
+#: How many tools an agent's recent calls preload into a turn, and how many of its newest calls are read to find them.
+RECENT_TOOL_LIMIT = 8
+RECENT_CALLS_READ = 50
+
+
+def calls_partition(agent_id: str) -> str:
+    return f"Agent#{agent_id}#MCPCalls"
 
 
 class MCPCall(BaseModel):
@@ -40,7 +48,7 @@ class MCPCall(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"Agent#{self.agent_id}#MCPCalls"
+        return calls_partition(self.agent_id)
 
     @property
     def sk(self) -> str:
@@ -111,6 +119,20 @@ class MCPUsageRepository:
                 ":entity_type": "MCPDailyUsage",
             },
         )
+
+
+    def recent_tools(self, agent_id: str) -> list[tuple[str, str]]:
+        """(mcp_id, tool_name) of the agent's newest successful calls, each tool once, newest first."""
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq(calls_partition(agent_id)),
+            ScanIndexForward=False,
+            Limit=RECENT_CALLS_READ,
+        )
+        recent: dict[tuple[str, str], None] = {}
+        for call in map(MCPCall.from_dynamo_item, response.get("Items", [])):
+            if call.success:
+                recent.setdefault((call.mcp_id, call.tool_name))
+        return list(recent)[:RECENT_TOOL_LIMIT]
 
 
 def get_mcp_usage_repository() -> MCPUsageRepository:

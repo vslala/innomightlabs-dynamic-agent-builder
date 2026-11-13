@@ -28,7 +28,9 @@ TOOL_FAMILIES: list[ToolFamily] = [
         ToolCategory.MCP,
         when=lambda state: bool(state.enabled_mcp_connections),
         prompt_section=lambda state: mcp_section(
-            state.enabled_mcp_connections, shared_by_owner=state.actor_kind != ActorKind.OWNER
+            state.enabled_mcp_connections,
+            loaded_tools=state.recent_mcp_tools,
+            shared_by_owner=state.actor_kind != ActorKind.OWNER,
         ),
     ),
     # Images aren't message references yet: the condition includes the account's Image Reading setting

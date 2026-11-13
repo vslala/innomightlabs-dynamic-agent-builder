@@ -3,16 +3,26 @@ from __future__ import annotations
 MCP_LIST_TOOLS = {
     "name": "list_mcp_tools",
     "description": (
-        "List tools exposed by enabled MCP connectors. Use this before calling "
-        "an MCP tool when you need to inspect available tool names and schemas."
+        "List the tools of enabled MCP connectors. A small connector shows every tool with its input schema; a "
+        "large one shows a tool_index of names and summaries, so call again with its mcp_id and tools=[...] for "
+        "the schemas you will use, or query='...' to search."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "mcp_id": {
                 "type": "string",
-                "description": "Optional MCP connector id. Omit to list tools for all enabled MCP connectors.",
-            }
+                "description": "MCP connector id. Omit to list every enabled MCP connector.",
+            },
+            "tools": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Exact tool names, from a tool_index, whose input schemas you need.",
+            },
+            "query": {
+                "type": "string",
+                "description": "Words describing the tool you need; returns the best matches with their schemas.",
+            },
         },
         "required": [],
     },
@@ -21,8 +31,8 @@ MCP_LIST_TOOLS = {
 MCP_CALL_TOOL = {
     "name": "call_mcp_tool",
     "description": (
-        "Call a tool on an enabled MCP connector. Use the exact tool name and "
-        "argument shape returned by list_mcp_tools."
+        "Call a tool on an enabled MCP connector, with the exact tool name and the argument shape of its input "
+        "schema (from list_mcp_tools, or the loaded tools in your instructions)."
     ),
     "parameters": {
         "type": "object",
@@ -33,7 +43,7 @@ MCP_CALL_TOOL = {
             },
             "tool_name": {
                 "type": "string",
-                "description": "Exact MCP tool name returned by list_mcp_tools.",
+                "description": "Exact MCP tool name, from list_mcp_tools or the loaded tools.",
             },
             "arguments": {
                 "type": "object",

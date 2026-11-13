@@ -7,13 +7,12 @@ so a 30-action skill does not cost 30 schemas of context on every load.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from src.common.keyword_search import rank, summarize
 from src.skills.models import ActionDisclosureMode, SkillActionManifest, SkillManifest
 
-SUMMARY_MAX_CHARS = 90
 SEARCH_LIMIT = 5
 SUGGESTION_LIMIT = 3
 
@@ -102,51 +101,13 @@ def disclose(request: DisclosureRequest) -> DisclosedActions:
     return next(d for d in DISCLOSURES if d.applies(request)).disclose(request)
 
 
-def summarize(description: str) -> str:
-    """The description's first sentence, short enough for an index line."""
-    text = " ".join(description.split())
-    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
-    if len(first) <= SUMMARY_MAX_CHARS:
-        return first
-    return first[: SUMMARY_MAX_CHARS - 3].rstrip() + "..."
-
-
 def search_actions(manifest: SkillManifest, query: str, limit: int) -> list[SkillActionManifest]:
-    """Keyword search over action names, aliases, groups and descriptions.
-
-    Plain scoring is enough: a skill has tens of short action descriptions, not a corpus.
-    """
+    """The exact action the query names, or the best keyword matches over names, aliases, groups and descriptions."""
     exact = manifest.find_action(query.strip())
     if exact:
         return [exact]
-
-    terms = _words(query)
-    if not terms:
-        return []
-
-    scored = [(score, position, action) for position, action in enumerate(manifest.actions) if (score := _score(action, terms))]
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    return [action for _, _, action in scored[:limit]]
+    return rank(manifest.actions, query, limit, _searchable_texts)
 
 
-def _score(action: SkillActionManifest, terms: list[str]) -> int:
-    names = set(_words(" ".join([action.name, *action.aliases])))
-    group = set(_words(action.group))
-    description = set(_words(action.description))
-    return sum(
-        3 * _matches(term, names) + 2 * _matches(term, group) + _matches(term, description)
-        for term in terms
-    )
-
-
-def _matches(term: str, words: set[str]) -> int:
-    """1 when the term, or a longer or shorter form of it ("keyword"/"keywords"), is present."""
-    if term in words:
-        return 1
-    if len(term) < 4:
-        return 0
-    return int(any(len(word) >= 4 and (word.startswith(term) or term.startswith(word)) for word in words))
-
-
-def _words(text: str) -> list[str]:
-    return [word for word in re.split(r"[^a-z0-9]+", text.lower()) if word]
+def _searchable_texts(action: SkillActionManifest) -> list[tuple[str, int]]:
+    return [(" ".join([action.name, *action.aliases]), 3), (action.group, 2), (action.description, 1)]

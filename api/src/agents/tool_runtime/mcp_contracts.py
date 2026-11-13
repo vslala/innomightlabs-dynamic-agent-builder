@@ -9,6 +9,8 @@ from pydantic import BaseModel
 
 class ListMCPToolsInput(BaseModel):
     mcp_id: str | None = None
+    tools: list[str] | None = None
+    query: str | None = None
 
 
 class CallMCPToolInput(BaseModel):

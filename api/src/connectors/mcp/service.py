@@ -11,6 +11,7 @@ from src.consent.repository import ConsentRepository
 from src.skills.registry import ConsentMissingError
 from src.connectors.mcp.client import MCPClientError, StreamableHTTPMCPClient, _sanitize_response_text
 from src.connectors.mcp.disclaimer import DISCLAIMER_VERSION, sharing_disclaimer
+from src.connectors.mcp.disclosure import ToolRequest, disclose_tools
 from src.connectors.mcp.models import (
     AgentMCPConnection,
     AgentMCPConnectionResponse,
@@ -79,6 +80,12 @@ log = logging.getLogger(__name__)
 
 # How long a tool call waits for a hosted server that is still starting (the sidecar allows up to 60).
 RUNTIME_START_WAIT_SECONDS = 45
+#: How long a connector's tool list is reused: a turn lists a connector two or three times (the index, then the
+#: tools), and a daily automation lists it every run. Tools a server adds show up within this long.
+MCP_TOOL_LIST_TTL_SECONDS = 300
+
+#: mcp_id -> (expires at, the server's `tools/list`), shared by every caller: what a caller sees is filtered on read.
+_listed_tools: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 # How long signing in may wait on a server to list its tools before we leave it to the share dialog.
 CATALOG_CAPTURE_SECONDS = 15
 
@@ -539,31 +546,16 @@ class MCPConnectorService:
         agent_id: str,
         caller: MCPCaller,
         mcp_id: str | None = None,
+        tool_names: list[str] | None = None,
+        query: str | None = None,
     ) -> dict[str, Any]:
-        runtime = self._runtime_connections(account_id=account_id, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
+        """Each usable connector's tools for this caller: whole, or an index when they are large (`disclosure.py`)."""
         results: list[dict[str, Any]] = []
-        for link, connection in runtime:
+        for link, connection in self._runtime_connections(account_id=account_id, agent_id=agent_id, caller=caller, mcp_id=mcp_id):
+            entry: dict[str, Any] = {"mcp_id": connection.mcp_id, "name": connection.name}
             try:
-                target, headers = await self._session(connection)
-                tools_result = await self.client.list_tools(target, headers)
-                listed = tools_result.get("tools")
-                if not isinstance(listed, list):
-                    listed = []
-                log.info(
-                    "Listed MCP tools mcp_id=%s agent_id=%s tool_count=%s",
-                    connection.mcp_id,
-                    agent_id,
-                    len(listed),
-                )
-                results.append(
-                    {
-                        "mcp_id": connection.mcp_id,
-                        "name": connection.name,
-                        "tools": link.offered_tools(
-                            caller.actor_kind, listed, self.tool_policy(account_id, connection.mcp_id)[0].keeps_from_outsiders
-                        ),
-                    }
-                )
+                offered = await self._offered_tools(link, connection, caller, agent_id)
+                entry.update(disclose_tools(ToolRequest(tools=offered, names=tool_names, query=query)))
             except Exception as exc:
                 log.warning(
                     "Failed to list MCP tools mcp_id=%s agent_id=%s auth_type=%s error=%s",
@@ -573,15 +565,51 @@ class MCPConnectorService:
                     exc,
                     exc_info=True,
                 )
-                results.append(
-                    {
-                        "mcp_id": connection.mcp_id,
-                        "name": connection.name,
-                        "error": str(exc),
-                        "tools": [],
-                    }
-                )
+                entry.update(error=str(exc), tools=[])
+            results.append(entry)
         return {"connectors": results}
+
+    async def recent_runtime_tools(self, *, account_id: str, agent_id: str, caller: MCPCaller) -> list[dict[str, Any]]:
+        """The tools this agent called most recently that the caller may still call, whole, each with its `mcp_id`.
+
+        They start a turn already loaded, so the agent calls them without listing first: each automation run is a new
+        conversation, and without this it lists the same connectors every run. A connector that fails to list just
+        adds nothing; the agent can still list it."""
+        used = await asyncio.to_thread(self.usage.recent_tools, agent_id)
+        wanted: dict[str, list[str]] = {}
+        for used_mcp_id, tool_name in used:
+            wanted.setdefault(used_mcp_id, []).append(tool_name)
+
+        recent: list[dict[str, Any]] = []
+        for link, connection in self._runtime_connections(account_id=account_id, agent_id=agent_id, caller=caller):
+            if connection.mcp_id not in wanted:
+                continue
+            try:
+                offered = await self._offered_tools(link, connection, caller, agent_id)
+            except Exception as exc:
+                log.warning("Could not load recent MCP tools mcp_id=%s agent_id=%s error=%r", connection.mcp_id, agent_id, exc)
+                continue
+            by_name = {tool.get("name"): tool for tool in offered}
+            recent += [
+                {"mcp_id": connection.mcp_id, **by_name[name]} for name in wanted[connection.mcp_id] if name in by_name
+            ]
+        return recent
+
+    async def _offered_tools(
+        self, link: AgentMCPConnection, connection: MCPConnection, caller: MCPCaller, agent_id: str
+    ) -> list[dict[str, Any]]:
+        """The server's tools this caller may call. The server's list is cached; the caller's filter runs every time."""
+        cached = _listed_tools.get(connection.mcp_id)
+        if cached and cached[0] > time.monotonic():
+            listed = cached[1]
+        else:
+            target, headers = await self._session(connection)
+            tools = (await self.client.list_tools(target, headers)).get("tools")
+            listed = tools if isinstance(tools, list) else []
+            _listed_tools[connection.mcp_id] = (time.monotonic() + MCP_TOOL_LIST_TTL_SECONDS, listed)
+            log.info("Listed MCP tools mcp_id=%s agent_id=%s tool_count=%s", connection.mcp_id, agent_id, len(listed))
+        owners_only = self.tool_policy(connection.account_id, connection.mcp_id)[0].keeps_from_outsiders
+        return link.offered_tools(caller.actor_kind, listed, owners_only)
 
     async def call_runtime_tool(
         self,

@@ -23,6 +23,7 @@ from src.agents.turn_outputs import TurnOutputs
 from src.consent.gate import ConsentGate, McpTools, SkillActions
 from src.consent.models import ConsentScope
 from src.agents.tool_runtime.families import ToolFamily, active_families, prompt_sections
+from src.agents.tool_runtime.handlers import mcp_caller_for
 from src.connectors.mcp.service import MCPConnectorService
 from src.knowledge.access import readable_by_agent
 from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
@@ -161,6 +162,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             MacroContext(agent.account_id, frozenset(skill.skill_id for skill in state.enabled_skills)),
         )
         state.enabled_mcp_connections = self._mcp_connections_for(state)
+        state.recent_mcp_tools = await self._recent_mcp_tools(state)
 
         # Save the user message (with attachments if any)
         user_msg = Message(
@@ -342,6 +344,18 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
         except Exception as exc:
             log.warning("Failed to load enabled MCP connectors for agent %s: %s", state.agent_id, exc)
+            return []
+
+    async def _recent_mcp_tools(self, state: AgentTurnState) -> list[dict[str, Any]]:
+        """The MCP tools this agent used recently, for this caller, so the turn starts with their schemas loaded."""
+        if not state.enabled_mcp_connections:
+            return []
+        try:
+            return await self.mcp_connector_service.recent_runtime_tools(
+                account_id=state.account_id, agent_id=state.agent_id, caller=mcp_caller_for(state)
+            )
+        except Exception as exc:
+            log.warning("Failed to load recent MCP tools for agent %s: %s", state.agent_id, exc)
             return []
 
     def _get_linked_kb_ids(self, agent: "Agent") -> list[str]:

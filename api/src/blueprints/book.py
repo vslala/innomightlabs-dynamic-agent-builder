@@ -31,7 +31,7 @@ from src.blueprints.skills_schema import SkillSetup, SkillVariant, requirement_n
 from src.blueprints.document import Blueprint
 from src.blueprints.draft import Draft
 from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, Metadata, OutputSpec, ParamSpec
-from src.skills.disclosure import summarize
+from src.common.keyword_search import summarize
 from src.skills.registry import SkillRegistry
 
 GUIDE = "guide/blueprint"

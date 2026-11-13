@@ -6,7 +6,7 @@ Provider credentials are not here: the provider session owns them, so a tool can
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.accounts.owner import Owner
 from src.consent.models import ConsentScope
@@ -53,6 +53,8 @@ class AgentTurnState:
     #: Skill actions used recently in this conversation, whose schemas stay in the prompt.
     recent_skill_actions: list[LoadedSkillRuntimeResponse] = field(default_factory=list)
     enabled_mcp_connections: list["AgentMCPConnectionResponse"] = field(default_factory=list)
+    #: MCP tools this agent called recently that the caller may use, whole with their `mcp_id`: loaded into the prompt.
+    recent_mcp_tools: list[dict[str, Any]] = field(default_factory=list)
     #: Every image the user sent in this conversation, by id: what `read_image` may open.
     images: dict[str, ImageRef] = field(default_factory=dict)
     #: Whether this turn may offer `read_image`: the conversation has an image and the account allows reading it.

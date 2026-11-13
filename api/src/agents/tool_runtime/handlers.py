@@ -49,6 +49,8 @@ class MCPRuntime(Protocol):
         agent_id: str,
         caller: MCPCaller,
         mcp_id: str | None = None,
+        tool_names: list[str] | None = None,
+        query: str | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -108,8 +110,10 @@ async def list_mcp_tools(
     result = await _required(mcp_runtime).list_runtime_tools(
         account_id=state.account_id,
         agent_id=state.agent_id,
-        caller=_mcp_caller(state),
+        caller=mcp_caller_for(state),
         mcp_id=tool_input.get("mcp_id") or None,
+        tool_names=tool_input.get("tools") or None,
+        query=tool_input.get("query") or None,
     )
     return _json_result(result)
 
@@ -126,7 +130,7 @@ async def call_mcp_tool(
     result = await _required(mcp_runtime).call_runtime_tool(
         account_id=state.account_id,
         agent_id=state.agent_id,
-        caller=_mcp_caller(state),
+        caller=mcp_caller_for(state),
         mcp_id=tool_input["mcp_id"],
         tool_name=tool_input["tool_name"],
         arguments=tool_input["arguments"],
@@ -135,7 +139,7 @@ async def call_mcp_tool(
     return _json_result(result)
 
 
-def _mcp_caller(state: AgentTurnState) -> MCPCaller:
+def mcp_caller_for(state: AgentTurnState) -> MCPCaller:
     return MCPCaller(
         actor_kind=state.actor_kind,
         actor_id=state.actor_id,

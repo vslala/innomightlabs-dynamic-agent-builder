@@ -19,7 +19,8 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.memory.snapshot import CoreMemorySnapshot
 from src.messages.models import Message, MessageKind
 from src.messages.repositories.in_memory import InMemoryMessageRepository
-from src.skills.disclosure import DisclosureRequest, disclose, search_actions, summarize
+from src.common.keyword_search import summarize
+from src.skills.disclosure import DisclosureRequest, disclose, search_actions
 from src.skills.models import AgentSkill
 from src.skills.registry import SkillRegistry
 from src.skills.repository import AgentSkillRepository
