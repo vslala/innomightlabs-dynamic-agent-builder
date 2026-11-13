@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (phases 0–3 built; run the backfill before deploying phase 3) |
+| Status | 🚧 In progress (phases 0–4 built; probes P1–P4 and the backfill pending; phase 5 not started) |
 | Owner | vslala |
 | Last reviewed | 2026-11-12 |
 | Depends on | [api/src/llm/CONTRIBUTION.md](../api/src/llm/CONTRIBUTION.md), [LLD-multimodal-image-generation-v1.md](../api/docs/LLD-multimodal-image-generation-v1.md), [LLD-image-input-and-read-image-tool.md](LLD-image-input-and-read-image-tool.md) |
@@ -59,6 +59,18 @@ say "OpenAI". `tests/test_responses_wire.py` asserts that the OpenAI request bod
   `settings.py`, `scripts/deploy_prod_railway.sh`, `terraform/variables.tf` and `terraform/lambda.tf`.
 - `Agent.to_response(access, capabilities)` takes the account's capabilities from `account_capabilities()` in
   `agents/router.py`. Create, read, update and list all use it.
+
+**Phase 4 (2026-11-13).** Grok is built as designed (`providers/grok/`, `wire/images_api.py`,
+`GROK_MODELS`/`GROK_IMAGE_MODELS` in settings and the deploy script), with these specifics:
+- `images.py` gained `image_format_of` (magic bytes), a JPEG start-of-frame reader beside the PNG one (a dict of
+  readers by format), and `generated_image(...)`, which describes a picture from its bytes for any vendor that sends
+  plain bytes.
+- `generate_images` always asks for `b64_json` and returns each `data` item with its decoded `image`.
+- `tests/test_grok_provider.py` covers chat, the catalog, drawing, and the whole path: an admin saves
+  `grok-imagine-image-2.0` (a Grok chat model is refused), and an Anthropic agent draws a JPEG through it.
+- **Not yet done: probes P1–P4 (§8).** They need a real xAI key, and none was available in this session. The code
+  follows the documented API. P1 (do function calls stream as OpenAI's do?) and P3 (is the listing under `models` or
+  `data`? `_listing` reads both) are the ones that could change code. Run them before the manual check in §9.
 
 ## 1. Goal
 

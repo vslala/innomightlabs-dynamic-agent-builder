@@ -21,10 +21,12 @@ src/llm/
     openai_api/      OpenAI with an API key: the same Responses wire, its own endpoint and key
     gemini/          Gemini API key
     ollama/          user-hosted Ollama (native /api/chat NDJSON); connection.py: endpoint validation and headers
+    grok/            xAI with an API key: the Responses wire for chat; images.py draws on xAI's images endpoint
   wire/              wire formats more than one provider speaks, used by composition:
     sse.py             sse_events: the JSON of each `data:` line
     responses.py       the Responses API: input/tool conversion, responses_body, stream_chat, the refusal rule
     responses_images.py  ResponsesToolImages: drawing with the Responses `image_generation` tool
+    images_api.py      generate_images: OpenAI's `images/generations` shape (xAI serves it), b64 pictures, not streamed
   chat.py            LLMProvider ABC (the chat contract), LLMEvent, StopReason, stop_reason_of
   images.py          ImageGenerator (Provider.images) and what it takes and gives back
   models.py          ModelInfo, ModelCapability (chat, image_understanding, image_generation, image_editing),
@@ -75,7 +77,8 @@ re-check.
 **Capabilities come from the catalog.** Each catalog tags its models with `ModelCapability`: `CHAT` for a model that
 can hold a conversation, `IMAGE_UNDERSTANDING`, `IMAGE_GENERATION`. It reads the vendor's own field where there is
 one (Anthropic `capabilities.image_input`, Bedrock `inputModalities`, Codex `input_modalities`, Ollama `/api/show`) and
-otherwise applies a dated rule beside its parsing (OpenAI API and Gemini publish none). The agent picker offers `CHAT`
+otherwise applies a dated rule beside its parsing (OpenAI API and Gemini publish none). xAI lists its chat and image
+models apart (`/v1/language-models`, `/v1/image-generation-models`), so Grok's image models are `IMAGE_GENERATION` only. The agent picker offers `CHAT`
 models, Image Reading `CHAT` + `IMAGE_UNDERSTANDING`, Image Generation `IMAGE_GENERATION`, and a fallback substitute
 must be `CHAT`. A model that only draws stays in the catalog, tagged, rather than being filtered out. Only a provider
 with `images` may tag `IMAGE_GENERATION` (`tests/test_providers_registry.py` checks it).

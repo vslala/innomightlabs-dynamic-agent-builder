@@ -3,13 +3,14 @@
 from .anthropic import ANTHROPIC
 from .bedrock import BEDROCK
 from .gemini import GEMINI
+from .grok import GROK
 from .ollama import OLLAMA
 from .openai import OPENAI
 from .openai_api import OPENAI_API
 from .provider import Provider
 
 #: In the order Settings and the model pickers show them.
-PROVIDERS: tuple[Provider, ...] = (BEDROCK, ANTHROPIC, OPENAI, OPENAI_API, GEMINI, OLLAMA)
+PROVIDERS: tuple[Provider, ...] = (BEDROCK, ANTHROPIC, OPENAI, OPENAI_API, GEMINI, OLLAMA, GROK)
 
 
 def find_provider(name: str) -> Provider | None:

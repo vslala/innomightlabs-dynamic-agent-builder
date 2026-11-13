@@ -82,10 +82,62 @@ def mime_type_for_format(output_format: str) -> str:
     return "image/png"
 
 
+def image_format_of(data: bytes) -> str:
+    """The format the bytes are in, from their signature: a vendor's word for it isn't always what it sent."""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return "png"
+
+
 def image_dimensions(data: bytes, output_format: str) -> ImageDimensions:
-    """Read from a PNG's header; other formats are stored without dimensions."""
-    normalized = output_format.lower().lstrip(".")
-    if normalized == "png" and data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
+    """Read from the image's header; a format without a reader here is stored without dimensions."""
+    reader = _DIMENSION_READERS.get(output_format.lower().lstrip("."))
+    return (reader(data) if reader else None) or ImageDimensions(width=None, height=None)
+
+
+def generated_image(
+    data: bytes, *, prompt: str, provider_key: str, metadata: dict[str, Any] | None = None, **details: Any
+) -> GeneratedImageBytes:
+    """A picture a vendor sent as plain bytes, described from the bytes themselves. `details` are the rest of
+    `GeneratedImageBytes` (`revised_prompt`, `quality`); `metadata` is recorded beside the provider's key."""
+    output_format = image_format_of(data)
+    dimensions = image_dimensions(data, output_format)
+    return GeneratedImageBytes(
+        data=data,
+        output_format=output_format,
+        mime_type=mime_type_for_format(output_format),
+        prompt=prompt,
+        width=dimensions.width,
+        height=dimensions.height,
+        provider_metadata={"provider": provider_key, **(metadata or {})},
+        **details,
+    )
+
+
+def _png_dimensions(data: bytes) -> ImageDimensions | None:
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
         width, height = struct.unpack(">II", data[16:24])
         return ImageDimensions(width=int(width), height=int(height))
-    return ImageDimensions(width=None, height=None)
+    return None
+
+
+#: JPEG start-of-frame markers (baseline, extended, progressive, lossless): they carry the height and width.
+_JPEG_FRAME_MARKERS = frozenset({0xC0, 0xC1, 0xC2, 0xC3})
+
+
+def _jpeg_dimensions(data: bytes) -> ImageDimensions | None:
+    """Walk the marker segments to the first start-of-frame."""
+    position = 2
+    while position + 4 <= len(data) and data[position] == 0xFF:
+        marker = data[position + 1]
+        length = int.from_bytes(data[position + 2 : position + 4], "big")
+        if marker in _JPEG_FRAME_MARKERS and position + 9 <= len(data):
+            height, width = struct.unpack(">HH", data[position + 5 : position + 9])
+            return ImageDimensions(width=int(width), height=int(height))
+        position += 2 + length
+    return None
+
+
+_DIMENSION_READERS = {"png": _png_dimensions, "jpeg": _jpeg_dimensions, "jpg": _jpeg_dimensions}

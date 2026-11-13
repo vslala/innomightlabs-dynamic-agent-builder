@@ -30,6 +30,11 @@ DEFAULT_OPENAI_MODELS = [
     "gpt-5.6-luna",
 ]
 
+#: Offered only when xAI's model listings can't be read (checked against docs.x.ai on 2026-11-12); normally the lists
+#: come from `/v1/language-models` and `/v1/image-generation-models` (see GrokCatalog).
+DEFAULT_GROK_MODELS = ["grok-4.7", "grok-4.6", "grok-4.5"]
+DEFAULT_GROK_IMAGE_MODELS = ["grok-imagine-image-2.0"]
+
 
 class ConfigValidationError(Exception):
     """Raised when required configuration is missing or invalid."""
@@ -243,6 +248,8 @@ class Settings:
     openai_oauth_client_id: str = ""
     openai_oauth_scopes: str = "openid profile email offline_access"
     openai_models: list[str] = field(default_factory=lambda: DEFAULT_OPENAI_MODELS.copy())
+    grok_models: list[str] = field(default_factory=lambda: DEFAULT_GROK_MODELS.copy())
+    grok_image_models: list[str] = field(default_factory=lambda: DEFAULT_GROK_IMAGE_MODELS.copy())
     openai_oauth_id_token_add_organizations: bool = False
     openai_oauth_codex_cli_simplified_flow: bool = False
     openai_oauth_originator: str = ""
@@ -683,6 +690,8 @@ class Settings:
                 "OPENAI_MODELS",
                 DEFAULT_OPENAI_MODELS,
             ),
+            grok_models=parse_env_list("GROK_MODELS", DEFAULT_GROK_MODELS),
+            grok_image_models=parse_env_list("GROK_IMAGE_MODELS", DEFAULT_GROK_IMAGE_MODELS),
             openai_oauth_id_token_add_organizations=env_bool("OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS"),
             openai_oauth_codex_cli_simplified_flow=env_bool("OPENAI_OAUTH_CODEX_CLI_SIMPLIFIED_FLOW"),
             openai_oauth_originator=os.getenv("OPENAI_OAUTH_ORIGINATOR", ""),
