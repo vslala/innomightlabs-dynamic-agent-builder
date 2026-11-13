@@ -46,9 +46,9 @@ def responses_body(
         "input": items,
         "tools": responses_tools(tools),
         "tool_choice": "auto",
-        # A turn can call several tools at once, and this agent's tools have side effects (memory writes), so they
-        # run one at a time, across loop iterations.
-        "parallel_tool_calls": False,
+        # Several calls in one response cost one model call, not one each. The loop runs them one after another in the
+        # model's order, stops the rest of the batch at a consent card, and refreshes the prompt once after memory writes.
+        "parallel_tool_calls": True,
         "store": False,
         "stream": True,
         **cache_routing,

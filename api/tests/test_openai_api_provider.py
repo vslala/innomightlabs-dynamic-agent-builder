@@ -115,7 +115,7 @@ class TestStreaming:
         assert [tool["name"] for tool in body["tools"]] == ["get_weather"]
         assert body["stream"] is True
         assert body["store"] is False
-        assert body["parallel_tool_calls"] is False
+        assert body["parallel_tool_calls"] is True
 
     async def test_streams_text_a_tool_call_usage_and_stop(self, monkeypatch):
         events, _ = await _events(

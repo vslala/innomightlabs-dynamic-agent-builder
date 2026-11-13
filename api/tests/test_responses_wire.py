@@ -5,7 +5,7 @@ import json
 import pytest
 
 from src.llm.providers.openai.chat import CODEX_EXTRAS
-from src.llm.wire.responses import bearer_headers, responses_body, responses_input, usage_event
+from src.llm.wire.responses import bearer_headers, responses_body, responses_input, stream_chat, usage_event
 from src.llm.wire.sse import sse_events
 
 SEARCH_TOOL = {
@@ -26,7 +26,7 @@ def test_the_body_is_a_streamed_unstored_request_with_one_tool_call_at_a_time():
         "input": [{"role": "user", "content": [{"type": "input_text", "text": "Hello"}]}],
         "tools": [SEARCH_TOOL],
         "tool_choice": "auto",
-        "parallel_tool_calls": False,
+        "parallel_tool_calls": True,
         "reasoning": None,
         "store": False,
         "stream": True,
@@ -155,3 +155,49 @@ async def test_sse_events_are_the_json_objects_of_the_data_lines():
 
     assert [event async for event in sse_events(response)] == [{"type": "response.created"}]
 
+
+
+class StreamedEvents:
+    """httpx.AsyncClient for one streamed call that answers with these Responses events."""
+
+    def __init__(self, events: list[dict]):
+        self.events = events
+        self.headers: dict[str, str] = {}
+        self.is_success = True
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def stream(self, *args, **kwargs):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def aiter_lines(self):
+        for event in self.events:
+            yield "data: " + json.dumps(event)
+
+
+def _function_call(item_id: str, call_id: str, arguments: str) -> list[dict]:
+    return [
+        {"type": "response.output_item.added", "item": {"type": "function_call", "id": item_id, "call_id": call_id, "name": "get_commit"}},
+        {"type": "response.function_call_arguments.delta", "item_id": item_id, "delta": arguments},
+        {"type": "response.function_call_arguments.done", "item_id": item_id},
+    ]
+
+
+async def test_a_response_with_several_function_calls_streams_each_so_the_loop_runs_them_as_one_batch(monkeypatch):
+    events = [*_function_call("item-1", "call-1", '{"sha": "a1"}'), *_function_call("item-2", "call-2", '{"sha": "b2"}')]
+    monkeypatch.setattr("src.llm.wire.responses.httpx.AsyncClient", StreamedEvents([*events, {"type": "response.completed"}]))
+
+    tool_uses = [
+        (event.tool_use_id, event.tool_input)
+        async for event in stream_chat("https://vendor.example/responses", {}, {"input": []}, label="Test")
+        if event.type == "tool_use"
+    ]
+
+    assert tool_uses == [("call-1", {"sha": "a1"}), ("call-2", {"sha": "b2"})]
