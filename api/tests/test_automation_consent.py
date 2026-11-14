@@ -198,3 +198,35 @@ async def test_an_agent_step_takes_only_the_actions_the_owner_ticked(dynamodb_ta
     [scope] = _RecordingArchitecture.scopes
     assert scope.granted == frozenset({publish}) and not scope.can_ask
     assert scope.grant_ref == f"automation:{AUTOMATION_ID}/write"
+
+
+def _ticked(state) -> set[str]:
+    grants = next(block for block in state.blocks if block["kind"] == "grants")
+    return {item["key"] for item in grants["items"] if item["checked"]}
+
+
+def test_an_approved_agent_step_shows_the_actions_the_owner_ticked(dynamodb_table):
+    AgentRepository().save(Agent(agent_id="agent-1", agent_name="Writer", agent_architecture="recording",
+                                 agent_provider="Bedrock", agent_persona="p", **agent_fields(TEST_USER_EMAIL)))
+    for skill_id, name in (("social_media", "Social media"), ("google_mail", "Gmail")):
+        AgentSkillRepository().save(AgentSkill(agent_id="agent-1", installed_skill_id=skill_id, skill_id=skill_id,
+                                               namespace="x", skill_name=name, skill_description="", installed_by=TEST_USER_EMAIL))
+    graph = _save(_agent_step())
+    service = AutomationService()
+    publish, send = skill_key("social_media", "publish"), skill_key("google_mail", "send")
+
+    [before] = service.consent.states(AUTOMATION_ID, graph.nodes)
+    assert _ticked(before) == set(), "nothing is ticked until the owner chooses"
+
+    step = AutomationRepository().find_node(AUTOMATION_ID, "write")
+    service.consent.grant(AUTOMATION_ID, step, fingerprint=before.fingerprint, granted_actions=[publish, send],
+                          owner=OWNER, via="editor")
+
+    [after] = service.consent.states(AUTOMATION_ID, graph.nodes)
+    assert after.state == "granted"
+    assert _ticked(after) == {publish, send}, "the card shows what was approved, not an empty form"
+
+    # The step changes: the approval no longer applies, so nothing reads as approved
+    edited = step.model_copy(update={"config": {**step.config, "prompt_template": "Write something else"}})
+    [stale] = service.consent.states(AUTOMATION_ID, [edited])
+    assert stale.state == "stale" and _ticked(stale) == set()

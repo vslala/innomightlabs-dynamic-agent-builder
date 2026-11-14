@@ -115,17 +115,21 @@ class AutomationConsentService:
             raise ConsentRequiredError(missing)
 
     def states(self, automation_id: str, steps: list[AutomationNode], *, suggested: dict[str, list[str]] | None = None) -> list[StepConsentState]:
-        """Every step that asks first, with what the owner is shown to approve it. `suggested` pre-ticks agent grants."""
+        """Every step that asks first, with what the owner is shown to approve it.
+
+        An approved step shows the actions that were ticked; otherwise `suggested` pre-ticks agent grants.
+        """
         found = []
         for step in steps:
-            shown = self.preview(automation_id, step, (suggested or {}).get(step.node_id))
-            if shown is None:
-                continue
-            preview, kind = shown
             consent = self.repo.find_consent(automation_id, step.node_id)
             state: Literal["granted", "missing", "stale"] = (
                 "missing" if consent is None else "granted" if consent.covers(step.config) else "stale"
             )
+            ticked = consent.granted_actions if consent and state == "granted" else (suggested or {}).get(step.node_id)
+            shown = self.preview(automation_id, step, ticked)
+            if shown is None:
+                continue
+            preview, kind = shown
             found.append(
                 StepConsentState(
                     node_id=step.node_id,

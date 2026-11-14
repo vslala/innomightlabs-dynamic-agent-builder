@@ -21,9 +21,9 @@ export function StepConsentPanel({
   onRevoke: () => Promise<void>;
 }) {
   const grantsBlock = consent.blocks.find((block) => block.kind === "grants");
-  const ticked = grantsBlock
-    ? (consent.state === "granted" ? consent.granted_actions : grantsBlock.items.filter((item) => item.checked).map((item) => item.key))
-    : [];
+  // What the API ticks (a suggestion, or standing "always allowed" actions): the starting point while deciding.
+  // Once approved, the API ticks what was approved and the blocks show it as they are.
+  const ticked = grantsBlock ? grantsBlock.items.filter((item) => item.checked).map((item) => item.key) : [];
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
