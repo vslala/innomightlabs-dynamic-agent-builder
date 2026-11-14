@@ -63,6 +63,15 @@ class PublishError(Exception):
 
 
 @dataclass(frozen=True)
+class DocumentLimits:
+    """The documents a network posts (LinkedIn shows one as a swipeable carousel of its pages)."""
+
+    #: File extensions, lower case with the dot, that the network accepts
+    formats: tuple[str, ...]
+    max_bytes: int
+
+
+@dataclass(frozen=True)
 class NetworkLimits:
     """What a network accepts in one post. The agent is told these before it offers to post."""
 
@@ -81,6 +90,8 @@ class NetworkLimits:
     max_mentions: int | None = None
     #: The network fetches each image from a public URL (Threads, Instagram) instead of receiving its bytes
     public_media: bool = False
+    #: None: the network doesn't post documents. A post carries one document or images, never both.
+    documents: DocumentLimits | None = None
 
 
 @dataclass(frozen=True)
@@ -95,9 +106,21 @@ class PreparedImage:
 
 
 @dataclass(frozen=True)
+class PreparedDocument:
+    """A document checked against one network's limits: its bytes are what its name says."""
+
+    data: bytes
+    filename: str
+    mime_type: str
+    #: What the network shows above the document
+    title: str
+
+
+@dataclass(frozen=True)
 class PreparedPost:
     text: str
     images: tuple[PreparedImage, ...] = ()
+    document: PreparedDocument | None = None
 
 
 @dataclass(frozen=True)

@@ -16,8 +16,9 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from src.artifacts.storage import ArtifactStorage
 from src.config import settings
+from src.connectors.social.documents import SourceDocument, prepare_document
 from src.connectors.social.media import SourceImage, prepare
-from src.connectors.social.networks.base import PreparedImage, PublishError, PublishErrorKind, SocialNetwork
+from src.connectors.social.networks.base import PreparedDocument, PreparedImage, PublishError, PublishErrorKind, SocialNetwork
 from src.crypto import decrypt, encrypt
 
 RENDITION_TAG = "retention=social-rendition"
@@ -25,13 +26,25 @@ MEDIA_PATH = "/connectors/social/media/"
 
 
 class Renditions:
-    """One post's images as each network takes them. Two accounts on one network share one encode and one URL."""
+    """One post's media as each network takes it. Two accounts on one network share one encode and one URL."""
 
     def __init__(self, account_id: str, post_id: str, images: tuple[SourceImage, ...],
-                 storage: ArtifactStorage | None = None) -> None:
-        self.account_id, self.post_id, self.images = account_id, post_id, images
+                 storage: ArtifactStorage | None = None, document: SourceDocument | None = None) -> None:
+        self.account_id, self.post_id, self.images, self.document = account_id, post_id, images, document
         self._storage = storage
         self._by_network: dict[str, tuple[PreparedImage, ...]] = {}
+        self._documents: dict[str, PreparedDocument] = {}
+
+    def document_for(self, network: SocialNetwork) -> PreparedDocument | None:
+        """The post's document checked against this network, or None when the post has none. Planning has already
+        skipped networks that don't take documents; this rejects a file whose bytes aren't what its name says."""
+        if self.document is None:
+            return None
+        if network.limits.documents is None:
+            raise PublishError(PublishErrorKind.REJECTED, f"{network.display_name} can't post documents")
+        if network.key not in self._documents:
+            self._documents[network.key] = prepare_document(self.document, network.limits.documents)
+        return self._documents[network.key]
 
     def for_network(self, network: SocialNetwork) -> tuple[PreparedImage, ...]:
         """Raises PublishError when an image can't be read or fitted. Synchronous, so targets running together

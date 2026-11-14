@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from pathlib import PurePath
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -11,6 +12,9 @@ from src.artifacts.models import ArtifactType
 
 MAX_ARTIFACT_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024
+#: A document (a PDF, a slide deck) may be as large as a network posts: LinkedIn takes up to 100 MB
+MAX_DOCUMENT_UPLOAD_BYTES = 100 * 1024 * 1024
+DOCUMENT_SUFFIXES = {".pdf", ".pptx", ".ppt", ".docx", ".doc"}
 MAX_METADATA_JSON_BYTES = 8 * 1024
 UPLOADABLE_ARTIFACT_TYPES = {"html_report", "csv", "markdown", "json", "text", "code", "file", "image", "video"}
 #: Types whose bytes are not text, so content sent inline as base64 isn't held to UTF-8 (their validator checks it).
@@ -19,8 +23,13 @@ BINARY_ARTIFACT_TYPES = {"image", "video"}
 WORKSPACE_ONLY_ARTIFACT_TYPES = {"video"}
 
 
-def max_bytes_for(artifact_type: str) -> int:
-    return MAX_VIDEO_UPLOAD_BYTES if artifact_type == "video" else MAX_ARTIFACT_UPLOAD_BYTES
+def max_bytes_for(request: "UploadFileRequest") -> int:
+    """How large a file read from the workspace may be. Content sent inline is always held to 10 MB."""
+    if request.artifact_type == "video":
+        return MAX_VIDEO_UPLOAD_BYTES
+    if request.artifact_type == "file" and PurePath(request.filename).suffix.lower() in DOCUMENT_SUFFIXES:
+        return MAX_DOCUMENT_UPLOAD_BYTES
+    return MAX_ARTIFACT_UPLOAD_BYTES
 
 
 class UploadFileRequest(BaseModel):
@@ -52,7 +61,8 @@ class UploadFileRequest(BaseModel):
             raise ValueError(f"{self.artifact_type} files are uploaded from the workspace: provide workspace_path")
         _validate_metadata_size(self.metadata)
         if self.workspace_path is None and len(self.to_body_bytes()) > MAX_ARTIFACT_UPLOAD_BYTES:
-            raise ValueError("File content exceeds the 10 MB upload limit")
+            raise ValueError("File content exceeds the 10 MB upload limit; write a larger file to the workspace and "
+                             "upload it with workspace_path")
         return self
 
     def to_body_bytes(self) -> bytes:

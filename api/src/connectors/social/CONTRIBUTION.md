@@ -16,7 +16,9 @@ src/connectors/social/
   connect.py      SocialOAuthState, authorize_url_for, complete_social_oauth (the "social" completer)
   router.py       /connectors/social/* (router); the OAuth callback and the post-image route (public_router)
   publisher.py    SocialPublisher: plan, renew tokens (`fresh`), publish each target once
-  renditions.py   A post's images once per network; stored behind a sealed, expiring URL for networks that fetch them
+  renditions.py   A post's images (and its document) once per network; images stored behind a sealed, expiring URL for networks that fetch them
+  media.py        Fitting an image to a network's limits
+  documents.py    Checking a document against a network's limits (type by name and first bytes, size); never re-encoded
   meta_callbacks.py  Meta's deauthorize and data-deletion callbacks (public, checked by signed_request)
   networks/
     base.py       SocialNetwork protocol, ConnectedProfile, ConnectError, NetworkLimits
@@ -41,6 +43,10 @@ src/connectors/social/
   `limits.public_media` is set (Threads, Instagram) gets each image's `url`: a copy in the media bucket, tagged
   `retention=social-rendition` (deleted after 2 days), served by `GET /connectors/social/media/{token}.jpg`. Meta
   can't reach localhost: set `SOCIAL_MEDIA_BASE_URL` to a tunnel to try them locally.
+- **Documents.** A network posts documents when `limits.documents` is set (`DocumentLimits`: formats and size; LinkedIn).
+  Planning skips the others with `documents_not_supported`, so the agent hears it from `check`; a post carries a
+  document or images, never both. To add documents to a network, set `limits.documents` and handle
+  `PreparedPost.document` in its `publish`: nothing else changes.
 - **Tokens that expire** renew in `fresh_credentials` (Threads); the publisher saves the new one with
   `update_credentials` before using it. Return None when nothing needs renewing.
 - Credentials are Fernet-encrypted JSON (`encrypted_credentials`); their shape is the strategy's own. Responses never

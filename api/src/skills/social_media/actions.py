@@ -11,6 +11,7 @@ from src.connectors.social.repository import SocialAccountRepository
 from src.consent.preview import FieldsBlock, ImagesBlock, PreviewField, PreviewImage, PreviewTarget, TargetsBlock, TextBlock
 from src.skills.runtime_context import account_of
 
+from .documents import resolve_document
 from .images import load_images, resolve_images
 
 RECENT_POSTS_DEFAULT = 10
@@ -30,6 +31,7 @@ async def check(arguments: dict[str, Any], config: dict[str, Any], context: dict
     plans = SocialPublisher().plan(
         account_of(context), str(arguments.get("text") or ""), selection=arguments.get("accounts", "all"),
         network=_network(arguments), overrides=_overrides(arguments), image_count=len(resolve_images(arguments, context)),
+        document=resolve_document(arguments, context),
     )
     return {"targets": [
         {"social_account_id": plan.account.social_account_id, "network": plan.account.network, "handle": plan.account.handle,
@@ -40,10 +42,11 @@ async def check(arguments: dict[str, Any], config: dict[str, Any], context: dict
 
 async def publish(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     del config
+    document = resolve_document(arguments, context)
     request = PublishRequest(
         account_id=account_of(context), post_id=_post_id(context), text=str(arguments.get("text") or "").strip(),
         accounts=arguments.get("accounts", "all"), network=_network(arguments), overrides=_overrides(arguments),
-        images=load_images(resolve_images(arguments, context)),
+        images=load_images(resolve_images(arguments, context)), document=document.load() if document else None,
     )
     result = await SocialPublisher().publish(request)
     if result["status"] == "failed" and context.get("orchestrator_type") == "automation":
@@ -81,14 +84,20 @@ async def publish_preview(arguments: dict[str, Any], config: dict[str, Any], con
     del config
     text = str(arguments.get("text") or "").strip()
     images = resolve_images(arguments, context)
+    document = resolve_document(arguments, context)
     overrides = _overrides(arguments)
     plans = SocialPublisher().plan(
         account_of(context), text, selection=arguments.get("accounts", "all"), network=_network(arguments),
-        overrides=overrides, image_count=len(images),
+        overrides=overrides, image_count=len(images), document=document,
     )
     blocks: list[Any] = [TextBlock(label="Post", value=text, argument="text")]
     if images:
         blocks.append(ImagesBlock(items=[PreviewImage(s3_key=image.s3_key, alt_text=image.alt_text or None) for image in images]))
+    if document:
+        blocks.append(FieldsBlock(label="Document", items=[
+            PreviewField(label="File", value=document.filename),
+            *([PreviewField(label="Title", value=document.title)] if document.title else []),
+        ]))
     blocks.append(TargetsBlock(items=[
         PreviewTarget(
             label=f"{network_for(plan.account.network).display_name} · {plan.account.handle}",
@@ -132,6 +141,7 @@ def _describe(account: SocialAccount) -> dict[str, Any]:
         "max_characters": network.limits.max_text,
         "max_images": network.limits.max_images,
         "requires_image": network.limits.requires_image,
+        "document_formats": [suffix[1:] for suffix in network.limits.documents.formats] if network.limits.documents else [],
         "reads_posts": network.reads_posts,
         **({"token_expires_at": account.token_expires_at.isoformat()} if account.token_expires_at else {}),
     }

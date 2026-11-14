@@ -6,7 +6,10 @@ system_prompt: |
   Use this skill when you have generated file content that should be saved for the user.
   Provide exactly one of text_content, base64_content or workspace_path.
   Use workspace_path (a path in this conversation's workspace, such as one browser_studio wrote) for a video, with
-  artifact_type video and a filename ending .mp4, .webm or .mov. Videos can be up to 100 MB; other files 10 MB.
+  artifact_type video and a filename ending .mp4, .webm or .mov. Videos can be up to 100 MB.
+  Save a PDF, PowerPoint or Word file made in the workspace (for example by a Python script) with artifact_type file and
+  workspace_path: documents can be up to 100 MB, and its artifact_id can be posted with social_media as a document.
+  Other files and anything sent inline can be up to 10 MB.
   Use image for a picture (PNG, JPEG, WebP or GIF) from the workspace (workspace_path) or as base64_content: its
   artifact_id can be posted with social_media. An SVG must be rendered to PNG first.
   Use html_report only for complete, safe HTML documents.

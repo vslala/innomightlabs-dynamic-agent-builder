@@ -17,7 +17,7 @@ async def upload_file(arguments: dict[str, Any], config: dict[str, Any], context
     del config
     request = _validate_request(arguments)
     account_id, user_id = await asyncio.to_thread(run_artifact_holder, context)
-    content = await source_for(request).load(request, context, max_bytes_for(request.artifact_type))
+    content = await source_for(request).load(request, context, max_bytes_for(request))
     try:
         content = ArtifactValidatorRegistry().validator_for(request.artifact_type).validate(request, content)
         mime_type = infer_mime_type(request.artifact_type, request.filename, request.mime_type)

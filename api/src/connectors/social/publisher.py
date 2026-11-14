@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.connectors.social.documents import DocumentFacts, SourceDocument
 from src.connectors.social.models import SocialAccount
 from src.connectors.social.media import SourceImage
 from src.connectors.social.networks import network_for
@@ -32,6 +33,8 @@ class PublishRequest:
     network: str | None = None
     overrides: dict[str, str] = field(default_factory=dict)
     images: tuple[SourceImage, ...] = ()
+    #: One document instead of images, for networks that post documents (LinkedIn)
+    document: SourceDocument | None = None
 
 
 class SocialPublisher:
@@ -40,16 +43,17 @@ class SocialPublisher:
         self.posts = posts or SocialPostRepository()
 
     def plan(self, account_id: str, text: str, *, selection: Any = "all", network: str | None = None,
-             overrides: dict[str, str] | None = None, image_count: int = 0) -> list[TargetPlan]:
+             overrides: dict[str, str] | None = None, image_count: int = 0,
+             document: DocumentFacts | None = None) -> list[TargetPlan]:
         accounts = select_accounts(self.accounts.list(account_id), selection, network)
-        return plan_targets(accounts, text, overrides, image_count)
+        return plan_targets(accounts, text, overrides, image_count, document)
 
     async def publish(self, request: PublishRequest) -> dict[str, Any]:
         plans = self.plan(request.account_id, request.text, selection=request.accounts, network=request.network,
-                          overrides=request.overrides, image_count=len(request.images))
+                          overrides=request.overrides, image_count=len(request.images), document=request.document)
         if not plans:
             raise ValueError("No connected social account matches. Connect one in Connectors, on the Social tab.")
-        renditions = Renditions(request.account_id, request.post_id, request.images)
+        renditions = Renditions(request.account_id, request.post_id, request.images, document=request.document)
         targets = await asyncio.gather(*(self._publish_target(request, plan, renditions) for plan in plans))
         published = [target for target in targets if target.status == TargetStatus.PUBLISHED]
         status = "failed" if not published else "published" if len(published) == len(targets) else "partial"
@@ -77,9 +81,9 @@ class SocialPublisher:
             return self._already(self.posts.get(target))
         network = network_for(account.network)
         try:
-            images = renditions.for_network(network)
+            images, document = renditions.for_network(network), renditions.document_for(network)
             credentials = await self.fresh(account, network)
-            published = await network.publish(credentials, PreparedPost(text=plan.text, images=images))
+            published = await network.publish(credentials, PreparedPost(text=plan.text, images=images, document=document))
         except PublishError as error:
             return self._failed(claimed, account, error)
         except Exception:  # a network strategy's own bug must not take the other accounts down, nor leave this one locked

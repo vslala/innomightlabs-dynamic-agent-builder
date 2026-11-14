@@ -189,7 +189,7 @@ export function Privacy() {
                   repeat a post. We do not store the posts it reads. An agent can publish only after you have
                   approved it: either the exact post, shown to you before it is sent, or a step in an
                   automation that you approved in advance. When a post is published, its text and
-                  images are sent to the network. Instagram and Threads fetch a post's images from a
+                  images, or the document attached to it, are sent to the network. Instagram and Threads fetch a post's images from a
                   web address instead of receiving them, so we keep a copy of each image, fitted to
                   the network, at an unguessable address that stops working after an hour, and
                   delete the copy within two days. We keep a record of each post's destination,

@@ -308,7 +308,7 @@ def test_a_file_that_is_not_the_video_it_claims_is_refused(dynamodb_table, monke
 
 
 def test_a_video_over_the_limit_is_refused_while_streaming(dynamodb_table, monkeypatch):
-    monkeypatch.setattr("src.skills.upload_file.actions.max_bytes_for", lambda artifact_type: 1000)
+    monkeypatch.setattr("src.skills.upload_file.actions.max_bytes_for", lambda request: 1000)
     _runner(monkeypatch, lambda request: httpx.Response(200, content=MP4))
 
     with pytest.raises(ValueError, match="upload limit"):
@@ -381,3 +381,14 @@ def test_a_plain_file_is_labelled_by_its_extension_not_as_text():
     assert infer_mime_type("file", "report.pdf", None) == "application/pdf"
     assert infer_mime_type("file", "photo.jpg", None) == "image/jpeg"
     assert infer_mime_type("file", "notes.txt", None) == "text/plain; charset=utf-8"
+
+
+@pytest.mark.parametrize(("artifact_type", "filename", "limit_mb"), [
+    ("file", "deck.PPTX", 100), ("file", "report.pdf", 100), ("video", "tour.mp4", 100),
+    ("file", "archive.zip", 10), ("text", "report.pdf", 10),
+])
+def test_a_document_from_the_workspace_may_be_as_large_as_a_network_posts(artifact_type, filename, limit_mb):
+    from src.skills.upload_file.models import max_bytes_for
+
+    request = UploadFileRequest(artifact_type=artifact_type, title="t", filename=filename, workspace_path=filename)
+    assert max_bytes_for(request) == limit_mb * 1024 * 1024

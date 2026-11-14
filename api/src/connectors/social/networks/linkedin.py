@@ -7,7 +7,9 @@ has run out, so posting uses the stored token as it is.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -18,7 +20,9 @@ from src.config import settings
 from src.connectors.social.networks.base import (
     ConnectedProfile,
     ConnectError,
+    DocumentLimits,
     NetworkLimits,
+    PreparedDocument,
     PreparedImage,
     PreparedPost,
     PublishedPost,
@@ -39,6 +43,11 @@ SCOPES = "openid profile w_member_social"
 DEFAULT_TOKEN_LIFETIME = timedelta(days=60)
 POSTS_URL = "https://api.linkedin.com/rest/posts"
 IMAGES_URL = "https://api.linkedin.com/rest/images?action=initializeUpload"
+DOCUMENTS_URL = "https://api.linkedin.com/rest/documents"
+#: LinkedIn's Documents API: PDF, PowerPoint and Word, up to 100 MB (and 300 pages, which LinkedIn checks itself)
+DOCUMENT_LIMITS = DocumentLimits(formats=(".pdf", ".pptx", ".ppt", ".docx", ".doc"), max_bytes=100 * 1024 * 1024)
+#: How often to ask whether LinkedIn has finished processing an uploaded document
+DOCUMENT_POLL_SECONDS = 2.0
 ALT_TEXT_MAX = 4000
 #: The Posts API is versioned by month; LinkedIn supports each version for about a year
 API_VERSION = "202609"
@@ -56,7 +65,7 @@ class LinkedInNetwork:
     shares_grant = False
     app = "linked_in"
     scopes = SCOPES
-    limits = NetworkLimits(max_text=3000, max_images=20)
+    limits = NetworkLimits(max_text=3000, max_images=20, documents=DOCUMENT_LIMITS)
     #: A member's posts can't be read back without a partner product
     reads_posts = False
 
@@ -159,7 +168,12 @@ class LinkedInNetwork:
         }
         try:
             async with httpx.AsyncClient(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:
-                if post.images:
+                if post.document:
+                    body["content"] = {"media": {
+                        "title": post.document.title,
+                        "id": await self._upload_document(client, headers, author, post.document),
+                    }}
+                elif post.images:
                     uploaded = [await self._upload(client, headers, author, image) for image in post.images]
                     body["content"] = _content(uploaded)
                 response = await client.post(POSTS_URL, json=body, headers=headers)
@@ -186,6 +200,38 @@ class LinkedInNetwork:
         if sent.status_code not in (200, 201):
             raise _publish_error(sent, created=False)
         return {"id": value["image"], "altText": image.alt_text[:ALT_TEXT_MAX]}
+
+    async def _upload_document(self, client: httpx.AsyncClient, headers: dict[str, str], owner: str,
+                               document: PreparedDocument) -> str:
+        """Register, send and wait for the document; none of it makes a visible post. Returns its URN once LinkedIn
+        has processed it: a post naming a document still processing could fail or show nothing."""
+        init = await client.post(f"{DOCUMENTS_URL}?action=initializeUpload",
+                                 json={"initializeUploadRequest": {"owner": owner}}, headers=headers)
+        value = _json(init).get("value") or {}
+        if init.status_code != 200 or not value.get("uploadUrl") or not value.get("document"):
+            raise _publish_error(init, created=False)
+        sent = await client.put(value["uploadUrl"], content=document.data,
+                                headers={"Authorization": headers["Authorization"], "Content-Type": document.mime_type})
+        if sent.status_code not in (200, 201):
+            raise _publish_error(sent, created=False)
+        await self._wait_for_document(client, headers, value["document"])
+        return str(value["document"])
+
+    async def _wait_for_document(self, client: httpx.AsyncClient, headers: dict[str, str], urn: str) -> None:
+        deadline = time.monotonic() + settings.social_publish_timeout_seconds
+        while True:
+            response = await client.get(f"{DOCUMENTS_URL}/{quote(urn, safe='')}", headers=headers)
+            if response.status_code != 200:
+                raise _publish_error(response, created=False)
+            status = _json(response).get("status")
+            if status == "AVAILABLE":
+                return
+            if status == "PROCESSING_FAILED":
+                raise PublishError(PublishErrorKind.REJECTED,
+                                   "LinkedIn could not process the document (it may be over 300 pages or damaged)")
+            if time.monotonic() >= deadline:
+                raise PublishError(PublishErrorKind.TRANSIENT, "LinkedIn is still processing the document; try again shortly")
+            await asyncio.sleep(DOCUMENT_POLL_SECONDS)
 
     def _app(self):
         app = settings.social_app(self.app)
@@ -225,7 +271,7 @@ def _publish_error(response: httpx.Response, created: bool = True) -> PublishErr
     if status == 429:
         return PublishError(PublishErrorKind.RATE_LIMITED, "LinkedIn is limiting how often this account can post")
     if status >= 500 and not created:
-        return PublishError(PublishErrorKind.TRANSIENT, f"LinkedIn failed while uploading an image ({status})")
+        return PublishError(PublishErrorKind.TRANSIENT, f"LinkedIn failed while uploading the post's media ({status})")
     if status >= 500:
         return PublishError(PublishErrorKind.UNCERTAIN, f"LinkedIn failed while posting ({status}), so the post may exist")
     return PublishError(PublishErrorKind.REJECTED, f"LinkedIn refused the post ({status}){': ' + detail if detail else ''}")

@@ -24,6 +24,22 @@
 
 ## Implementation notes
 
+- **2026-11-14: documents, built for LinkedIn and LinkedIn Pages** (§5, §6). `check`, `publish` and `publish_preview`
+  take one `document` (an id) and an optional `document_title`. The id is found only in the caller's scope: a file the
+  member saved with `upload_file`, or a document attached to this conversation (`skills/social_media/documents.py`).
+  - **Generic:** `NetworkLimits.documents` (`DocumentLimits`: formats, `max_bytes`); a network that leaves it `None`
+    doesn't post documents. `PreparedPost.document` carries the file. `connectors/social/documents.py` checks that the
+    name, the first bytes and the size agree with the network's limits; the file is never re-encoded.
+    `Renditions.document_for` does it once per network. `accounts` lists each account's `document_formats`.
+  - **Planning** tells the agent before it posts: `documents_not_supported` (Facebook Pages, Instagram, Threads),
+    `document_type_not_supported`, `document_too_large`, `document_with_images` (a post carries one or the other).
+  - **LinkedIn** (Documents API, PDF/PPTX/PPT/DOCX/DOC, up to 100 MB and 300 pages): `POST /rest/documents?action=initializeUpload`,
+    a PUT of the bytes, `GET /rest/documents/{urn}` until `AVAILABLE` (bounded by `social_publish_timeout_seconds`;
+    `PROCESSING_FAILED` is `REJECTED`, still processing at the deadline is `TRANSIENT`), then `/rest/posts` with
+    `content.media = {title, id}`. No new scopes: `w_member_social` and `w_organization_social` cover it.
+  - **Not built:** documents for public-media networks (none takes them yet); converting other formats to PDF.
+  - **Tests:** `api/tests/test_social_media_documents.py` (12).
+
 - **2026-11-01: the Meta networks have their own LLD**, [Threads, Instagram and Facebook Pages](LLD-meta-social-networks.md). It replaces §2's Facebook, Instagram and
   Threads rows, §5's public URL (still to build) and §12's data-deletion callback with what Meta's docs say today.
 
