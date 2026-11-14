@@ -2,6 +2,9 @@
  * Conversation types matching backend API.
  */
 
+/** Chats with agents, or the conversations automation runs leave behind. */
+export type ConversationKind = "chat" | "automation";
+
 export interface ConversationResponse {
   conversation_id: string;
   title: string;
@@ -10,7 +13,7 @@ export interface ConversationResponse {
   created_by: string;
   created_at: string;
   updated_at: string | null;
-  conversation_type?: "chat" | "automation";
+  conversation_type?: ConversationKind;
   automation_id?: string | null;
   automation_run_id?: string | null;
 }

@@ -34,6 +34,10 @@ interface ConversationSidebarProps {
   deletingId: string | null;
   /** The control that switches back to the cloud. */
   viewToggle?: ReactNode;
+  /** The tabs that pick which kind of conversation is listed. */
+  kindTabs?: ReactNode;
+  /** What the list says when it has nothing to show. */
+  emptyMessage?: string;
   onSearchChange: (value: string) => void;
   onNewConversation: () => void;
   onDeleteConversation: (conversation: ConversationResponse) => void;
@@ -45,6 +49,8 @@ export function ConversationSidebar({
   search,
   deletingId,
   viewToggle,
+  kindTabs,
+  emptyMessage = "No conversations found.",
   onSearchChange,
   onNewConversation,
   onDeleteConversation,
@@ -71,6 +77,8 @@ export function ConversationSidebar({
           </div>
         </div>
 
+        {kindTabs && <div className={styles.kindTabs}>{kindTabs}</div>}
+
         <div className={styles.searchWrap}>
           <Search className={styles.searchIcon} />
           <Input
@@ -85,7 +93,7 @@ export function ConversationSidebar({
       <div className={styles.list}>
         <div className={styles.listInner}>
           {conversations.length === 0 ? (
-            <div className={styles.emptyState}>No conversations found.</div>
+            <div className={styles.emptyState}>{emptyMessage}</div>
           ) : (
             conversations.map((conversation) => {
               const agentName = getAgentName(agents, conversation.agent_id);

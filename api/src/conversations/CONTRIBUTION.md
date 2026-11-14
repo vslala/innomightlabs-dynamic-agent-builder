@@ -35,7 +35,7 @@ A conversation belongs to the member who started it, even on a shared agent. Cal
 
 **Writes.** `save` is create-or-update (read, keep `created_at`, put). Prefer the narrow updates `touch` (bump `updated_at`) and `update_context` (set `context`, conditional on existence): `save` would overwrite fields changed since the object was loaded.
 
-**Listing.** `find_all_by_user_paginated` queries the whole partition, sorts by `updated_at or created_at`, filters with the `keep` callback, then slices by an offset cursor (base64 `{"offset": n}`). Bad cursors raise `InvalidCursor` (`src/common/pagination.py`). The router's `keep` hides Ila's conversations (`ILA_AGENT_ID`) and, unless `include_automation=true`, automation runs.
+**Listing.** `find_all_by_user_paginated` queries the whole partition, sorts by `updated_at or created_at`, filters with the `keep` callback, then slices by an offset cursor (base64 `{"offset": n}`). Bad cursors raise `InvalidCursor` (`src/common/pagination.py`). The router's `keep` hides Ila's conversations (`ILA_AGENT_ID`) and keeps one `conversation_type` (`chat`, the default, or `automation` for the runs of automations), so each tab of the dashboard's list pages full.
 
 **Messages.** The router holds `message_repository = get_message_repository("dynamodb")` and turns messages into responses with `MessageResponseFactory`. `find_visible_messages_newest_first` drops legacy `role="system"` rows; see `src/messages/CONTRIBUTION.md`.
 

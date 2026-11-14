@@ -103,6 +103,32 @@ class TestConversationsRouter:
         assert sorted(item["title"] for item in data["items"]) == ["Chat 0", "Chat 1"]
         assert data["has_more"] is False
 
+    def test_automation_runs_are_listed_apart_from_chats(self, test_client: TestClient, auth_headers: dict):
+        """Chats are listed by default and automation runs on request, each in pages of its own kind."""
+        from src.conversations.models import AutomationConversation
+        from src.conversations.repository import ConversationRepository
+
+        for i in range(3):
+            ConversationRepository().save(
+                AutomationConversation(
+                    title=f"Automation Run: {i}",
+                    agent_id=self.agent_id,
+                    automation_id="auto-1",
+                    automation_run_id=f"run-{i}",
+                    **conversation_fields(TEST_USER_EMAIL),
+                )
+            )
+        test_client.post("/conversations/", json={"title": "A chat", "agent_id": self.agent_id}, headers=auth_headers)
+
+        chats = test_client.get("/conversations/", headers=auth_headers).json()
+        runs = test_client.get("/conversations/?conversation_type=automation&limit=2", headers=auth_headers).json()
+
+        assert [item["title"] for item in chats["items"]] == ["A chat"]
+        assert len(runs["items"]) == 2 and runs["has_more"] is True
+        assert {item["conversation_type"] for item in runs["items"]} == {"automation"}
+        assert runs["items"][0]["automation_id"] == "auto-1"
+        assert test_client.get("/conversations/?conversation_type=other", headers=auth_headers).status_code == 422
+
     def test_list_conversations_pagination(
         self, test_client: TestClient, auth_headers: dict
     ):

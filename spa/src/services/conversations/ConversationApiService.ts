@@ -4,6 +4,7 @@
 
 import { httpClient } from "../http/client";
 import type {
+  ConversationKind,
   ConversationResponse,
   CreateConversationRequest,
   UpdateConversationRequest,
@@ -16,16 +17,21 @@ import type { UploadedImage } from "../../../packages/image-attachments/src";
 
 class ConversationApiService {
   /**
-   * List all conversations for the current user with pagination.
+   * List the current user's conversations of one kind (chats by default) with pagination.
    */
   async listConversations(
     limit: number = 10,
-    cursor?: string
+    cursor?: string,
+    kind: ConversationKind = "chat"
   ): Promise<PaginatedResponse<ConversationResponse>> {
     const params = new URLSearchParams();
     params.append("limit", limit.toString());
     if (cursor) {
       params.append("cursor", cursor);
+    }
+    // The API lists chats unless told otherwise.
+    if (kind !== "chat") {
+      params.append("conversation_type", kind);
     }
     return httpClient.get<PaginatedResponse<ConversationResponse>>(
       `/conversations/?${params.toString()}`

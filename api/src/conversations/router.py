@@ -2,7 +2,7 @@
 Conversations API router.
 """
 
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import asyncio
 
@@ -143,13 +143,13 @@ async def list_conversations(
     partition: Partition,
     limit: int = Query(default=10, ge=1, le=100, description="Number of items per page"),
     cursor: Optional[str] = Query(default=None, description="Pagination cursor"),
-    include_automation: bool = Query(
-        default=False,
-        description="Include automation-run conversations in the response",
+    conversation_type: Literal["chat", "automation"] = Query(
+        default="chat",
+        description="Which conversations to list: chats with agents, or the runs of automations",
     ),
 ):
     """
-    List all conversations for the current user.
+    List the current user's conversations of one type.
 
     Returns conversations ordered by last activity (most recently updated or
     created first). Supports cursor-based pagination.
@@ -159,7 +159,7 @@ async def list_conversations(
         # Building with Ila has its own page; her conversations aren't chats with the person's agents.
         if conversation.agent_id == ILA_AGENT_ID:
             return False
-        return include_automation or getattr(conversation, "conversation_type", "chat") != "automation"
+        return getattr(conversation, "conversation_type", "chat") == conversation_type
 
     conversations, next_cursor, has_more = conversation_repository.find_all_by_user_paginated(
         partition, limit=limit, cursor=cursor, keep=keep

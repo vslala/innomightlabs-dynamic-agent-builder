@@ -20,6 +20,10 @@
   @apply mt-0.5 text-xs text-[var(--text-muted)];
 }
 
+.kindTabs {
+  @apply mt-4 lg:mt-5;
+}
+
 .searchWrap {
   @apply relative mt-4 lg:mt-5;
 }
