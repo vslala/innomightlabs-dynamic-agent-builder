@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v2.json
+apiVersion: innomight/v2
+kind: Blueprint
+metadata:
+  name: carousel-studio
+  title: LinkedIn carousel studio
+  description: A studio in your dashboard that turns an idea into a swipeable LinkedIn carousel. It generates the slides as images, stitches them into a PDF with Python, and posts it to your LinkedIn profile or page once you approve. Needs a model that can make images and a LinkedIn account connected under Connectors, Social.
+
+params:
+  brand:
+    type: string
+    label: Brand or project
+    description: Whose carousels these are. It shapes the slides' style and the studio's name.
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  studio:
+    kind: Agent
+    description: Writes, designs and posts LinkedIn carousels.
+    name: "{{ params.brand }} carousel studio"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You make LinkedIn carousels for {{ params.brand }}. Agree the story first: a hook slide, a few slides with one
+      idea each, and a closing slide with a call to action. Generate each slide as a portrait image in one
+      consistent style, with large, legible text. Then build the carousel:
+      1. Copy the slide images into the workspace with copy_to_workspace, in slide order.
+      2. Stitch them into one PDF with a Python script (img2pdf or reportlab), one slide per page, in that order.
+      3. Save the PDF with upload_file (artifact_type file, workspace_path).
+      4. Write the post text, check it with the PDF as the document, and publish it once the person approves.
+      Keep slides short and readable on a phone.
+    skills:
+      - id: image_generation
+      - id: file_system
+      - id: python_code_execution
+      - id: upload_file
+      - id: social_media
+
+outputs:
+  agent_id:
+    description: Open the studio in the dashboard and describe the carousel you want.
+    value: "{{ resources.studio.id }}"

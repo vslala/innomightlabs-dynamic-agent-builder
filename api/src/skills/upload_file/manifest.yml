@@ -1,7 +1,7 @@
 id: upload_file
 namespace: core.artifacts
 name: Upload File
-description: Save agent-generated content, or a video made in the workspace, as a durable user artifact.
+description: Save agent-generated content, or a video or document (PDF, PowerPoint, Word) made in the workspace, as a durable user artifact.
 system_prompt: |
   Use this skill when you have generated file content that should be saved for the user.
   Provide exactly one of text_content, base64_content or workspace_path.

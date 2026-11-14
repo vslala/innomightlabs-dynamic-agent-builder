@@ -7,15 +7,10 @@ import mimetypes
 from dataclasses import dataclass
 from typing import Any
 
-from src.accounts.owner import member_partition
 from src.artifacts.models import Artifact
-from src.artifacts.repository import ArtifactRepository
-from src.artifacts.service import run_artifact_holder
 from src.artifacts.storage import ArtifactStorage
 from src.connectors.social.media import SourceImage
-from src.messages.repositories.factory import get_message_repository
-from src.skills.runtime_context import account_of
-from src.vision.repository import ImageUploadRepository
+from src.skills.conversation_files import find_file
 
 MAX_ALT_TEXT = 4000
 
@@ -45,24 +40,12 @@ def load_images(locations: list[ImageLocation]) -> tuple[SourceImage, ...]:
 
 
 def _find(ref: str, context: dict[str, Any]) -> str:
-    account_id = account_of(context)
-    holder_account, holder_user = run_artifact_holder(context)
-    artifact = ArtifactRepository().find_by_id(member_partition(holder_account, holder_user), ref)
-    if artifact:
-        if not _is_picture(artifact):
-            raise ValueError(f"{ref} is not an image. Save a picture with upload_file as artifact_type image.")
-        return artifact.s3_key
-
-    conversation_id = str(context.get("conversation_id") or "").strip()
-    if conversation_id:
-        upload = ImageUploadRepository().find(conversation_id, ref)
-        if upload and upload.account_id == account_id:
-            return upload.s3_key
-        for message in get_message_repository().find_by_conversation(conversation_id):
-            for image in message.images:
-                if image.image_id == ref:
-                    return image.s3_key
-    raise ValueError(f"No image {ref} in this conversation")
+    found = find_file(ref, context)
+    if found is None or found.kind == "document" or found.s3_key is None:
+        raise ValueError(f"No image {ref} in this conversation")
+    if found.artifact is not None and not _is_picture(found.artifact):
+        raise ValueError(f"{ref} is not an image. Save a picture with upload_file as artifact_type image.")
+    return found.s3_key
 
 
 def _is_picture(artifact: Artifact) -> bool:

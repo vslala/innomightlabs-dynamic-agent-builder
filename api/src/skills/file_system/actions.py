@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from pathlib import PurePath
 from typing import Any
 
+from src.skills.conversation_files import find_file
 from src.skills.file_system.client import get_file_system_runner_client
 from src.skills.file_system.models import FileSystemActionName
 from src.skills.workspaces import workspace_id_from_context
@@ -57,6 +60,43 @@ async def delete(arguments: dict[str, Any], config: dict[str, Any], context: dic
 
 async def batch(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     return await _execute("batch", arguments, config, context)
+
+
+#: One call copies at most this many files, so a request can't fill the workspace by accident
+MAX_COPY_FILES = 50
+
+
+async def copy_to_workspace(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """Copies files the agent names by id (images generated in or uploaded to this conversation, saved artifacts,
+    attached documents) into the workspace, so a script can use them. Numbered in the order given, so a script
+    stitching them (a PDF of slides) keeps that order."""
+    del config
+    refs = [str(ref).strip() for ref in arguments.get("files") or [] if str(ref).strip()]
+    if not refs:
+        raise ValueError("files must list at least one id")
+    if len(refs) > MAX_COPY_FILES:
+        raise ValueError(f"Copy at most {MAX_COPY_FILES} files at a time")
+    directory = str(arguments.get("directory") or "files").strip().strip("/") or "files"
+    found = []
+    for ref in refs:
+        file = await asyncio.to_thread(find_file, ref, context)
+        if file is None:
+            raise ValueError(f"No file {ref} in this conversation")
+        found.append((ref, file))
+
+    client = get_file_system_runner_client()
+    copied = []
+    for number, (ref, file) in enumerate(found, start=1):
+        path = f"{directory}/{number:02d}{PurePath(file.filename).suffix.lower()}"
+        data = await asyncio.to_thread(file.read)
+        written = await client.put_file(path=path, data=data, context=context)
+        copied.append({"id": ref, "path": written.get("path", path), "filename": file.filename, "size_bytes": len(data)})
+    logger.info("filesystem_action_audit", extra={"filesystem_audit": {
+        "action": "copy_to_workspace", "paths": [item["path"] for item in copied],
+        "workspace": workspace_id_from_context(context), "agent_id": str(context.get("agent_id") or ""),
+        "session": str(context.get("conversation_id") or context.get("automation_run_id") or ""), "status": "success",
+    }})
+    return {"copied": copied}
 
 
 async def _execute(

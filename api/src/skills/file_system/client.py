@@ -56,6 +56,28 @@ class FileSystemRunnerClient:
         except (ValueError, ValidationError) as exc:
             raise RuntimeError("Filesystem runner returned an invalid response") from exc
 
+    async def put_file(self, *, path: str, data: bytes, context: dict[str, Any]) -> dict[str, Any]:
+        """Writes `data` to `path` in this conversation's workspace, replacing a file already there."""
+        if not settings.cli_runner_base_url or not settings.cli_runner_shared_token:
+            raise RuntimeError("CLI runner is not configured. Set CLI_RUNNER_BASE_URL and CLI_RUNNER_SHARED_TOKEN.")
+        # The workspace comes from the run's own identity, so an agent can only write into its own conversation's.
+        query = {"workspace_id": workspace_id_from_context(context), "path": path}
+        headers = {"Authorization": f"Bearer {settings.cli_runner_shared_token}"}
+        try:
+            async with httpx.AsyncClient(timeout=settings.cli_runner_timeout_seconds) as http_client:
+                response = await http_client.put(f"{settings.cli_runner_base_url.rstrip('/')}/v1/filesystem/files",
+                                                 params=query, content=data, headers=headers)
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Copying {path} into the workspace failed: the runner is unreachable.") from exc
+        if response.status_code == 413:
+            raise ValueError(f"{path} doesn't fit: the workspace is full. Delete files you no longer need.")
+        if response.status_code == 404:
+            raise RuntimeError("The runner can't receive files yet: it is older than this skill.")
+        if response.status_code >= 400:
+            raise RuntimeError(f"The runner refused {path}: HTTP {response.status_code} {_bounded(response.text, 300)}")
+        result: dict[str, Any] = response.json()
+        return result
+
 
 def get_file_system_runner_client() -> FileSystemRunnerClient:
     return FileSystemRunnerClient()

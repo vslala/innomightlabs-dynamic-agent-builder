@@ -40,6 +40,7 @@ def test_manifest_exposes_complete_compact_action_surface() -> None:
         "copy",
         "move",
         "delete",
+        "copy_to_workspace",
         "batch",
     ]
     assert all(action.input_schema.get("additionalProperties") is False for action in loaded.manifest.actions)

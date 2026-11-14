@@ -2,7 +2,7 @@ id: file_system
 namespace: development.filesystem
 owner_only: true
 name: File System
-description: Safely inspect and manage files in the agent's private sidecar workspace.
+description: Safely inspect and manage files in the agent's private sidecar workspace, and copy the conversation's images and files into it for a script to use (for example to stitch generated images into a PDF).
 system_prompt: |
   Use this skill to inspect, create, edit, and manage files in the workspace shared with Python Code Execution.
   All paths are workspace-relative. Never send absolute host paths or traversal segments.
@@ -11,6 +11,8 @@ system_prompt: |
   Binary content is not returned. Outputs and search results are bounded.
   Delete, overwrite, recursive copy, and recursive move are destructive operations. Use them only when the user's request authorizes the change.
   Use batch only for closely related operations. It is ordered and stops on the first failure by default.
+  To use a conversation's images or files in a script (stitch generated images into a PDF, chart an uploaded CSV), call
+  copy_to_workspace with their ids first: it returns each one's workspace path, numbered in the order given.
 automation:
   enabled: false
 actions:
@@ -134,6 +136,22 @@ actions:
         path: {type: string, description: Workspace-relative target.}
         recursive: {type: boolean, description: Required for directories.}
     handler: actions:delete
+  - name: copy_to_workspace
+    description: Copy files from this conversation into the workspace by id, so a script can read them. Returns each file's workspace path.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [files]
+      properties:
+        files:
+          type: array
+          maxItems: 50
+          items: {type: string}
+          description: Ids in the order to number them. An id from a <generated_image>, <attached_image> or <attached_document> tag, the image_id image_generation returned, or an artifact_id.
+        directory:
+          type: string
+          description: Workspace-relative directory to copy into; defaults to files. Files are named 01, 02, ... with their own extension, replacing earlier copies.
+    handler: actions:copy_to_workspace
   - name: batch
     description: Execute ordered filesystem actions and stop on failure by default.
     input_schema:

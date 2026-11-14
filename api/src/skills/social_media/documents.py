@@ -1,5 +1,6 @@
 """Turning the document id the agent was given into a file to post. Like images, an id is looked up only inside the
-caller's own scope: a file the member saved, or a document attached to this conversation."""
+caller's own scope (`skills/conversation_files.py`): a file the member saved, or a document attached to this
+conversation."""
 
 from __future__ import annotations
 
@@ -7,15 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.accounts.owner import member_partition
-from src.artifacts.repository import ArtifactRepository
-from src.artifacts.service import run_artifact_holder
-from src.artifacts.storage import ArtifactStorage
 from src.connectors.social.documents import SourceDocument
-from src.documents.models import DocumentOwner, OwnerKind
-from src.documents.service import get_document_service
-from src.documents.storage import DocumentStorage
-from src.skills.runtime_context import account_of
+from src.skills.conversation_files import find_file
 
 MAX_TITLE = 400
 
@@ -38,28 +32,8 @@ def resolve_document(arguments: dict[str, Any], context: dict[str, Any]) -> Docu
     if not ref:
         return None
     title = " ".join(str(arguments.get("document_title") or "").split())[:MAX_TITLE]
-    found = _saved_file(ref, title, context) or _attached_document(ref, title, context)
-    if found is None:
+    found = find_file(ref, context)
+    if found is None or found.kind not in {"artifact", "document"}:
         raise ValueError(f"No document {ref} in this conversation. Use the id of a file saved with upload_file or of an "
                          "<attached_document>.")
-    return found
-
-
-def _saved_file(ref: str, title: str, context: dict[str, Any]) -> DocumentLocation | None:
-    holder_account, holder_user = run_artifact_holder(context)
-    artifact = ArtifactRepository().find_by_id(member_partition(holder_account, holder_user), ref)
-    if artifact is None:
-        return None
-    key = artifact.s3_key
-    return DocumentLocation(artifact.filename, artifact.size_bytes, title, lambda: ArtifactStorage().get_object_body(key))
-
-
-def _attached_document(ref: str, title: str, context: dict[str, Any]) -> DocumentLocation | None:
-    conversation_id = str(context.get("conversation_id") or "").strip()
-    if not conversation_id:
-        return None
-    owner = DocumentOwner(account_of(context), OwnerKind.CONVERSATION, conversation_id)
-    document = get_document_service().get(owner, ref)
-    if document is None:
-        return None
-    return DocumentLocation(document.filename, document.size_bytes, title, lambda: DocumentStorage().original(document))
+    return DocumentLocation(found.filename, found.size_bytes, title, found.read)
