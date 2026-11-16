@@ -100,7 +100,7 @@ Raw tokens are request bodies, never URL parameters. Validation errors omit inpu
 
 ### Seats and abuse controls
 
-Pending, unexpired invitations reserve seats. All stored memberships, including suspended memberships, consume seats. Sending adds a reservation; acceptance converts a reservation without double counting. Expiry/revocation frees pending capacity logically, independent of TTL cleanup. Failed delivery retains the reservation until resend, revocation or expiry. A lowered limit is rechecked on resend and acceptance. Missing/invalid limits are refused, never replaced by person-level subscription quotas.
+Pending, unexpired invitations reserve seats. All stored memberships, including suspended memberships, consume seats. Sending adds a reservation; acceptance converts a reservation without double counting. Expiry/revocation frees pending capacity logically, independent of TTL cleanup. Failed delivery retains the reservation until resend, revocation or expiry. A lowered limit is rechecked on resend and acceptance. Missing/invalid limits are refused, never replaced by person-level subscription quotas. The limit itself is copied from the owner's plan (`limits.seats`: free 1, business 5, growth 20, enterprise unlimited) when the account is created and whenever the plan changes; `0` stored means unlimited.
 
 Settings are centralized and mirrored in `scripts/deploy_prod_railway.sh`:
 

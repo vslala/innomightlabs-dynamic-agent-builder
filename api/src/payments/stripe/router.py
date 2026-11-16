@@ -118,6 +118,16 @@ def extract_price_info(stripe_data: dict) -> PriceInfo:
         amount=price.get("unit_amount"),
     )
 
+def extract_subscription_period(stripe_sub: dict) -> InvoicePeriod:
+    """The current period of a Stripe subscription: on its first item from API version 2025-12-15 (a subscription's
+    items can differ, and the first sets the plan), on the subscription itself before that."""
+    items = (stripe_sub.get("items") or {}).get("data") or []
+    first = items[0] if items else {}
+    return InvoicePeriod(
+        start=normalize_value(first.get("current_period_start") or stripe_sub.get("current_period_start")),
+        end=normalize_value(first.get("current_period_end") or stripe_sub.get("current_period_end")),
+    )
+
 def extract_invoice_period(invoice_data: dict) -> InvoicePeriod:
     """Extract period start/end from invoice line items if present."""
     lines = invoice_data.get("lines", {}).get("data", [])
@@ -138,7 +148,8 @@ def create_subscription_from_stripe(
     """Create Subscription object from Stripe subscription data."""
     metadata = extract_subscription_metadata(stripe_sub)
     price_info = extract_price_info(stripe_sub)
-    
+    period = extract_subscription_period(stripe_sub)
+
     return Subscription(
         subscription_id=subscription_id,
         user_email=customer_email,
@@ -147,8 +158,8 @@ def create_subscription_from_stripe(
         plan_name=metadata.plan_key,
         price_id=price_info.price_id,
         billing_cycle=metadata.billing_cycle,
-        current_period_start=normalize_value(stripe_sub.get("current_period_start")),
-        current_period_end=normalize_value(stripe_sub.get("current_period_end")),
+        current_period_start=period.start,
+        current_period_end=period.end,
         cancel_at_period_end=stripe_sub.get("cancel_at_period_end"),
         canceled_at=normalize_value(stripe_sub.get("canceled_at")),
         trial_end=normalize_value(stripe_sub.get("trial_end")),
@@ -218,19 +229,13 @@ async def get_active_stripe_subscription(customer_id: str) -> Optional[Subscript
     stripe_sub = subscriptions[0]
     metadata = extract_subscription_metadata(stripe_sub)
 
-    # Extract period dates from subscription items (Stripe's new structure)
-    period_start = None
-    period_end = None
-    items = stripe_sub.get("items", {}).get("data", [])
-    if items:
-        period_start = items[0].get("current_period_start")
-        period_end = items[0].get("current_period_end")
+    period = extract_subscription_period(stripe_sub)
 
     return SubscriptionStatusResponse(
         tier=metadata.plan_key or "free",
         status=stripe_sub.get("status"),
-        current_period_start=normalize_value(period_start),
-        current_period_end=normalize_value(period_end),
+        current_period_start=period.start,
+        current_period_end=period.end,
         is_active=True,
         cancel_at_period_end=stripe_sub.get("cancel_at_period_end"),
     )
@@ -461,20 +466,21 @@ async def cancel_subscription(request: Request):
             {"cancel_at_period_end": "true"}
         )
 
-        # Log what we got from Stripe for debugging
-        log.info(f"Stripe cancel response - current_period_end: {update_response.get('current_period_end')}, "
+        period = extract_subscription_period(update_response)
+        log.info(f"Stripe cancel response - current_period_end: {period.end}, "
                 f"cancel_at_period_end: {update_response.get('cancel_at_period_end')}, "
                 f"canceled_at: {update_response.get('canceled_at')}")
 
         subscription.cancel_at_period_end = True
         subscription.canceled_at = normalize_value(update_response.get("canceled_at"))
-        subscription.current_period_end = normalize_value(update_response.get("current_period_end"))
+        # Keep what we have if Stripe's answer carries no period (the date is the renewal the person was shown)
+        subscription.current_period_end = period.end or subscription.current_period_end
         repo.upsert(subscription)
 
         return {
             "success": True,
             "message": "Subscription will be cancelled at the end of the current billing period",
-            "current_period_end": normalize_value(update_response.get("current_period_end"))
+            "current_period_end": subscription.current_period_end,
         }
 
     except Exception as e:

@@ -675,6 +675,22 @@ through the principal, and leaves the suite green.
     and a page from before `account_id` was recorded to no one.
   - The old `Usage#active` agent counters are no longer read or written.
 
+### KAN-86: seat limits from the owner's plan (2026-11-15)
+
+- **Billing stays with the owner for now.** Seats follow the owner's plan like every other limit; moving billing to
+  `Account#{aid}` is not planned.
+- **Seats per plan:** `limits.seats` in the pricing JSON: free 1, business 5, growth 20, enterprise `0` (unlimited).
+- **Where the limit is written:** `Account#Metadata.seat_limit`, set from the owner's plan when the account is created
+  (`AccountService.create_account`) and on every plan change, for every account the owner owns
+  (`RateLimitService.sync_seat_limits`, called from `sync_subscription_to_db`, which all four Stripe handlers use).
+  It reads the subscription with a consistent read, so the plan just written is the one used.
+- **`0` means unlimited.** Invitations accept it and still condition their commit on it, so a downgrade racing an
+  invite fails the transaction. Missing or malformed values still fail closed.
+- **Downgrades remove nobody.** An account above its new limit can't invite until it is back under it.
+- **Existing accounts:** `api/scripts/backfill_account_seat_limits.py` (dry run by default, `--apply` to write) sets the
+  limit on accounts that have none. Until it runs, invites into those accounts keep failing with
+  `SEAT_LIMIT_UNAVAILABLE` unless a superuser owns them.
+
 ### KAN-84: IAM portal (member permissions done)
 
 - **Accepting an invite attaches nothing (a design change, decided 2026-11-02).** This replaces "by default
@@ -1609,7 +1625,7 @@ comes last.*
 
 1. **`max_owned_accounts_per_email` default.** The epic asks not to choose an arbitrary number. A
    product decision is needed before KAN-85 ships.
-2. **Seats per plan** (free, starter, pro, enterprise) for `limits.seats`. Needed before KAN-86.
+2. ~~**Seats per plan** for `limits.seats`.~~ Decided 2026-11-15: free 1, business 5, growth 20, enterprise unlimited (`0`). Built; see the KAN-86 implementation note on seats.
 3. **Audit retention.** 365 days is proposed.
 4. **BidSignal.** Confirm it can move from `sub = email` to `user_id` or the `email` claim before
    cutover, or we keep issuing app tokens with `sub = email` during a transition.

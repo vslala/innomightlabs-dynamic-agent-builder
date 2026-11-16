@@ -132,6 +132,9 @@ export OPENAI_MODELS="$(get_var 'OPENAI_MODELS')"
 export SUPERUSER_EMAILS="$(get_var 'SUPERUSER_EMAILS')"
 export STRIPE_SECRET_KEY="$(get_var 'STRIPE_SECRET_KEY')"
 export STRIPE_PUBLISHABLE_KEY="$(get_var 'STRIPE_PUBLISHABLE_KEY')"
+# Locally this is the Stripe CLI's secret (LOCAL_STRIPE_WEBHOOK_SECRET in .envrc, from `stripe listen --print-secret`),
+# not a dashboard endpoint's: Stripe can't reach localhost, so forward events with
+#   stripe listen --forward-to localhost:1455/payments/stripe/webhook   (1455 is the port the API runs on)
 export STRIPE_WEBHOOK_SECRET="$(get_var 'STRIPE_WEBHOOK_SECRET')"
 export SES_DOMAIN="$(get_var 'SES_DOMAIN')"
 export SES_FROM_EMAIL="$(get_var 'SES_FROM_EMAIL')"

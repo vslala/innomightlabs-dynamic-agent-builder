@@ -135,3 +135,44 @@ def test_the_backfill_sets_missing_limits_only_and_a_dry_run_writes_nothing(dyna
     with patch.object(sys, "argv", ["backfill", "--apply"]):
         script.main()
     assert "0 account(s) given a seat limit" in capsys.readouterr().out.splitlines()[-1]
+
+
+# --- the subscription's period (Stripe API 2025-12-15 moved it from the subscription onto its items) ---
+
+PERIOD_END = 4102444800  # 2100-01-01, so the subscription is still current
+ITEM_PERIOD = {"items": {"data": [{"current_period_start": 4100000000, "current_period_end": PERIOD_END}]}}
+
+
+def test_the_period_is_read_from_the_items_then_from_the_subscription():
+    from src.payments.stripe.router import extract_subscription_period
+
+    assert extract_subscription_period(ITEM_PERIOD).end == str(PERIOD_END)
+    old = {"current_period_start": 1, "current_period_end": 2, "items": {"data": [{}]}}
+    assert (extract_subscription_period(old).start, extract_subscription_period(old).end) == ("1", "2")
+    assert extract_subscription_period({}).end is None
+
+
+@pytest.mark.asyncio
+async def test_a_synced_subscription_keeps_its_period_end(dynamodb_table):
+    stripe_subscription = {"status": "active", "metadata": {"plan_key": "business"}, **ITEM_PERIOD}
+    with patch("src.payments.stripe.router.get_customer_email", AsyncMock(return_value=TEST_USER_EMAIL)):
+        subscription = await sync_subscription_to_db(stripe_subscription, "sub_period", "cus_period")
+    assert subscription is not None and subscription.current_period_end == str(PERIOD_END)
+    stored = SubscriptionRepository().list_by_user(TEST_USER_EMAIL)
+    assert [s.current_period_end for s in stored] == [str(PERIOD_END)]
+
+
+def test_cancelling_keeps_the_renewal_date_stripe_moved_onto_the_items(test_client, dynamodb_table):
+    from tests.oauth_handoff import owner_headers
+
+    SubscriptionRepository().upsert(Subscription(
+        subscription_id="sub_cancel", user_email=TEST_USER_EMAIL, status="active", plan_name="business",
+        current_period_end=str(PERIOD_END)))
+    cancelled = {"id": "sub_cancel", "cancel_at_period_end": True, "canceled_at": 1700000100, **ITEM_PERIOD}
+    with patch("src.payments.stripe.router.StripeClient") as client:
+        client.return_value.post = AsyncMock(return_value=cancelled)
+        response = test_client.post("/payments/stripe/subscription/cancel", headers=owner_headers())
+    assert response.status_code == 200, response.text
+    assert response.json()["current_period_end"] == str(PERIOD_END)
+    [stored] = SubscriptionRepository().list_by_user(TEST_USER_EMAIL)
+    assert stored.cancel_at_period_end is True and stored.current_period_end == str(PERIOD_END)
