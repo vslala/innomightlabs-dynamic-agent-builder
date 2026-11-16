@@ -15,8 +15,12 @@ class AccountService:
         self.repository = repository or AccountRepository()
 
     def create_account(self, creator: Identity, name: str, account_id: Optional[str] = None) -> Account:
-        """A new account, owned by its creator and with them as its only member."""
-        account = Account(name=name, created_by=creator.user_id)
+        """A new account, owned by its creator and with them as its only member, and seats from their plan."""
+        # Imported here: the plan service reads agents, whose models import accounts
+        from ..rate_limits.service import RateLimitService
+
+        seats = RateLimitService().seat_limit_for(creator.email)
+        account = Account(name=name, created_by=creator.user_id, seat_limit=seats)
         if account_id:
             account.account_id = account_id
         owner = Member(account_id=account.account_id, user_id=creator.user_id, email=creator.email, name=creator.name)

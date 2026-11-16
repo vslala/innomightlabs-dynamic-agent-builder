@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from ...db import get_dynamodb_resource
 from ...config import settings
@@ -28,19 +28,24 @@ class SubscriptionRepository:
             return Subscription.from_dynamo_item(item)
         return None
 
-    def list_by_user(self, user_email: str) -> list[Subscription]:
-        response = self.table.query(
-            KeyConditionExpression="pk = :pk AND begins_with(sk, :sk_prefix)",
-            ExpressionAttributeValues={
-                ":pk": f"User#{user_email}",
-                ":sk_prefix": "Subscription#",
-            },
-        )
-        items = response.get("Items", [])
-        return [Subscription.from_dynamo_item(item) for item in items]
+    def list_by_user(self, user_email: str, consistent_read: bool = False) -> list[Subscription]:
+        kwargs: dict[str, Any] = {
+            "KeyConditionExpression": "pk = :pk AND begins_with(sk, :sk_prefix)",
+            "ExpressionAttributeValues": {":pk": f"User#{user_email}", ":sk_prefix": "Subscription#"},
+            "ConsistentRead": consistent_read,
+        }
+        subscriptions: list[Subscription] = []
+        while True:
+            response = self.table.query(**kwargs)
+            subscriptions.extend(Subscription.from_dynamo_item(item) for item in response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                return subscriptions
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
-    def get_active_for_user(self, user_email: str) -> Optional[Subscription]:
-        subscriptions = self.list_by_user(user_email)
+    def get_active_for_user(self, user_email: str, consistent_read: bool = False) -> Optional[Subscription]:
+        """The person's current subscription. `consistent_read` when the caller has just written one (a webhook),
+        so the read can't miss it."""
+        subscriptions = self.list_by_user(user_email, consistent_read)
         if not subscriptions:
             return None
         active_statuses = {"active", "trialing", "past_due"}

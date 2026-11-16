@@ -7,6 +7,7 @@ owner, its creator, who is always its admin, like AWS's root user (see `iam.mode
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -33,6 +34,13 @@ def personal_account_id(user_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"personal-account:{user_id}"))
 
 
+def _seat_count(value: Any) -> Optional[int]:
+    """A stored seat limit as a count, or None when it isn't one. Invitations validate the raw item themselves."""
+    if isinstance(value, bool) or not isinstance(value, (int, Decimal)) or value != int(value) or value < 0:
+        return None
+    return int(value)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -48,6 +56,10 @@ class Account:
     status: str = AccountStatus.ACTIVE.value
     # Bumped on every permission change, so cached permissions for the old version are never used
     authz_version: int = 1
+    # Members the account may have, the owner included; 0 is unlimited. Copied from the owner's plan when the
+    # account is created and whenever that plan changes (`RateLimitService.sync_seat_limits`). Invitations read it,
+    # and refuse when it is missing (accounts from before seats were recorded, until the backfill sets it).
+    seat_limit: Optional[int] = None
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -63,7 +75,10 @@ class Account:
         return "Account#Metadata"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return {"pk": self.pk, "sk": self.sk, **asdict(self)}
+        item = {"pk": self.pk, "sk": self.sk, **asdict(self)}
+        if self.seat_limit is None:
+            del item["seat_limit"]  # absent, never NULL: invitations treat a missing limit as unknown
+        return item
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "Account":
@@ -74,6 +89,7 @@ class Account:
             account_id=item["account_id"],
             status=item.get("status", AccountStatus.ACTIVE.value),
             authz_version=int(item.get("authz_version", 1)),
+            seat_limit=_seat_count(item.get("seat_limit")),
             created_at=item["created_at"],
             updated_at=item.get("updated_at", item["created_at"]),
         )

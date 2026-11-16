@@ -25,6 +25,7 @@ from src.payments.stripe.models import (
 from ...config import settings
 from ..pricing_config import get_pricing_config
 from ...identity import IdentityRepository
+from ...rate_limits.service import RateLimitService
 from ..subscriptions import Subscription, SubscriptionRepository
 from ...email import (
     send_subscription_confirmed_email_safe,
@@ -201,6 +202,8 @@ async def sync_subscription_to_db(
 
     SubscriptionRepository().upsert(subscription)
     log.info(f"✓ Subscription {subscription_id} synced to database successfully")
+    # Every webhook that changes a plan comes through here, so this keeps the owner's accounts' seats in step
+    RateLimitService().sync_seat_limits(customer_email)
     return subscription
 
 async def get_active_stripe_subscription(customer_id: str) -> Optional[SubscriptionStatusResponse]:

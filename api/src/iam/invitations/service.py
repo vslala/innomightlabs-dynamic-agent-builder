@@ -75,9 +75,10 @@ class InvitationService:
 
     @staticmethod
     def _seat_limit(account: dict[str, Any]) -> int:
+        """The account's seat limit, set from its owner's plan; 0 is unlimited (an unlimited plan)."""
         value = account.get("seat_limit")
-        # DynamoDB numbers arrive as Decimal. Booleans, strings and fractions are not seat counts.
-        if isinstance(value, bool) or not isinstance(value, (int, Decimal)) or value <= 0 or value != int(value):
+        # DynamoDB numbers arrive as Decimal. Booleans, strings, fractions and negatives are not seat counts.
+        if isinstance(value, bool) or not isinstance(value, (int, Decimal)) or value < 0 or value != int(value):
             raise IamError(409, "SEAT_LIMIT_UNAVAILABLE", "The account has no valid seat limit")
         return int(value)
 
@@ -88,11 +89,12 @@ class InvitationService:
         return owner is not None and settings.is_superuser_email(owner.get("email"))
 
     def _capacity(self, snapshot: Snapshot, *, additional: int) -> int | None:
-        """The seat limit the commit must still see, or None when the account has none to enforce."""
+        """The seat limit the commit must still see (0 for an unlimited plan, which is still conditioned on, so a
+        downgrade racing the commit fails it), or None when a superuser owns the account."""
         state, account, members, invites = snapshot
         pending = sum(invite.effective_status(self.clock()) == "pending" for invite in invites)
         seats = None if self._owned_by_superuser(state, members) else self._seat_limit(account)
-        if seats is not None and len(members) + pending + additional > seats:
+        if seats and len(members) + pending + additional > seats:
             raise IamError(409, "SEAT_LIMIT_REACHED", "The account has no available seats")
         # The pending cap is abuse protection, not a plan limit, so it applies to superusers too
         if pending + additional > settings.account_invite_pending_limit:

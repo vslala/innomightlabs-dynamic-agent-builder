@@ -18,7 +18,7 @@ class AccountRepository:
     `iam.service`, the only writer of permissions.
 
     Key structure:
-        Account#{account_id} / Account#Metadata                     the account
+        Account#{account_id} / Account#Metadata                     the account, with its `seat_limit`
         Account#{account_id} / Member#{user_id}                     a membership
             gsi2: Identity#{user_id} / Membership#{account_id}      a person's accounts
         Account#{account_id} / Attachment#member#{user_id}#{policy} policies attached to the member
@@ -67,6 +67,26 @@ class AccountRepository:
                     accounts[account.account_id] = account
                 request = response.get("UnprocessedKeys") or {}
         return accounts
+
+    def owned_by(self, user_id: str) -> list[Account]:
+        """The accounts this person owns: their memberships, kept where they are the owner."""
+        memberships = self.list_memberships(user_id)
+        accounts = self.get_many(member.account_id for member in memberships)
+        return [account for account in accounts.values() if account.owner_id == user_id]
+
+    def set_seat_limit(self, account_id: str, seats: int) -> None:
+        """Record the account's seat limit. Invitations condition their commit on the value they read, so one
+        racing this fails rather than using a stale limit; no `authz_version` bump is needed."""
+        try:
+            self.table.update_item(
+                Key={"pk": f"Account#{account_id}", "sk": "Account#Metadata"},
+                UpdateExpression="SET seat_limit = :seats",
+                ConditionExpression="attribute_exists(pk)",
+                ExpressionAttributeValues={":seats": seats},
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise  # an account deleted meanwhile has no limit to keep
 
     def get_member(self, account_id: str, user_id: str) -> Optional[Member]:
         item = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": f"Member#{user_id}"}).get("Item")

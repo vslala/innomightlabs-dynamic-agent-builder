@@ -168,7 +168,7 @@ def test_repeat_accept_does_not_resurrect_members(lifecycle, status):
     assert member is None if status == "removed" else member["status"] == "suspended"
 
 
-@pytest.mark.parametrize("value", [None, "5", True, 0, -1, Decimal("1.5")])
+@pytest.mark.parametrize("value", [None, "5", True, -1, Decimal("1.5")])
 def test_seats_fail_closed_on_create_resend_accept(lifecycle, value):
     service, aid, identity, table, _ = lifecycle
     invite, raw = issue(lifecycle)

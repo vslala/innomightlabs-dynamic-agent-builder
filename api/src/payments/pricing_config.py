@@ -15,6 +15,9 @@ class PricingTierLimits(BaseModel):
     memory_blocks: int
     lead_forms: int = 0
     lead_captures_per_month: int = 0
+    # Members per account, the owner included. Copied onto each account the plan's owner owns
+    # (`Account.seat_limit`), where invitations read it.
+    seats: int = 0
 
 
 class PricingTierCTA(BaseModel):

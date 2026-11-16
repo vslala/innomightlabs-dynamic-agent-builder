@@ -6,9 +6,10 @@ agents, messages and crawled pages count against the owner's plan. The quotas th
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 from fastapi import HTTPException
 
-from ..payments.subscriptions import SubscriptionRepository
+from ..payments.subscriptions import Subscription, SubscriptionRepository
 from ..payments.pricing_config import get_pricing_config, PricingTierLimits
 from ..accounts.repository import AccountRepository
 from ..agents.models import Agent
@@ -40,12 +41,7 @@ class RateLimitService:
         Returns:
             A tier key from the pricing config, such as 'free' or 'business'
         """
-        subscription = self.subscription_repo.get_active_for_user(user_email)
-
-        if not subscription or not subscription.plan_name:
-            return "free"
-
-        return subscription.plan_name
+        return _tier_of(self.subscription_repo.get_active_for_user(user_email))
 
     def get_tier_limits(self, tier: str) -> PricingTierLimits:
         """Get limits for a tier."""
@@ -64,6 +60,29 @@ class RateLimitService:
         if settings.is_superuser_email(owner_email):
             return UNLIMITED
         return self.get_tier_limits(self.get_user_tier(owner_email))
+
+    def seat_limit_for(self, owner_email: str, *, consistent_read: bool = False) -> int:
+        """Seats each account this person owns may have, from their plan; 0 is unlimited, as for superusers.
+        `consistent_read` when a subscription was just written, so the new plan is the one read."""
+        if settings.is_superuser_email(owner_email):
+            return 0
+        subscription = self.subscription_repo.get_active_for_user(owner_email, consistent_read=consistent_read)
+        return self.get_tier_limits(_tier_of(subscription)).seats
+
+    def sync_seat_limits(self, owner_email: str) -> int:
+        """Copy the person's plan's seats onto every account they own; returns how many accounts were updated.
+        Called after a subscription changes. A downgrade below the current member count removes nobody: the
+        account just can't invite until it is back under its limit."""
+        owner = IdentityRepository().find_by_email(owner_email)
+        if owner is None:
+            return 0
+        seats = self.seat_limit_for(owner_email, consistent_read=True)
+        accounts = AccountRepository()
+        owned = accounts.owned_by(owner.user_id)
+        for account in owned:
+            accounts.set_seat_limit(account.account_id, seats)
+        log.info("Seat limits synced", extra={"user_id": owner.user_id, "seats": seats, "accounts": len(owned)})
+        return len(owned)
 
     def check(self, billed_email: str, quota: Quota, requested: int = 1) -> None:
         """Refuse (HTTP 429) when the billed person's plan has less than `requested` left of `quota`.
@@ -105,10 +124,13 @@ class RateLimitService:
         identity = IdentityRepository().find_by_email(billed_email)
         if identity is None:
             return []
-        accounts = AccountRepository()
-        member_of = [member.account_id for member in accounts.list_memberships(identity.user_id)]
         return [
             agent
-            for account in accounts.get_many(member_of).values() if account.owner_id == identity.user_id
+            for account in AccountRepository().owned_by(identity.user_id)
             for agent in self.agent_repo.list_in_account(account.account_id)
         ]
+
+
+def _tier_of(subscription: Optional[Subscription]) -> str:
+    """The tier key a subscription pays for, or 'free' without one."""
+    return subscription.plan_name if subscription and subscription.plan_name else "free"

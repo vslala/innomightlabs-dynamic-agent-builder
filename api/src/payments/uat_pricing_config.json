@@ -33,7 +33,8 @@
         "kb_pages": 10,
         "memory_blocks": 5,
         "lead_forms": 1,
-        "lead_captures_per_month": 25
+        "lead_captures_per_month": 25,
+        "seats": 1
       }
     },
     {
@@ -69,7 +70,8 @@
         "kb_pages": 500,
         "memory_blocks": 0,
         "lead_forms": 10,
-        "lead_captures_per_month": 1000
+        "lead_captures_per_month": 1000,
+        "seats": 5
       }
     },
     {
@@ -105,7 +107,8 @@
         "kb_pages": 5000,
         "memory_blocks": 0,
         "lead_forms": 0,
-        "lead_captures_per_month": 10000
+        "lead_captures_per_month": 10000,
+        "seats": 20
       }
     },
     {
@@ -135,7 +138,8 @@
         "kb_pages": 0,
         "memory_blocks": 0,
         "lead_forms": 0,
-        "lead_captures_per_month": 0
+        "lead_captures_per_month": 0,
+        "seats": 0
       }
     }
   ],

@@ -80,6 +80,8 @@ api/
 
 All entities are stored in a single DynamoDB table using composite primary keys (pk + sk) to enable efficient queries and maintain relationships.
 
+> The diagram and key table below are partial and out of date. The full map of every item type, its keys and relationships is [docs/LLD-dynamodb-single-table-map.md](../docs/LLD-dynamodb-single-table-map.md).
+
 ### Entity Relationship Diagram
 
 ```mermaid
