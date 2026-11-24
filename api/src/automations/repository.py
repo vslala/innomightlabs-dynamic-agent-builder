@@ -144,56 +144,34 @@ class AutomationRepository:
         return AutomationTrigger.from_dynamo_item(item) if item else None
 
     def list_triggers(self, automation_id: str) -> list[AutomationTrigger]:
-        triggers: list[AutomationTrigger] = []
-        query_kwargs = {
-            "KeyConditionExpression": Key("pk").eq(f"Automation#{automation_id}")
-            & Key("sk").begins_with("Trigger#")
-        }
-        while True:
-            response = self.table.query(**query_kwargs)
-            triggers.extend(
-                AutomationTrigger.from_dynamo_item(item)
-                for item in response.get("Items", [])
-                if item.get("entity_type") == "AutomationTrigger"
-            )
-
-            last_key = response.get("LastEvaluatedKey")
-            if not last_key:
-                break
-            query_kwargs["ExclusiveStartKey"] = last_key
-
+        triggers = [AutomationTrigger.from_dynamo_item(item) for item in self._items(automation_id, "Trigger#")]
         triggers.sort(key=lambda trigger: trigger.created_at)
         return triggers
 
     def get_graph(
         self, automation_id: str
     ) -> tuple[list[AutomationNode], list[AutomationEdge], list[AutomationTrigger]]:
-        nodes: list[AutomationNode] = []
-        edges: list[AutomationEdge] = []
-        triggers: list[AutomationTrigger] = []
-        query_kwargs = {
-            "KeyConditionExpression": Key("pk").eq(f"Automation#{automation_id}")
-        }
-        while True:
-            response = self.table.query(**query_kwargs)
-            for item in response.get("Items", []):
-                entity_type = item.get("entity_type")
-                if entity_type == "AutomationNode":
-                    nodes.append(AutomationNode.from_dynamo_item(item))
-                elif entity_type == "AutomationEdge":
-                    edges.append(AutomationEdge.from_dynamo_item(item))
-                elif entity_type == "AutomationTrigger":
-                    triggers.append(AutomationTrigger.from_dynamo_item(item))
-
-            last_key = response.get("LastEvaluatedKey")
-            if not last_key:
-                break
-            query_kwargs["ExclusiveStartKey"] = last_key
-
+        """The automation's definition. It asks for the three graph prefixes only: the partition also holds every
+        run (each with its whole context), the skills, consents and schedule lookups, and none of them is the graph."""
+        nodes = [AutomationNode.from_dynamo_item(item) for item in self._items(automation_id, "Node#")]
+        edges = [AutomationEdge.from_dynamo_item(item) for item in self._items(automation_id, "Edge#")]
         nodes.sort(key=lambda node: node.created_at)
         edges.sort(key=lambda edge: edge.created_at)
-        triggers.sort(key=lambda trigger: trigger.created_at)
-        return nodes, edges, triggers
+        return nodes, edges, self.list_triggers(automation_id)
+
+    def _items(self, automation_id: str, sort_key_prefix: str) -> list[dict[str, Any]]:
+        """Every item in the automation's partition whose sort key starts with the prefix, all pages."""
+        query: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(f"Automation#{automation_id}")
+            & Key("sk").begins_with(sort_key_prefix)
+        }
+        items: list[dict[str, Any]] = []
+        while True:
+            response = self.table.query(**query)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                return items
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
     def save_graph(
         self,

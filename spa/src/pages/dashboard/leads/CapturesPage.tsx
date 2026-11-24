@@ -44,7 +44,7 @@ export function CapturesPage() {
   const selectedButton = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    void Promise.all([agentApiService.listAgents(), leadsApiService.listForms(), leadsApiService.getSettings()])
+    void Promise.all([agentApiService.listAgents({ usage: false }), leadsApiService.listForms(), leadsApiService.getSettings()])
       .then(([agents, forms, settings]) => setChoices({
         agents: agents.map((agent) => ({ id: agent.agent_id, name: agent.agent_name })),
         forms,

@@ -58,6 +58,7 @@ def test_save_and_replace_graph(automation_repository):
 
 def test_get_graph_reads_all_query_pages():
     start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    end = AutomationNode(automation_id="auto-1", node_id="end", type="start", name="End")
     trigger = AutomationTrigger(
         automation_id="auto-1",
         trigger_id="manual",
@@ -66,34 +67,60 @@ def test_get_graph_reads_all_query_pages():
         enabled=True,
         entry_node_id="start",
     )
+    asked: list[tuple[str, bool]] = []
 
     class PaginatedTable:
-        def __init__(self):
-            self.calls = 0
-
         def query(self, **kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                assert "ExclusiveStartKey" not in kwargs
-                return {
-                    "Items": [start.to_dynamo_item()],
-                    "LastEvaluatedKey": {"pk": "Automation#auto-1", "sk": "Node#start"},
-                }
-            assert kwargs["ExclusiveStartKey"] == {
-                "pk": "Automation#auto-1",
-                "sk": "Node#start",
-            }
-            return {"Items": [trigger.to_dynamo_item()]}
+            prefix = kwargs["KeyConditionExpression"].get_expression()["values"][1].get_expression()["values"][1]
+            asked.append((prefix, "ExclusiveStartKey" in kwargs))
+            if prefix == "Node#" and "ExclusiveStartKey" not in kwargs:
+                return {"Items": [start.to_dynamo_item()], "LastEvaluatedKey": {"pk": start.pk, "sk": start.sk}}
+            if prefix == "Node#":
+                assert kwargs["ExclusiveStartKey"] == {"pk": "Automation#auto-1", "sk": "Node#start"}
+                return {"Items": [end.to_dynamo_item()]}
+            return {"Items": [trigger.to_dynamo_item()] if prefix == "Trigger#" else []}
 
     repo = AutomationRepository.__new__(AutomationRepository)
     repo.table = PaginatedTable()
 
     nodes, edges, triggers = repo.get_graph("auto-1")
 
-    assert [node.node_id for node in nodes] == ["start"]
+    assert sorted(node.node_id for node in nodes) == ["end", "start"]
     assert edges == []
     assert [item.trigger_id for item in triggers] == ["manual"]
-    assert repo.table.calls == 2
+    assert asked == [("Node#", False), ("Node#", True), ("Edge#", False), ("Trigger#", False)]
+
+
+def test_get_graph_never_reads_runs_skills_or_the_rest_of_the_partition(automation_repository, monkeypatch):
+    automation = Automation(title="Busy", **automation_fields(TEST_USER_EMAIL))
+    automation_repository.save_automation(automation)
+    aid = automation.automation_id
+    start = AutomationNode(automation_id=aid, node_id="start", type="start", name="Start")
+    end = AutomationNode(automation_id=aid, node_id="end", type="start", name="End")
+    edge = AutomationEdge(automation_id=aid, edge_id="e1", source_node_id="start", target_node_id="end")
+    trigger = AutomationTrigger(automation_id=aid, trigger_id="manual", type="manual", name="Manual",
+                                enabled=True, entry_node_id="start")
+    automation_repository.save_graph(aid, [start, end], [edge], [trigger])
+    for n in range(5):
+        automation_repository.save_run(AutomationRun(automation_id=aid, trigger_id="manual", created_by="u"))
+    for sk in ("Skill#web", "Consent#start", "Schedule#s1"):
+        automation_repository.table.put_item(Item={"pk": f"Automation#{aid}", "sk": sk, "entity_type": "Other"})
+
+    read: list[str] = []
+    real_query = automation_repository.table.query
+
+    def spy(**kwargs):
+        response = real_query(**kwargs)
+        read.extend(item["sk"] for item in response["Items"])
+        return response
+
+    monkeypatch.setattr(automation_repository.table, "query", spy, raising=False)
+    nodes, edges, triggers = automation_repository.get_graph(aid)
+
+    assert sorted(node.node_id for node in nodes) == ["end", "start"]
+    assert [e.edge_id for e in edges] == ["e1"]
+    assert [t.trigger_id for t in triggers] == ["manual"]
+    assert sorted(read) == ["Edge#e1", "Node#end", "Node#start", "Trigger#manual"]
 
 
 def test_list_triggers_reads_all_query_pages():

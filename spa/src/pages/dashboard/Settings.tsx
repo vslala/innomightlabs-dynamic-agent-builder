@@ -334,7 +334,7 @@ export function Settings() {
     setDefaultAgentLoading(true);
     try {
       const [agentsData, preference] = await Promise.all([
-        agentApiService.listAgents(),
+        agentApiService.listAgents({ usage: false }),
         defaultAgentService.getDefaultAgent(),
       ]);
       setAgents(agentsData);

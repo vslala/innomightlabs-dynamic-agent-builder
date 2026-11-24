@@ -2,7 +2,7 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Innomight AI Search 1.0.0\n"
+"Project-Id-Version: InnomightLabs AI 1.0.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/innomight-ai-search\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -19,7 +19,7 @@ msgstr ""
 #: includes/class-innomight-search-settings.php:92
 #: includes/class-innomight-search-settings.php:93
 #: includes/class-innomight-search-settings.php:172
-msgid "Innomight AI Search"
+msgid "InnomightLabs AI"
 msgstr ""
 
 #. Plugin URI of the plugin
@@ -127,7 +127,7 @@ msgid "Do not add it automatically (use the block or shortcode)"
 msgstr ""
 
 #: includes/class-innomight-search-settings.php:211
-msgid "You can also add the \"Innomight AI Search\" block or the [innomight_ai_search] shortcode anywhere."
+msgid "You can also add the \"InnomightLabs AI\" block or the [innomight_ai_search] shortcode anywhere."
 msgstr ""
 
 #: includes/class-innomight-search-settings.php:215
@@ -179,7 +179,7 @@ msgid "Connected: the secret key works for this agent."
 msgstr ""
 
 #: includes/class-innomight-search-ui.php:47
-msgid "Innomight AI Search: add your agent ID and secret key under Settings → Innomight AI Search, and switch the chat on. Only administrators see this note."
+msgid "InnomightLabs AI: add your agent ID and secret key under Settings → InnomightLabs AI, and switch the chat on. Only administrators see this note."
 msgstr ""
 
 #: includes/class-innomight-search-ui.php:53
@@ -200,7 +200,7 @@ msgstr ""
 
 #: block/block.json
 msgctxt "block title"
-msgid "Innomight AI Search"
+msgid "AI Search Chat"
 msgstr ""
 
 #: block/block.json

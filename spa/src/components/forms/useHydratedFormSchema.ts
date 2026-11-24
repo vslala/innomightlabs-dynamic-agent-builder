@@ -104,7 +104,7 @@ function hydrateField(
 
 async function loadSourceOptions(source: OptionSourceType): Promise<SelectOption[]> {
   if (source === "agents") {
-    const agents = await agentApiService.listAgents();
+    const agents = await agentApiService.listAgents({ usage: false });
     return agents.map((agent) => ({
       value: agent.agent_id,
       label: agent.agent_name,

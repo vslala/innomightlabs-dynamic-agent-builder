@@ -2,7 +2,6 @@
 Tests for agents router endpoints.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.agents.turns.models import ConversationTurn, ConversationTurnStatus
@@ -140,6 +139,27 @@ class TestAgentsRouter:
         after = test_client.get("/agents", headers=auth_headers).json()[0]
         assert after["use_count"] == 2
         assert after["last_used_at"] is not None
+
+    def test_list_agents_without_usage_reads_no_conversations(
+        self, test_client: TestClient, auth_headers: dict, monkeypatch
+    ):
+        """A picker only needs the agents: include_usage=false skips the read of every conversation."""
+        from src.conversations.repository import ConversationRepository
+
+        agent_id = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers).json()["agent_id"]
+        test_client.post("/conversations", json={**CONVERSATION_CREATE_REQUEST, "agent_id": agent_id}, headers=auth_headers)
+        reads: list[str] = []
+        real = ConversationRepository.find_all_by_user
+        monkeypatch.setattr(ConversationRepository, "find_all_by_user",
+                            lambda self, partition: reads.append(partition) or real(self, partition))
+
+        light = test_client.get("/agents?include_usage=false", headers=auth_headers)
+        assert light.status_code == 200
+        assert (light.json()[0]["agent_id"], light.json()[0]["use_count"], light.json()[0]["last_used_at"]) == (agent_id, 0, None)
+        assert reads == []
+
+        full = test_client.get("/agents", headers=auth_headers).json()[0]
+        assert full["use_count"] == 1 and len(reads) == 1
 
     def test_attached_counts_what_hangs_off_each_visible_agent(self, test_client: TestClient, auth_headers: dict):
         from src.knowledge.repository import AgentKnowledgeBaseRepository

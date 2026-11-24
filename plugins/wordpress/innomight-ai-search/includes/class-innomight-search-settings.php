@@ -69,9 +69,14 @@ final class Innomight_Search_Settings {
 		return is_string( $id ) && preg_match( '/\A[A-Za-z0-9_-]{4,128}\z/', trim( $id ) ) ? trim( $id ) : null;
 	}
 
+	/** The agent ID and secret key are both present. The editor tools need only this. */
+	public static function is_configured(): bool {
+		return null !== self::secret() && null !== self::agent_id();
+	}
+
 	/** Chat is on and fully configured. */
 	public static function is_ready(): bool {
-		return (bool) self::get( 'enabled' ) && null !== self::secret() && null !== self::agent_id();
+		return (bool) self::get( 'enabled' ) && self::is_configured();
 	}
 
 	/* ------------------------------------------------------------ admin screen */
@@ -89,8 +94,8 @@ final class Innomight_Search_Settings {
 
 	public static function menu(): void {
 		add_options_page(
-			__( 'Innomight AI Search', 'innomight-ai-search' ),
-			__( 'Innomight AI Search', 'innomight-ai-search' ),
+			__( 'InnomightLabs AI', 'innomight-ai-search' ),
+			__( 'InnomightLabs AI', 'innomight-ai-search' ),
 			'manage_options',
 			'innomight-ai-search',
 			array( self::class, 'render' )
@@ -169,7 +174,7 @@ final class Innomight_Search_Settings {
 		$src = self::secret_source();
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'Innomight AI Search', 'innomight-ai-search' ); ?></h1>
+			<h1><?php esc_html_e( 'InnomightLabs AI', 'innomight-ai-search' ); ?></h1>
 			<p><?php esc_html_e( 'Visitors search your site as usual, then ask follow-up questions in a chat answered by your Innomight Labs agent. The agent does the searching; this plugin only passes the question and streams the answer back.', 'innomight-ai-search' ); ?></p>
 
 			<form action="options.php" method="post" style="max-width:820px">
@@ -208,7 +213,7 @@ final class Innomight_Search_Settings {
 								<option value="below" <?php selected( $o['placement'], 'below' ); ?>><?php esc_html_e( 'Show the chat below the results', 'innomight-ai-search' ); ?></option>
 								<option value="off" <?php selected( $o['placement'], 'off' ); ?>><?php esc_html_e( 'Do not add it automatically (use the block or shortcode)', 'innomight-ai-search' ); ?></option>
 							</select>
-							<p class="description"><?php esc_html_e( 'You can also add the "Innomight AI Search" block or the [innomight_ai_search] shortcode anywhere.', 'innomight-ai-search' ); ?></p>
+							<p class="description"><?php esc_html_e( 'You can also add the "AI Search Chat" block or the [innomight_ai_search] shortcode anywhere.', 'innomight-ai-search' ); ?></p>
 						</td>
 					</tr>
 					<tr>

@@ -1,0 +1,13 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "innomight/ai-write",
+	"title": "AI Writer",
+	"category": "text",
+	"icon": "edit",
+	"description": "Describe what you want and your Innomight Labs agent writes it. Type /ai to add it.",
+	"keywords": [ "ai", "write", "autocomplete", "generate", "innomight", "draft" ],
+	"textdomain": "innomight-ai-search",
+	"supports": { "html": false, "customClassName": false },
+	"editorStyle": "innomight-search-editor"
+}

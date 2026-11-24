@@ -31,7 +31,7 @@ function reset_wp_test(): void {
 			Innomight_Search_Settings::SECRET_OPTION => 'sk_live_test-only-key',
 		),
 		'http' => array(), 'responses' => array(), 'events' => array(), 'filters' => array(),
-		'is_search' => true, 'search' => 'agents', 'block_theme' => true, 'enqueued' => array(), 'admin' => false,
+		'is_search' => true, 'search' => 'agents', 'block_theme' => true, 'enqueued' => array(), 'admin' => false, 'caps' => array(),
 	);
 	$_SERVER = array( 'REMOTE_ADDR' => '192.0.2.1' );
 	$rendered = new ReflectionProperty( 'Innomight_Search_UI', 'rendered' );
@@ -86,7 +86,8 @@ function is_search(): bool { return $GLOBALS['wp_test']['is_search']; }
 function get_search_query( $escaped = true ) { return $GLOBALS['wp_test']['search']; }
 function is_admin(): bool { return $GLOBALS['wp_test']['admin']; }
 function wp_is_block_theme(): bool { return $GLOBALS['wp_test']['block_theme']; }
-function current_user_can( $c ): bool { return false; }
+function current_user_can( $c ): bool { return in_array( $c, $GLOBALS['wp_test']['caps'], true ); }
+function get_current_user_id(): int { return 7; }
 function wp_enqueue_style( $h ) { $GLOBALS['wp_test']['enqueued'][] = $h; }
 function wp_enqueue_script( $h ) { $GLOBALS['wp_test']['enqueued'][] = $h; }
 function mb_substr_safe( $s, $n ) { return mb_substr( $s, 0, $n ); }
@@ -95,6 +96,7 @@ require_once dirname( __DIR__ ) . '/includes/class-innomight-search-settings.php
 require_once dirname( __DIR__ ) . '/includes/class-innomight-search-api.php';
 require_once dirname( __DIR__ ) . '/includes/class-innomight-search-chat.php';
 require_once dirname( __DIR__ ) . '/includes/class-innomight-search-ui.php';
+require_once dirname( __DIR__ ) . '/includes/class-innomight-search-editor.php';
 
 function check( bool $c, string $m = 'Assertion failed' ): void { if ( ! $c ) { throw new RuntimeException( $m ); } }
 function same( $expected, $actual, string $m = '' ): void {

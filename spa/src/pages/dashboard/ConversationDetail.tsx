@@ -160,7 +160,7 @@ export function ConversationDetail() {
       setError(null);
       const [conversationData, agentsData, messagesData] = await Promise.all([
         conversationApiService.getConversation(conversationId),
-        agentApiService.listAgents(),
+        agentApiService.listAgents({ usage: false }),
         conversationApiService.getMessages(conversationId, MESSAGES_PAGE_SIZE),
       ]);
       setConversation(conversationData);

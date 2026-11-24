@@ -1,4 +1,4 @@
-/* Innomight AI Search: streams a follow-up conversation from your Innomight Labs agent. No dependencies. */
+/* InnomightLabs AI: streams a follow-up conversation from your Innomight Labs agent. No dependencies. */
 ( function () {
 	'use strict';
 

@@ -1,22 +1,22 @@
-=== Innomight AI Search ===
+=== InnomightLabs AI ===
 Contributors: vslala
-Tags: ai, search, chatbot, assistant, chat
+Tags: ai, writing, search, chatbot, assistant
 Requires at least: 6.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Add an AI follow-up chat to your search results. Visitors search as usual, then ask questions that your Innomight Labs agent answers live.
+Add an AI follow-up chat to your search results, and AI writing tools to the block editor, both powered by your Innomight Labs agent.
 
 == Description ==
 
-Innomight AI Search turns your site's search results into a conversation. Visitors search as they always have and see your normal results first. A chat box lets them ask follow-up questions, and the answer streams in word by word.
+InnomightLabs AI brings your Innomight Labs agent into WordPress in two places. On your site, search results become a conversation: visitors see your normal results first, then ask follow-up questions and the answer streams in word by word. In the block editor, writers can ask about or rewrite selected text and draft new passages with the `/ai` block.
 
-The assistant is your own agent on [Innomight Labs](https://innomightlabs.com/). The agent does the searching and answering; WordPress sends only the visitor's question, so no post content is copied to a third party by this plugin.
+The assistant is your own agent on [Innomight Labs](https://innomightlabs.com/). The agent does the searching and answering. For visitors, WordPress sends only the question, so no post content is copied to a third party. In the editor, the text an author selects or describes, and the blocks just before it, are sent to the agent so it can help with that article.
 
-**Features**
+**Search chat features**
 
 * Follow-up chat on search results, placed automatically above or below the results. Works with block themes and classic themes.
 * Live streaming answers, with readable formatting (paragraphs, lists, links, code).
@@ -27,6 +27,11 @@ The assistant is your own agent on [Innomight Labs](https://innomightlabs.com/).
 * Hourly limits per visitor address and per site to protect your AI allowance.
 * Editable title, intro, starter questions and instructions.
 
+**Writing tools in the block editor** (editors and administrators)
+
+* Select text and use the AI button in the toolbar to **ask** your agent about it (research, sources, examples), or **rewrite** it: improve, fix grammar, shorten, expand, friendlier, more professional.
+* Type `/ai` to add the **AI Writer** block: describe what you want, choose a sentence, paragraph or section, preview the streamed text, then insert it as normal blocks.
+
 **Requires** a free or paid [Innomight Labs account](https://innomightlabs.com/pricing) (there is a free plan) and an agent. Give the agent a way to search your site (for example a tool or knowledge base), and create a secret key (`sk_live_…`) for it.
 
 == External services ==
@@ -34,8 +39,8 @@ The assistant is your own agent on [Innomight Labs](https://innomightlabs.com/).
 This plugin connects to the Innomight Labs service to answer visitors' questions. It does nothing until an administrator enters an agent ID and secret key and switches the chat on.
 
 * **What it is:** Innomight Labs API at `https://api.innomightlabs.com` (a different backend URL can be set for testing).
-* **When data is sent:** when a visitor asks a question in the chat, and when an administrator clicks "Test connection".
-* **What is sent:** the visitor's question; a random identifier generated in the visitor's browser (so each visitor has their own conversation); the search term that led to the chat; your site name and URL (in the agent's conversation instructions); and your agent's secret key, which authenticates the request from your server. The visitor's IP address is used only on your server for the hourly limits and is not sent.
+* **When data is sent:** when a visitor asks a question in the chat, when an editor or administrator uses the AI button or the AI Writer block in the editor, and when an administrator clicks "Test connection".
+* **What is sent:** the visitor's question; a random identifier generated in the visitor's browser (so each visitor has their own conversation); the search term that led to the chat; your site name and URL (in the agent's conversation instructions); and your agent's secret key, which authenticates the request from your server. In the editor, the text the author selected or describes, up to three blocks before it and the post title are also sent, together with the author's WordPress user ID. The visitor's IP address is used only on your server for the hourly limits and is not sent.
 * **What is stored:** Innomight Labs keeps the conversation (questions and answers) with the agent, and its model provider processes it.
 * Service terms: https://innomightlabs.com/legal/terms
 * Privacy policy: https://innomightlabs.com/legal/privacy
@@ -67,7 +72,7 @@ The connected agent determines what the chat can answer. The first demo agent ca
 == Installation ==
 
 1. Upload the plugin or install it from the Plugins screen, then activate it.
-2. Go to **Settings → Innomight AI Search**.
+2. Go to **Settings → InnomightLabs AI**.
 3. Enter your **Agent ID** and **Agent secret key**, tick **Let visitors chat with my agent**, and save.
 4. Click **Test connection**, then search your site and ask a question.
 
@@ -101,7 +106,7 @@ Questions are limited to 40 per visitor address and 400 per site each hour (chan
 
 = Can I place the chat on other pages? =
 
-Yes. Use the "Innomight AI Search" block or the `[innomight_ai_search]` shortcode, and set automatic placement to "off" if you only want manual placement.
+Yes. Use the "AI Search Chat" block or the `[innomight_ai_search]` shortcode, and set automatic placement to "off" if you only want manual placement.
 
 = Does uninstalling remove my settings? =
 
@@ -121,10 +126,16 @@ Yes. Deleting the plugin removes its settings and counters.
 
 == Changelog ==
 
+= 1.1.0 =
+* Writing tools in the block editor: ask about or rewrite selected text, and the /ai AI Writer block.
+
 = 1.0.0 =
 * First release.
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+Adds AI writing tools to the block editor. Selected text and nearby blocks are sent to your agent when an editor uses them.
 
 = 1.0.0 =
 First release.

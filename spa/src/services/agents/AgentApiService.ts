@@ -115,10 +115,12 @@ class AgentApiService {
   }
 
   /**
-   * List all agents for the current user
+   * The agents the current user can see. The server fills `use_count` and `last_used_at` by reading all of the
+   * user's conversations, so pass `usage: false` wherever they aren't shown (pickers, form options): they then stay
+   * 0 and null.
    */
-  async listAgents(): Promise<AgentResponse[]> {
-    return httpClient.get<AgentResponse[]>("/agents");
+  async listAgents(options: { usage?: boolean } = {}): Promise<AgentResponse[]> {
+    return httpClient.get<AgentResponse[]>(options.usage === false ? "/agents?include_usage=false" : "/agents");
   }
 
   /**

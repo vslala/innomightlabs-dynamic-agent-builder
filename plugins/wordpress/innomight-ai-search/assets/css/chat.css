@@ -1,4 +1,4 @@
-/* Innomight AI Search. Colours follow the surrounding theme (currentColor + theme.json presets). */
+/* InnomightLabs AI. Colours follow the surrounding theme (currentColor + theme.json presets). */
 .innomight-search{
 	--is-accent:var(--innomight-accent,var(--wp--preset--color--primary,var(--wp--preset--color--vivid-cyan-blue,#2563eb)));
 	--is-line:color-mix(in srgb,currentColor 18%,transparent);

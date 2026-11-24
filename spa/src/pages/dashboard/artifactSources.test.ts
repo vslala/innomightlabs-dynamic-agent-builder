@@ -27,7 +27,7 @@ describe("artifact source names", () => {
   it("batches duplicate sources through real service list routes and retains only referenced IDs", async () => {
     get.mockImplementation(async (url) => {
       switch (url) {
-        case "/agents": return [
+        case "/agents?include_usage=false": return [
           { agent_id: "agent", agent_name: "Researcher" },
           { agent_id: "unrelated", agent_name: "Other agent" },
         ];

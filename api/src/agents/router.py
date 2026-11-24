@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field, field_validator
@@ -217,6 +217,9 @@ def _require_provider_model(owner: Owner, provider: str, model: str | None) -> N
 async def list_agents(
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     principal: Annotated[Principal, Depends(get_principal)],
+    include_usage: Annotated[bool, Query(description="Fill `use_count` and `last_used_at`. They come from reading "
+                                         "all of the caller's conversations, so a caller that only needs the agents "
+                                         "(a picker, a form's options) turns it off; both then stay 0 and null.")] = True,
 ) -> list[AgentResponse]:
     """
     The account's agents the caller can see: their own, those shared with them, and, for admins,
@@ -224,8 +227,9 @@ async def list_agents(
     used it (`last_used_at`, `use_count`, from their own conversations).
     """
     uses: dict[str, list[Conversation]] = {}
-    for conversation in ConversationRepository().find_all_by_user(member_partition(principal.account_id, principal.user_id)):
-        uses.setdefault(conversation.agent_id, []).append(conversation)
+    if include_usage:
+        for conversation in ConversationRepository().find_all_by_user(member_partition(principal.account_id, principal.user_id)):
+            uses.setdefault(conversation.agent_id, []).append(conversation)
 
     capabilities = account_capabilities(principal.account_id)
     responses = []

@@ -18,7 +18,7 @@ export function Overview() {
     async function loadData() {
       // One failing request leaves its part of the page empty rather than failing the whole overview.
       const [agents, conversations, automations, knowledge, connectors, mcp] = await Promise.allSettled([
-        agentApiService.listAgents(),
+        agentApiService.listAgents({ usage: false }),
         conversationApiService.listConversations(),
         automationApiService.listAutomations(),
         knowledgeApiService.listKnowledgeBases(),

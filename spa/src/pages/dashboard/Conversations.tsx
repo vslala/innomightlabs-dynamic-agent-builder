@@ -47,7 +47,7 @@ export function Conversations() {
   const loadAgents = async () => {
     try {
       const [agentsData, defaultAgentPreference] = await Promise.all([
-        agentApiService.listAgents(),
+        agentApiService.listAgents({ usage: false }),
         defaultAgentService.getDefaultAgent().catch(() => null),
       ]);
       setAgents(agentsData);

@@ -90,10 +90,15 @@ final class Innomight_Search_Chat {
 			}
 		}
 
+		self::stream_reply( $end_user, $conversation_id, $question );
+	}
+
+	/** Send one message to a conversation and stream the agent's reply to the browser. Ends the request. */
+	public static function stream_reply( string $end_user, string $conversation_id, string $content ): void {
 		self::open_stream();
 		self::emit( 'conversation', array( 'conversation_id' => $conversation_id ) );
 		$url  = Innomight_Search_API::agent_url( '/conversations/' . rawurlencode( $conversation_id ) . '/messages' ) . '?end_user_id=' . rawurlencode( $end_user );
-		$body = wp_json_encode( array( 'content' => $question, 'stream' => true ) );
+		$body = wp_json_encode( array( 'content' => $content, 'stream' => true ) );
 		self::relay( $url, $body );
 		self::finish();
 	}

@@ -44,7 +44,7 @@ final class Innomight_Search_UI {
 	public static function render(): string {
 		if ( ! Innomight_Search_Settings::is_ready() ) {
 			return current_user_can( 'manage_options' ) && ( ! defined( 'REST_REQUEST' ) || ! REST_REQUEST ) && ! is_admin()
-				? '<p class="innomight-search__notice"><em>' . esc_html__( 'Innomight AI Search: add your agent ID and secret key under Settings → Innomight AI Search, and switch the chat on. Only administrators see this note.', 'innomight-ai-search' ) . '</em></p>'
+				? '<p class="innomight-search__notice"><em>' . esc_html__( 'InnomightLabs AI: add your agent ID and secret key under Settings → InnomightLabs AI, and switch the chat on. Only administrators see this note.', 'innomight-ai-search' ) . '</em></p>'
 				: '';
 		}
 		$title = (string) Innomight_Search_Settings::get( 'title' );

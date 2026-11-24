@@ -36,7 +36,7 @@ export async function resolveArtifactSourceNames(
   await Promise.allSettled([
     (async () => {
       if (!agents.size) return;
-      for (const agent of await agentApiService.listAgents()) {
+      for (const agent of await agentApiService.listAgents({ usage: false })) {
         if (agents.has(agent.agent_id) && agent.agent_name.trim()) names.agents[agent.agent_id] = agent.agent_name;
       }
     })(),
